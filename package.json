@@ -1,0 +1,21 @@
+{
+  "name": "meet",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "server",
+    "shared"
+  ],
+  "scripts": {
+    "dev:server": "npm --workspace=server run dev",
+    "dev:web": "npm --workspace=apps/web run dev",
+    "dev:mobile": "npm --workspace=apps/mobile run start",
+    "dev:android": "npm --workspace=apps/mobile run android",
+    "build:server": "npm --workspace=server run build",
+    "build:web": "npm --workspace=apps/web run build",
+    "typecheck:server": "npm --workspace=server run typecheck",
+    "typecheck:web": "npm --workspace=apps/web run typecheck",
+    "typecheck:mobile": "npm --workspace=apps/mobile run typecheck"
+  }
+}

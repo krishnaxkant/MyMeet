@@ -1,0 +1,131 @@
+import { useState, type FormEvent } from 'react';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { VideoIcon } from '../components/Icons';
+import { ThemeToggle } from '../components/ThemeToggle';
+import { useAuth } from '../hooks/useAuth';
+
+export function SignUpPage() {
+  const { user, loading, isConfigured, signUp } = useAuth();
+  const navigate = useNavigate();
+
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  if (!loading && user) {
+    return <Navigate to="/" replace />;
+  }
+
+  const handleSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessMessage(null);
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const result = await signUp(email, password, fullName);
+      if (result.needsEmailConfirmation) {
+        setSuccessMessage(
+          'Account created! Check your inbox to confirm your email address, then sign in.',
+        );
+      } else {
+        navigate('/', { replace: true });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to create account.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="auth-shell">
+      <div className="auth-topbar">
+        <ThemeToggle />
+      </div>
+
+      <div className="card auth-card">
+        <div className="brand" style={{ marginBottom: 18 }}>
+          <span className="brand-mark">
+            <VideoIcon size={18} />
+          </span>
+          <span>Meet</span>
+        </div>
+
+        <h1 className="auth-title">Create your account</h1>
+        <p className="auth-subtitle">Join Meet on web and Android with one account.</p>
+
+        {!isConfigured && (
+          <div className="alert alert-warning">
+            Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> to your root{' '}
+            <code>.env</code> file.
+          </div>
+        )}
+
+        {error && <div className="alert alert-danger">{error}</div>}
+        {successMessage && <div className="alert alert-success">{successMessage}</div>}
+
+        <form className="form" onSubmit={handleSubmit}>
+          <label className="field">
+            <span className="field-label">Full name</span>
+            <input
+              type="text"
+              className="input"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              placeholder="Alex Rivera"
+              autoComplete="name"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">Email</span>
+            <input
+              type="email"
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+            />
+          </label>
+
+          <label className="field">
+            <span className="field-label">Password</span>
+            <input
+              type="password"
+              className="input"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="At least 6 characters"
+              autoComplete="new-password"
+              minLength={6}
+              required
+            />
+          </label>
+
+          <button type="submit" className="btn btn-primary btn-full" disabled={submitting}>
+            {submitting ? 'Creating account...' : 'Create Account'}
+          </button>
+        </form>
+
+        <p className="auth-footer">
+          Already have an account?{' '}
+          <Link to="/login" className="text-link">
+            Sign in
+          </Link>
+        </p>
+      </div>
+    </div>
+  );
+}

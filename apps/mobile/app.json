@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Meet",
+    "slug": "meet-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "meet",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.meet.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0b1020"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    }
+  }
+}
