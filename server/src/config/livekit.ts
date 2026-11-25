@@ -118,3 +118,32 @@ export async function deleteLiveKitRoom(roomName: string): Promise<void> {
     // Best effort: LiveKit room may not exist if no one published media yet
   }
 }
+
+export async function muteLiveKitParticipantAudio(
+  roomName: string,
+  identity: string,
+): Promise<{ mutedTracks: number }> {
+  const client = getRoomServiceClient();
+  if (!client) {
+    return { mutedTracks: 0 };
+  }
+
+  try {
+    const participant = await client.getParticipant(roomName, identity);
+    const audioTracks = (participant.tracks ?? []).filter(
+      (track) => track.type === 0 || String(track.type).toUpperCase() === 'AUDIO',
+    );
+
+    let mutedTracks = 0;
+    for (const track of audioTracks) {
+      if (track.sid && !track.muted) {
+        await client.mutePublishedTrack(roomName, identity, track.sid, true);
+        mutedTracks += 1;
+      }
+    }
+    return { mutedTracks };
+  } catch {
+    // Participant may not be connected to LiveKit SFU yet
+    return { mutedTracks: 0 };
+  }
+}

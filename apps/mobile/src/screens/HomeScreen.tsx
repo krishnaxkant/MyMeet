@@ -10,6 +10,9 @@ import {
   createMeeting,
   extractMeetingCode,
   listMeetings,
+  listMyInvitations,
+  respondToInvitation,
+  type MeetingInvitation,
   type MeetingSummary,
 } from '../services/api';
 
@@ -39,6 +42,8 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
 
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
+  const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
 
   const displayName =
     profile?.full_name ||
@@ -50,14 +55,38 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
     if (!session?.access_token) return;
     setMeetingsLoading(true);
     try {
-      const list = await listMeetings(session.access_token);
+      const [list, invites] = await Promise.all([
+        listMeetings(session.access_token),
+        listMyInvitations(session.access_token).catch(() => []),
+      ]);
       setMeetings(list);
+      setInvitations(invites);
     } catch (err) {
       console.warn('[mobile meetings] Failed to load recent meetings:', err);
     } finally {
       setMeetingsLoading(false);
     }
   }, [session?.access_token]);
+
+  const handleRespondInvite = async (
+    invitation: MeetingInvitation,
+    action: 'accepted' | 'declined',
+  ) => {
+    if (!session?.access_token) return;
+    setInviteBusyId(invitation.id);
+    setActionError(null);
+    try {
+      const updated = await respondToInvitation(session.access_token, invitation.id, action);
+      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (action === 'accepted') {
+        onOpenLobby(invitation.meeting_code);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
+    } finally {
+      setInviteBusyId(null);
+    }
+  };
 
   useEffect(() => {
     void loadMeetings();
@@ -247,6 +276,67 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
           </View>
         )}
       </View>
+
+      {invitations.filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
+        .length > 0 && (
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.surface, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Meeting Invitations</Text>
+            <StatusBadge
+              label={`${
+                invitations.filter(
+                  (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
+                ).length
+              } Pending`}
+              tone="warning"
+            />
+          </View>
+          {invitations
+            .filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
+            .map((inv) => (
+              <View
+                key={inv.id}
+                style={[
+                  styles.inviteCardRow,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                ]}
+              >
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>{inv.meeting_title}</Text>
+                  <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                    From {inv.inviter_name || inv.inviter_email || 'Host'} · {inv.meeting_code}
+                  </Text>
+                </View>
+                <View style={styles.inviteBtnRow}>
+                  <Pressable
+                    style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
+                    disabled={inviteBusyId === inv.id}
+                    onPress={() => void handleRespondInvite(inv, 'accepted')}
+                  >
+                    <Text style={styles.acceptBtnText}>Accept & Join</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.declineBtn,
+                      { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+                    ]}
+                    disabled={inviteBusyId === inv.id}
+                    onPress={() => void handleRespondInvite(inv, 'declined')}
+                  >
+                    <Text style={[styles.declineBtnText, { color: colors.dangerText }]}>
+                      Decline
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
+        </View>
+      )}
 
       <View
         style={[
@@ -598,5 +688,37 @@ const styles = StyleSheet.create({
   rowDesc: {
     fontSize: 12,
     marginTop: 2,
+  },
+  inviteCardRow: {
+    padding: 13,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 10,
+  },
+  inviteBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  acceptBtn: {
+    flex: 1,
+    paddingVertical: 9,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  acceptBtnText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  declineBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 9,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  declineBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

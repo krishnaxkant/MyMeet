@@ -82,6 +82,35 @@ export interface MeetingSummary {
 export interface MeetingDetail extends MeetingSummary {
   participants: MeetingParticipant[];
   is_host: boolean;
+  can_manage: boolean;
+}
+
+export interface MeetingMessage {
+  id: string;
+  meeting_id: string;
+  sender_id: string;
+  sender_name: string | null;
+  sender_email: string;
+  sender_avatar_url: string | null;
+  content: string;
+  created_at: string;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+
+export interface MeetingInvitation {
+  id: string;
+  meeting_id: string;
+  meeting_code: string;
+  meeting_title: string;
+  meeting_status: MeetingStatus;
+  inviter_id: string;
+  inviter_name: string | null;
+  inviter_email: string | null;
+  invitee_email: string;
+  invitee_user_id: string | null;
+  status: InvitationStatus;
+  created_at: string;
 }
 
 export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(
@@ -279,4 +308,128 @@ export async function fetchMeetingToken(
     accessToken,
     { method: 'POST' },
   );
+}
+
+export async function admitAllParticipants(
+  accessToken: string,
+  code: string,
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/participants/admit-all`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.meeting;
+}
+
+export async function updateParticipantRole(
+  accessToken: string,
+  code: string,
+  userId: string,
+  role: 'co_host' | 'participant',
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/participants/${encodeURIComponent(userId)}/role`,
+    accessToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    },
+  );
+  return payload.meeting;
+}
+
+export async function muteParticipant(
+  accessToken: string,
+  code: string,
+  userId: string,
+): Promise<{ ok: boolean; mutedTracks: number }> {
+  return authFetch<{ ok: boolean; mutedTracks: number }>(
+    `/api/meetings/${encodeURIComponent(code)}/participants/${encodeURIComponent(userId)}/mute`,
+    accessToken,
+    { method: 'POST' },
+  );
+}
+
+export async function listMessages(
+  accessToken: string,
+  code: string,
+): Promise<MeetingMessage[]> {
+  const payload = await authFetch<{ messages: MeetingMessage[] }>(
+    `/api/meetings/${encodeURIComponent(code)}/messages`,
+    accessToken,
+  );
+  return payload.messages;
+}
+
+export async function sendMessage(
+  accessToken: string,
+  code: string,
+  content: string,
+): Promise<MeetingMessage> {
+  const payload = await authFetch<{ message: MeetingMessage }>(
+    `/api/meetings/${encodeURIComponent(code)}/messages`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    },
+  );
+  return payload.message;
+}
+
+export interface EmailDeliveryResult {
+  sent: boolean;
+  status: 'sent' | 'not_configured' | 'failed';
+  message: string;
+}
+
+export async function sendInvitation(
+  accessToken: string,
+  code: string,
+  email: string,
+): Promise<{ invitation: MeetingInvitation; emailDelivery?: EmailDeliveryResult }> {
+  return authFetch<{ invitation: MeetingInvitation; emailDelivery?: EmailDeliveryResult }>(
+    `/api/meetings/${encodeURIComponent(code)}/invitations`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    },
+  );
+}
+
+export async function listMeetingInvitations(
+  accessToken: string,
+  code: string,
+): Promise<MeetingInvitation[]> {
+  const payload = await authFetch<{ invitations: MeetingInvitation[] }>(
+    `/api/meetings/${encodeURIComponent(code)}/invitations`,
+    accessToken,
+  );
+  return payload.invitations;
+}
+
+export async function listMyInvitations(accessToken: string): Promise<MeetingInvitation[]> {
+  const payload = await authFetch<{ invitations: MeetingInvitation[] }>(
+    '/api/invitations',
+    accessToken,
+  );
+  return payload.invitations;
+}
+
+export async function respondToInvitation(
+  accessToken: string,
+  invitationId: string,
+  action: 'accepted' | 'declined',
+): Promise<MeetingInvitation> {
+  const payload = await authFetch<{ invitation: MeetingInvitation }>(
+    `/api/invitations/${encodeURIComponent(invitationId)}/respond`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({ action }),
+    },
+  );
+  return payload.invitation;
 }

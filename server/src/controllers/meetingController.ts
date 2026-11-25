@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import {
+  admitAllParticipants,
   admitParticipant,
   createMeeting,
   endMeeting,
@@ -9,8 +10,10 @@ import {
   joinMeeting,
   leaveMeeting,
   listUserMeetings,
+  muteParticipantAudio,
   removeParticipant,
   updateMeetingSettings,
+  updateParticipantRole,
 } from '../services/meetingService.js';
 
 function handleControllerError(err: unknown, res: Response, next: NextFunction): void {
@@ -223,6 +226,76 @@ export const issueMeetingTokenHandler = async (
 
     const media = await issueMeetingMediaToken(String(req.params.code ?? ''), req.user);
     res.json(media);
+  } catch (err) {
+    handleControllerError(err, res, next);
+  }
+};
+
+export const admitAllParticipantsHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Not authenticated.' });
+      return;
+    }
+
+    const meeting = await admitAllParticipants(String(req.params.code ?? ''), req.user.id);
+    res.json({ meeting });
+  } catch (err) {
+    handleControllerError(err, res, next);
+  }
+};
+
+export const updateParticipantRoleHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Not authenticated.' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const role = body.role;
+    if (role !== 'co_host' && role !== 'participant') {
+      res.status(400).json({ error: 'Bad Request', message: 'role must be co_host or participant.' });
+      return;
+    }
+
+    const meeting = await updateParticipantRole(
+      String(req.params.code ?? ''),
+      req.user.id,
+      String(req.params.userId ?? ''),
+      role,
+    );
+    res.json({ meeting });
+  } catch (err) {
+    handleControllerError(err, res, next);
+  }
+};
+
+export const muteParticipantHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Not authenticated.' });
+      return;
+    }
+
+    const result = await muteParticipantAudio(
+      String(req.params.code ?? ''),
+      req.user.id,
+      String(req.params.userId ?? ''),
+    );
+    res.json(result);
   } catch (err) {
     handleControllerError(err, res, next);
   }

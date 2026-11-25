@@ -77,4 +77,33 @@ export interface MeetingSummary {
 export interface MeetingDetail extends MeetingSummary {
   participants: MeetingParticipant[];
   is_host: boolean;
+  can_manage: boolean;
+}
+
+export interface MeetingMessage {
+  id: string;
+  meeting_id: string;
+  sender_id: string;
+  sender_name: string | null;
+  sender_email: string;
+  sender_avatar_url: string | null;
+  content: string;
+  created_at: string;
+}
+
+export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+
+export interface MeetingInvitation {
+  id: string;
+  meeting_id: string;
+  meeting_code: string;
+  meeting_title: string;
+  meeting_status: MeetingStatus;
+  inviter_id: string;
+  inviter_name: string | null;
+  inviter_email: string | null;
+  invitee_email: string;
+  invitee_user_id: string | null;
+  status: InvitationStatus;
+  created_at: string;
 }

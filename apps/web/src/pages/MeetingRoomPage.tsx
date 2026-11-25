@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { ConnectionState } from 'livekit-client';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  ChatIcon,
   CheckIcon,
   CopyIcon,
   LockIcon,
+  MailIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
   RefreshIcon,
   ScreenShareIcon,
+  SendIcon,
   ShieldIcon,
   UnlockIcon,
   UsersIcon,
@@ -22,15 +25,26 @@ import { VideoTile } from '../components/VideoTile';
 import { useAuth } from '../hooks/useAuth';
 import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
 import {
+  admitAllParticipants,
   admitParticipant,
   buildMeetingInviteUrl,
   endMeeting,
   getMeeting,
   leaveMeeting,
+  listMeetingInvitations,
+  listMessages,
+  muteParticipant,
   removeParticipant,
+  sendInvitation,
+  sendMessage,
   updateMeetingSettings,
+  updateParticipantRole,
   type MeetingDetail,
+  type MeetingInvitation,
+  type MeetingMessage,
 } from '../services/api';
+
+type SidebarTab = 'people' | 'chat' | 'invite';
 
 function formatElapsed(startedAt: string | null): string {
   if (!startedAt) return '00:00';
@@ -52,12 +66,26 @@ export function MeetingRoomPage() {
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
   const [showSidebar, setShowSidebar] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('people');
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [elapsed, setElapsed] = useState('00:00');
+
+  // Chat state
+  const [messages, setMessages] = useState<MeetingMessage[]>([]);
+  const [chatInput, setChatInput] = useState('');
+  const [sendingChat, setSendingChat] = useState(false);
+  const [lastReadCount, setLastReadCount] = useState(0);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Invitations state (for host/co-host)
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [sendingInvite, setSendingInvite] = useState(false);
+  const [sentInvitations, setSentInvitations] = useState<MeetingInvitation[]>([]);
 
   const isAdmittedAndActive = Boolean(
     meeting &&
@@ -79,6 +107,18 @@ export function MeetingRoomPage() {
       const detail = await getMeeting(session.access_token, code);
       setMeeting(detail);
       setError(null);
+
+      if (detail.is_host || detail.my_status === 'joined') {
+        const msgs = await listMessages(session.access_token, detail.code).catch(() => null);
+        if (msgs) setMessages(msgs);
+
+        if (detail.can_manage) {
+          const invs = await listMeetingInvitations(session.access_token, detail.code).catch(
+            () => null,
+          );
+          if (invs) setSentInvitations(invs);
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sync meeting room.');
     } finally {
@@ -90,7 +130,7 @@ export function MeetingRoomPage() {
     void fetchRoomState();
     const poll = setInterval(() => {
       void fetchRoomState();
-    }, 3000);
+    }, 2500);
     return () => clearInterval(poll);
   }, [fetchRoomState]);
 
@@ -103,7 +143,14 @@ export function MeetingRoomPage() {
     return () => clearInterval(tick);
   }, [meeting?.started_at]);
 
-  // If user is removed or not yet admitted, disconnect LiveKit and return to lobby
+  // Mark chat read when chat tab is visible
+  useEffect(() => {
+    if (showSidebar && sidebarTab === 'chat') {
+      setLastReadCount(messages.length);
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [showSidebar, sidebarTab, messages.length]);
+
   useEffect(() => {
     if (!meeting || meeting.status === 'ended') return;
     if (!meeting.is_host && meeting.my_status !== 'joined') {
@@ -111,6 +158,20 @@ export function MeetingRoomPage() {
       navigate(`/meet/${meeting.code}`, { replace: true });
     }
   }, [meeting, navigate, livekit]);
+
+  const showTempNotice = (msg: string) => {
+    setStatusNotice(msg);
+    setTimeout(() => setStatusNotice((prev) => (prev === msg ? null : prev)), 3000);
+  };
+
+  const openSidebarTab = (tab: SidebarTab) => {
+    if (showSidebar && sidebarTab === tab) {
+      setShowSidebar(false);
+    } else {
+      setSidebarTab(tab);
+      setShowSidebar(true);
+    }
+  };
 
   const handleCopyLink = async () => {
     if (!meeting) return;
@@ -181,6 +242,56 @@ export function MeetingRoomPage() {
     }
   };
 
+  const handleAdmitAll = async () => {
+    if (!session?.access_token || !meeting) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      const updated = await admitAllParticipants(session.access_token, meeting.code);
+      setMeeting(updated);
+      showTempNotice('Admitted all waiting guests.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to admit waiting guests.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleToggleCoHost = async (targetUserId: string, currentRole: string) => {
+    if (!session?.access_token || !meeting) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      const nextRole = currentRole === 'co_host' ? 'participant' : 'co_host';
+      const updated = await updateParticipantRole(
+        session.access_token,
+        meeting.code,
+        targetUserId,
+        nextRole,
+      );
+      setMeeting(updated);
+      showTempNotice(nextRole === 'co_host' ? 'Promoted to Co-Host.' : 'Removed Co-Host role.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update role.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleMuteParticipant = async (targetUserId: string, name: string) => {
+    if (!session?.access_token || !meeting) return;
+    setActionBusy(true);
+    setError(null);
+    try {
+      await muteParticipant(session.access_token, meeting.code, targetUserId);
+      showTempNotice(`Muted ${name}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mute participant.');
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
   const handleRemove = async (targetUserId: string) => {
     if (!session?.access_token || !meeting) return;
     setActionBusy(true);
@@ -207,6 +318,44 @@ export function MeetingRoomPage() {
       setError(err instanceof Error ? err.message : 'Failed to end meeting.');
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const handleSendChat = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!session?.access_token || !meeting || !chatInput.trim()) return;
+    setSendingChat(true);
+    setError(null);
+    try {
+      const created = await sendMessage(session.access_token, meeting.code, chatInput.trim());
+      setMessages((prev) => [...prev, created]);
+      setChatInput('');
+      setLastReadCount((prev) => prev + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message.');
+    } finally {
+      setSendingChat(false);
+    }
+  };
+
+  const handleSendInvite = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!session?.access_token || !meeting || !inviteEmail.trim()) return;
+    setSendingInvite(true);
+    setError(null);
+    try {
+      const { invitation: created, emailDelivery } = await sendInvitation(
+        session.access_token,
+        meeting.code,
+        inviteEmail.trim(),
+      );
+      setSentInvitations((prev) => [created, ...prev.filter((i) => i.id !== created.id)]);
+      setInviteEmail('');
+      showTempNotice(emailDelivery?.message || `Invitation sent to ${created.invitee_email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send invitation.');
+    } finally {
+      setSendingInvite(false);
     }
   };
 
@@ -245,6 +394,8 @@ export function MeetingRoomPage() {
 
   const joinedParticipants = meeting.participants.filter((p) => p.status === 'joined');
   const waitingParticipants = meeting.participants.filter((p) => p.status === 'waiting');
+  const unreadChatCount =
+    showSidebar && sidebarTab === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
   const isLiveKitConnected = livekit.connectionState === ConnectionState.Connected;
   const screenShares = livekit.participants.filter((p) => Boolean(p.screenShareTrack));
 
@@ -284,25 +435,39 @@ export function MeetingRoomPage() {
             onClick={() => void handleCopyLink()}
           >
             {copiedLink ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-            <span>{copiedLink ? 'Invite Copied' : 'Copy Invite Link'}</span>
+            <span>{copiedLink ? 'Invite Copied' : 'Copy Link'}</span>
           </button>
           <button
             type="button"
             className="btn btn-secondary btn-sm"
-            onClick={() => setShowSidebar((prev) => !prev)}
+            onClick={() => openSidebarTab('people')}
           >
             <UsersIcon size={14} />
             <span>
-              Participants ({joinedParticipants.length}
-              {waitingParticipants.length > 0 ? ` + ${waitingParticipants.length} waiting` : ''})
+              People ({joinedParticipants.length}
+              {waitingParticipants.length > 0 ? ` + ${waitingParticipants.length}` : ''})
             </span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => openSidebarTab('chat')}
+          >
+            <ChatIcon size={14} />
+            <span>Chat</span>
+            {unreadChatCount > 0 && <span className="unread-pill">{unreadChatCount}</span>}
           </button>
         </div>
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
+      {statusNotice && <div className="alert alert-success">{statusNotice}</div>}
+
       {livekit.mediaError && (
-        <div className="alert alert-warning" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+        <div
+          className="alert alert-warning"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+        >
           <span>{livekit.mediaError}</span>
           <button
             type="button"
@@ -318,9 +483,8 @@ export function MeetingRoomPage() {
       {livekit.isUnconfigured && (
         <div className="alert alert-warning">
           <strong>LiveKit keys not configured yet:</strong> Add <code>LIVEKIT_URL</code>,{' '}
-          <code>LIVEKIT_API_KEY</code>, and <code>LIVEKIT_API_SECRET</code> from{' '}
-          <strong>cloud.livekit.io</strong> into your root <code>.env</code> file and restart the
-          backend to activate live camera, microphone, and screen sharing.
+          <code>LIVEKIT_API_KEY</code>, and <code>LIVEKIT_API_SECRET</code> into your root{' '}
+          <code>.env</code> and restart the backend to activate live video.
         </div>
       )}
 
@@ -373,102 +537,296 @@ export function MeetingRoomPage() {
 
         {showSidebar && (
           <aside className="room-sidebar card">
-            {meeting.is_host && (
+            <div className="sidebar-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === 'people'}
+                className={`sidebar-tab ${sidebarTab === 'people' ? 'active' : ''}`}
+                onClick={() => setSidebarTab('people')}
+              >
+                <UsersIcon size={14} />
+                <span>People</span>
+                {waitingParticipants.length > 0 && (
+                  <span className="unread-pill">{waitingParticipants.length}</span>
+                )}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarTab === 'chat'}
+                className={`sidebar-tab ${sidebarTab === 'chat' ? 'active' : ''}`}
+                onClick={() => setSidebarTab('chat')}
+              >
+                <ChatIcon size={14} />
+                <span>Chat</span>
+                {unreadChatCount > 0 && <span className="unread-pill">{unreadChatCount}</span>}
+              </button>
+              {meeting.can_manage && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={sidebarTab === 'invite'}
+                  className={`sidebar-tab ${sidebarTab === 'invite' ? 'active' : ''}`}
+                  onClick={() => setSidebarTab('invite')}
+                >
+                  <MailIcon size={14} />
+                  <span>Invite</span>
+                </button>
+              )}
+            </div>
+
+            {sidebarTab === 'people' && (
+              <>
+                {meeting.can_manage && (
+                  <div className="sidebar-section">
+                    <h2 className="sidebar-title">
+                      <ShieldIcon size={15} /> {meeting.is_host ? 'Host Controls' : 'Co-Host Controls'}
+                    </h2>
+                    <div className="host-controls-stack">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm btn-full"
+                        disabled={actionBusy}
+                        onClick={() => void handleToggleLock()}
+                      >
+                        {meeting.is_locked ? <UnlockIcon size={14} /> : <LockIcon size={14} />}
+                        <span>{meeting.is_locked ? 'Unlock Meeting' : 'Lock Meeting'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm btn-full"
+                        disabled={actionBusy}
+                        onClick={() => void handleToggleWaitingRoom()}
+                      >
+                        <ShieldIcon size={14} />
+                        <span>
+                          {meeting.waiting_room_enabled
+                            ? 'Disable Waiting Room'
+                            : 'Enable Waiting Room'}
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {meeting.can_manage && waitingParticipants.length > 0 && (
+                  <div className="sidebar-section">
+                    <div className="card-header" style={{ marginBottom: 4 }}>
+                      <h2 className="sidebar-title">Waiting Room ({waitingParticipants.length})</h2>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={actionBusy}
+                        onClick={() => void handleAdmitAll()}
+                      >
+                        Admit All
+                      </button>
+                    </div>
+                    <div className="roster-list">
+                      {waitingParticipants.map((p) => (
+                        <div key={p.id} className="roster-row">
+                          <div className="roster-info">
+                            <div className="roster-name">{p.full_name || p.email}</div>
+                            <div className="roster-sub">Waiting to join</div>
+                          </div>
+                          <div className="roster-actions">
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              disabled={actionBusy}
+                              onClick={() => void handleAdmit(p.user_id)}
+                            >
+                              Admit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger-soft btn-sm"
+                              disabled={actionBusy}
+                              onClick={() => void handleRemove(p.user_id)}
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="sidebar-section">
+                  <h2 className="sidebar-title">In This Meeting ({joinedParticipants.length})</h2>
+                  <div className="roster-list">
+                    {joinedParticipants.map((p) => {
+                      const isMe = p.user_id === user?.id;
+                      const label = p.full_name || p.email;
+                      const isPrimaryHost = p.user_id === meeting.host_id;
+                      return (
+                        <div key={p.id} className="roster-row roster-row-col">
+                          <div className="roster-top-line">
+                            <div className="roster-info">
+                              <div className="roster-name">
+                                {label} {isMe ? '(You)' : ''}
+                              </div>
+                              <div className="roster-sub">
+                                {isPrimaryHost
+                                  ? 'Host'
+                                  : p.role === 'co_host'
+                                    ? 'Co-Host'
+                                    : 'Participant'}
+                              </div>
+                            </div>
+                            {isPrimaryHost ? (
+                              <span className="badge badge-success">Host</span>
+                            ) : p.role === 'co_host' ? (
+                              <span className="badge badge-warning">Co-Host</span>
+                            ) : null}
+                          </div>
+
+                          {meeting.can_manage && !isMe && !isPrimaryHost && (
+                            <div className="roster-actions-bar">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-xs"
+                                disabled={actionBusy}
+                                onClick={() => void handleMuteParticipant(p.user_id, label)}
+                                title="Mute participant microphone"
+                              >
+                                Mute
+                              </button>
+                              {meeting.is_host && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-xs"
+                                  disabled={actionBusy}
+                                  onClick={() => void handleToggleCoHost(p.user_id, p.role)}
+                                >
+                                  {p.role === 'co_host' ? 'Unset Co-Host' : 'Make Co-Host'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="btn btn-danger-soft btn-xs"
+                                disabled={actionBusy}
+                                onClick={() => void handleRemove(p.user_id)}
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {sidebarTab === 'chat' && (
+              <div className="chat-panel">
+                <div className="chat-messages">
+                  {messages.length === 0 ? (
+                    <div className="empty-state">
+                      No messages yet. Say hello to everyone in the meeting!
+                    </div>
+                  ) : (
+                    messages.map((msg) => {
+                      const isMine = msg.sender_id === user?.id;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`chat-bubble ${isMine ? 'chat-bubble-mine' : ''}`}
+                        >
+                          <div className="chat-bubble-meta">
+                            <span>{isMine ? 'You' : msg.sender_name || msg.sender_email}</span>
+                            <span>
+                              {new Date(msg.created_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <div className="chat-bubble-text">{msg.content}</div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                <form className="chat-form" onSubmit={handleSendChat}>
+                  <input
+                    type="text"
+                    className="input"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Send a message to everyone..."
+                    maxLength={2000}
+                  />
+                  <button
+                    type="submit"
+                    className="btn btn-primary btn-sm"
+                    disabled={sendingChat || !chatInput.trim()}
+                    title="Send message"
+                  >
+                    <SendIcon size={15} />
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {sidebarTab === 'invite' && meeting.can_manage && (
               <div className="sidebar-section">
                 <h2 className="sidebar-title">
-                  <ShieldIcon size={15} /> Host Controls
+                  <MailIcon size={15} /> Invite by Email
                 </h2>
-                <div className="host-controls-stack">
+                <form className="form" onSubmit={handleSendInvite}>
+                  <input
+                    type="email"
+                    className="input"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="teammate@example.com"
+                    required
+                  />
                   <button
-                    type="button"
-                    className="btn btn-secondary btn-sm btn-full"
-                    disabled={actionBusy}
-                    onClick={() => void handleToggleLock()}
+                    type="submit"
+                    className="btn btn-primary btn-sm btn-full"
+                    disabled={sendingInvite || !inviteEmail.trim()}
                   >
-                    {meeting.is_locked ? <UnlockIcon size={14} /> : <LockIcon size={14} />}
-                    <span>{meeting.is_locked ? 'Unlock Meeting' : 'Lock Meeting'}</span>
+                    {sendingInvite ? 'Sending...' : 'Send Meeting Invitation'}
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm btn-full"
-                    disabled={actionBusy}
-                    onClick={() => void handleToggleWaitingRoom()}
-                  >
-                    <ShieldIcon size={14} />
-                    <span>
-                      {meeting.waiting_room_enabled
-                        ? 'Disable Waiting Room'
-                        : 'Enable Waiting Room'}
-                    </span>
-                  </button>
+                </form>
+
+                <div className="roster-list" style={{ marginTop: 8 }}>
+                  {sentInvitations.length === 0 ? (
+                    <div className="status-item-desc">No email invitations sent yet.</div>
+                  ) : (
+                    sentInvitations.map((inv) => (
+                      <div key={inv.id} className="roster-row">
+                        <div className="roster-info">
+                          <div className="roster-name">{inv.invitee_email}</div>
+                          <div className="roster-sub">
+                            Sent {new Date(inv.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </div>
+                        <span
+                          className={`badge ${
+                            inv.status === 'accepted'
+                              ? 'badge-success'
+                              : inv.status === 'declined'
+                                ? 'badge-danger'
+                                : 'badge-warning'
+                          }`}
+                        >
+                          {inv.status}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}
-
-            {meeting.is_host && waitingParticipants.length > 0 && (
-              <div className="sidebar-section">
-                <h2 className="sidebar-title">Waiting Room ({waitingParticipants.length})</h2>
-                <div className="roster-list">
-                  {waitingParticipants.map((p) => (
-                    <div key={p.id} className="roster-row">
-                      <div className="roster-info">
-                        <div className="roster-name">{p.full_name || p.email}</div>
-                        <div className="roster-sub">Waiting to join</div>
-                      </div>
-                      <div className="roster-actions">
-                        <button
-                          type="button"
-                          className="btn btn-primary btn-sm"
-                          disabled={actionBusy}
-                          onClick={() => void handleAdmit(p.user_id)}
-                        >
-                          Admit
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-danger-soft btn-sm"
-                          disabled={actionBusy}
-                          onClick={() => void handleRemove(p.user_id)}
-                        >
-                          Deny
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="sidebar-section">
-              <h2 className="sidebar-title">In This Meeting ({joinedParticipants.length})</h2>
-              <div className="roster-list">
-                {joinedParticipants.map((p) => {
-                  const isMe = p.user_id === user?.id;
-                  return (
-                    <div key={p.id} className="roster-row">
-                      <div className="roster-info">
-                        <div className="roster-name">
-                          {p.full_name || p.email} {isMe ? '(You)' : ''}
-                        </div>
-                        <div className="roster-sub">
-                          {p.role === 'host' ? 'Host' : 'Participant'}
-                        </div>
-                      </div>
-                      {meeting.is_host && !isMe && (
-                        <button
-                          type="button"
-                          className="btn btn-danger-soft btn-sm"
-                          disabled={actionBusy}
-                          onClick={() => void handleRemove(p.user_id)}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
           </aside>
         )}
       </div>
@@ -509,6 +867,18 @@ export function MeetingRoomPage() {
             title={speakerMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
           >
             {speakerMuted ? <VolumeOffIcon size={18} /> : <VolumeIcon size={18} />}
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn media-btn-badge-wrap ${
+              showSidebar && sidebarTab === 'chat' ? 'media-btn-accent' : 'media-btn-on'
+            }`}
+            onClick={() => openSidebarTab('chat')}
+            title="Toggle in-meeting chat"
+          >
+            <ChatIcon size={18} />
+            {unreadChatCount > 0 && <span className="media-btn-dot">{unreadChatCount}</span>}
           </button>
         </div>
 

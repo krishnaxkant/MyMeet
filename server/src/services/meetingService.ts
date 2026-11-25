@@ -4,6 +4,7 @@ import {
   deleteLiveKitRoom,
   disconnectLiveKitParticipant,
   isLiveKitConfigured,
+  muteLiveKitParticipantAudio,
   type MeetingTokenResult,
 } from '../config/livekit.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
@@ -82,6 +83,7 @@ export interface MeetingSummary {
 export interface MeetingDetail extends MeetingSummary {
   participants: MeetingParticipantInfo[];
   is_host: boolean;
+  can_manage: boolean;
 }
 
 // Unambiguous 32-char Crockford-like alphabet (no 0/O, 1/I/L)
@@ -186,7 +188,9 @@ async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promis
   const rows = (participantRows ?? []) as ParticipantRow[];
   const myRow = rows.find((r) => r.user_id === viewerId) ?? null;
   const isHost = meeting.host_id === viewerId;
-  const canSeeRoster = isHost || myRow?.status === 'joined';
+  const isCoHost = !isHost && myRow?.role === 'co_host' && myRow?.status === 'joined';
+  const canManage = isHost || isCoHost;
+  const canSeeRoster = canManage || myRow?.status === 'joined';
 
   const profileIds = [meeting.host_id, ...(canSeeRoster ? rows.map((r) => r.user_id) : [])];
   const profilesMap = await fetchProfilesMap(profileIds);
@@ -196,7 +200,7 @@ async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promis
 
   const participants: MeetingParticipantInfo[] = canSeeRoster
     ? rows
-        .filter((r) => r.status === 'joined' || (isHost && r.status === 'waiting'))
+        .filter((r) => r.status === 'joined' || (canManage && r.status === 'waiting'))
         .map((r) => {
           const p = profilesMap.get(r.user_id);
           return {
@@ -225,6 +229,7 @@ async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promis
     my_role: isHost ? 'host' : myRow?.role ?? null,
     my_status: myRow?.status ?? null,
     is_host: isHost,
+    can_manage: canManage,
     participants,
   };
 }
@@ -483,17 +488,33 @@ export async function leaveMeeting(rawCode: string, userId: string): Promise<voi
   }
 }
 
+async function assertCanManageMeeting(meeting: MeetingRow, actorId: string): Promise<void> {
+  if (meeting.host_id === actorId) return;
+
+  const supabase = requireSupabase();
+  const { data } = await supabase
+    .from('meeting_participants')
+    .select('role, status')
+    .eq('meeting_id', meeting.id)
+    .eq('user_id', actorId)
+    .maybeSingle<{ role: ParticipantRole; status: ParticipantStatus }>();
+
+  if (data?.role === 'co_host' && data?.status === 'joined') {
+    return;
+  }
+
+  throw new HttpError(403, 'Only the meeting host or a co-host can perform this action.');
+}
+
 export async function updateMeetingSettings(
   rawCode: string,
-  hostId: string,
+  actorId: string,
   updates: { title?: string; is_locked?: boolean; waiting_room_enabled?: boolean },
 ): Promise<MeetingDetail> {
   const supabase = requireSupabase();
   const meeting = await fetchMeetingRowByCode(rawCode);
 
-  if (meeting.host_id !== hostId) {
-    throw new HttpError(403, 'Only the meeting host can change meeting settings.');
-  }
+  await assertCanManageMeeting(meeting, actorId);
 
   if (meeting.status === 'ended') {
     throw new HttpError(410, 'Cannot modify settings of an ended meeting.');
@@ -528,20 +549,18 @@ export async function updateMeetingSettings(
     throw new HttpError(500, `Failed to update meeting settings: ${error?.message ?? 'Unknown'}`);
   }
 
-  return buildMeetingDetail(updated, hostId);
+  return buildMeetingDetail(updated, actorId);
 }
 
 export async function admitParticipant(
   rawCode: string,
-  hostId: string,
+  actorId: string,
   targetUserId: string,
 ): Promise<MeetingDetail> {
   const supabase = requireSupabase();
   const meeting = await fetchMeetingRowByCode(rawCode);
 
-  if (meeting.host_id !== hostId) {
-    throw new HttpError(403, 'Only the meeting host can admit participants.');
-  }
+  await assertCanManageMeeting(meeting, actorId);
 
   if (meeting.status === 'ended') {
     throw new HttpError(410, 'This meeting has already ended.');
@@ -561,23 +580,101 @@ export async function admitParticipant(
     throw new HttpError(500, `Failed to admit participant: ${error.message}`);
   }
 
-  return buildMeetingDetail(meeting, hostId);
+  return buildMeetingDetail(meeting, actorId);
 }
 
-export async function removeParticipant(
+export async function admitAllParticipants(
+  rawCode: string,
+  actorId: string,
+): Promise<MeetingDetail> {
+  const supabase = requireSupabase();
+  const meeting = await fetchMeetingRowByCode(rawCode);
+
+  await assertCanManageMeeting(meeting, actorId);
+
+  if (meeting.status === 'ended') {
+    throw new HttpError(410, 'This meeting has already ended.');
+  }
+
+  const { error } = await supabase
+    .from('meeting_participants')
+    .update({
+      status: 'joined',
+      joined_at: new Date().toISOString(),
+      left_at: null,
+    })
+    .eq('meeting_id', meeting.id)
+    .eq('status', 'waiting');
+
+  if (error) {
+    throw new HttpError(500, `Failed to admit waiting participants: ${error.message}`);
+  }
+
+  return buildMeetingDetail(meeting, actorId);
+}
+
+export async function updateParticipantRole(
   rawCode: string,
   hostId: string,
   targetUserId: string,
+  role: 'co_host' | 'participant',
 ): Promise<MeetingDetail> {
   const supabase = requireSupabase();
   const meeting = await fetchMeetingRowByCode(rawCode);
 
   if (meeting.host_id !== hostId) {
-    throw new HttpError(403, 'Only the meeting host can remove participants.');
+    throw new HttpError(403, 'Only the primary host can assign or remove co-hosts.');
   }
 
   if (targetUserId === hostId) {
-    throw new HttpError(400, 'The host cannot remove themselves. Use End Meeting instead.');
+    throw new HttpError(400, 'Cannot change the primary host role.');
+  }
+
+  const { error } = await supabase
+    .from('meeting_participants')
+    .update({ role })
+    .eq('meeting_id', meeting.id)
+    .eq('user_id', targetUserId);
+
+  if (error) {
+    throw new HttpError(500, `Failed to update participant role: ${error.message}`);
+  }
+
+  return buildMeetingDetail(meeting, hostId);
+}
+
+export async function muteParticipantAudio(
+  rawCode: string,
+  actorId: string,
+  targetUserId: string,
+): Promise<{ ok: true; mutedTracks: number }> {
+  const meeting = await fetchMeetingRowByCode(rawCode);
+  await assertCanManageMeeting(meeting, actorId);
+
+  if (targetUserId === meeting.host_id && actorId !== meeting.host_id) {
+    throw new HttpError(403, 'Co-hosts cannot mute the primary host.');
+  }
+
+  const result = await muteLiveKitParticipantAudio(meeting.code, targetUserId);
+  return { ok: true, mutedTracks: result.mutedTracks };
+}
+
+export async function removeParticipant(
+  rawCode: string,
+  actorId: string,
+  targetUserId: string,
+): Promise<MeetingDetail> {
+  const supabase = requireSupabase();
+  const meeting = await fetchMeetingRowByCode(rawCode);
+
+  await assertCanManageMeeting(meeting, actorId);
+
+  if (targetUserId === meeting.host_id) {
+    throw new HttpError(400, 'The primary host cannot be removed. Use End Meeting instead.');
+  }
+
+  if (targetUserId === actorId) {
+    throw new HttpError(400, 'Use Leave Meeting to exit the call.');
   }
 
   const { error } = await supabase
@@ -595,7 +692,7 @@ export async function removeParticipant(
 
   await disconnectLiveKitParticipant(meeting.code, targetUserId);
 
-  return buildMeetingDetail(meeting, hostId);
+  return buildMeetingDetail(meeting, actorId);
 }
 
 export async function endMeeting(rawCode: string, hostId: string): Promise<MeetingDetail> {

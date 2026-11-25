@@ -5,6 +5,7 @@ import {
   CopyIcon,
   KeyboardIcon,
   LockIcon,
+  MailIcon,
   RefreshIcon,
   ShieldIcon,
   UsersIcon,
@@ -17,7 +18,10 @@ import {
   createMeeting,
   extractMeetingCode,
   listMeetings,
+  listMyInvitations,
+  respondToInvitation,
   type HealthResponse,
+  type MeetingInvitation,
   type MeetingSummary,
 } from '../services/api';
 
@@ -41,6 +45,8 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
 
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
+  const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const displayName =
@@ -59,14 +65,38 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
     if (!session?.access_token) return;
     setMeetingsLoading(true);
     try {
-      const list = await listMeetings(session.access_token);
+      const [list, invites] = await Promise.all([
+        listMeetings(session.access_token),
+        listMyInvitations(session.access_token).catch(() => []),
+      ]);
       setMeetings(list);
+      setInvitations(invites);
     } catch (err) {
       console.warn('[meetings] Failed to load recent meetings:', err);
     } finally {
       setMeetingsLoading(false);
     }
   }, [session?.access_token]);
+
+  const handleRespondInvite = async (
+    invitation: MeetingInvitation,
+    action: 'accepted' | 'declined',
+  ) => {
+    if (!session?.access_token) return;
+    setInviteBusyId(invitation.id);
+    setActionError(null);
+    try {
+      const updated = await respondToInvitation(session.access_token, invitation.id, action);
+      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (action === 'accepted') {
+        navigate(`/meet/${invitation.meeting_code}`);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
+    } finally {
+      setInviteBusyId(null);
+    }
+  };
 
   useEffect(() => {
     void loadMeetings();
@@ -203,6 +233,66 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
               </div>
             </div>
           </form>
+        )}
+
+        {invitations.filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
+          .length > 0 && (
+          <section className="card" style={{ marginTop: 20 }}>
+            <div className="card-header" style={{ marginBottom: 12 }}>
+              <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MailIcon size={16} />
+                <span>Meeting Invitations</span>
+              </h2>
+              <span className="badge badge-warning">
+                {
+                  invitations.filter(
+                    (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
+                  ).length
+                }{' '}
+                pending
+              </span>
+            </div>
+
+            <div className="meeting-list">
+              {invitations
+                .filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
+                .map((inv) => (
+                  <div key={inv.id} className="meeting-row">
+                    <div className="meeting-row-main">
+                      <div className="meeting-row-title">
+                        <span>{inv.meeting_title}</span>
+                        <span className="badge badge-success">Invited</span>
+                      </div>
+                      <div className="meeting-row-meta">
+                        <span>
+                          From <strong>{inv.inviter_name || inv.inviter_email || 'Host'}</strong>
+                        </span>
+                        <span>·</span>
+                        <code>{inv.meeting_code}</code>
+                      </div>
+                    </div>
+                    <div className="meeting-row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={inviteBusyId === inv.id}
+                        onClick={() => void handleRespondInvite(inv, 'accepted')}
+                      >
+                        Accept & Join
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger-soft btn-sm"
+                        disabled={inviteBusyId === inv.id}
+                        onClick={() => void handleRespondInvite(inv, 'declined')}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </section>
         )}
 
         <section className="card" style={{ marginTop: 24 }}>
