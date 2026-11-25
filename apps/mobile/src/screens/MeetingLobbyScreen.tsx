@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { BackButton } from '../components/BackButton';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -94,15 +95,7 @@ export function MeetingLobbyScreen({ code, onBack, onEnterRoom }: MeetingLobbySc
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <View style={styles.topBar}>
-        <Pressable
-          style={[
-            styles.secondaryButton,
-            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
-          ]}
-          onPress={onBack}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>← Dashboard</Text>
-        </Pressable>
+        <BackButton label="Home" onPress={onBack} />
         {meeting && (
           <Pressable
             style={[

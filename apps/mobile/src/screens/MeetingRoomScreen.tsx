@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
+  PermissionsAndroid,
   Platform,
   Pressable,
   ScrollView,
@@ -11,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -34,8 +37,15 @@ import {
   type MeetingMediaToken,
   type MeetingMessage,
 } from '../services/api';
+import { buildLiveKitStageHtml } from '../utils/livekitStageHtml';
 
-type RoomTab = 'people' | 'chat' | 'invite';
+type SheetTab = 'people' | 'chat' | 'invite' | 'leave' | null;
+
+interface WebViewHandle {
+  injectJavaScript: (script: string) => void;
+}
+
+const StageWebView = WebView as unknown as ComponentType<Record<string, unknown>>;
 
 interface MeetingRoomScreenProps {
   code: string;
@@ -56,6 +66,13 @@ function formatElapsed(startedAt: string | null): string {
   return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'M';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 export function MeetingRoomScreen({
   code,
   initialMicEnabled,
@@ -64,21 +81,26 @@ export function MeetingRoomScreen({
   onBackToLobby,
   onOpenHistory,
 }: MeetingRoomScreenProps) {
-  const { session, user } = useAuth();
+  const { session, user, profile } = useAuth();
   const { colors } = useTheme();
+  const webViewRef = useRef<WebViewHandle | null>(null);
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
   const [micEnabled, setMicEnabled] = useState(initialMicEnabled);
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const [permissionsReady, setPermissionsReady] = useState(Platform.OS !== 'android');
   const [mediaToken, setMediaToken] = useState<MeetingMediaToken | null>(null);
+  const [mediaConnected, setMediaConnected] = useState(false);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState('00:00');
 
-  const [activeTab, setActiveTab] = useState<RoomTab>('people');
+  const [activeSheet, setActiveSheet] = useState<SheetTab>(null);
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
   const [chatText, setChatText] = useState('');
   const [sendingChat, setSendingChat] = useState(false);
@@ -88,10 +110,36 @@ export function MeetingRoomScreen({
   const [sendingInvite, setSendingInvite] = useState(false);
   const [sentInvitations, setSentInvitations] = useState<MeetingInvitation[]>([]);
 
+  const myDisplayName =
+    profile?.full_name ||
+    (user?.user_metadata?.full_name as string | undefined) ||
+    user?.email ||
+    'You';
+
   const showTempNotice = (msg: string) => {
     setNotice(msg);
-    setTimeout(() => setNotice((prev) => (prev === msg ? null : prev)), 3000);
+    setTimeout(() => setNotice((prev) => (prev === msg ? null : prev)), 3500);
   };
+
+  // Request Android runtime mic & camera permissions BEFORE mounting live WebView stage
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      setPermissionsReady(true);
+      return;
+    }
+    let cancelled = false;
+    void PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+    ])
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPermissionsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadRoom = useCallback(async () => {
     if (!session?.access_token) return;
@@ -136,10 +184,10 @@ export function MeetingRoomScreen({
   }, [meeting?.started_at]);
 
   useEffect(() => {
-    if (activeTab === 'chat') {
+    if (activeSheet === 'chat') {
       setLastReadCount(messages.length);
     }
-  }, [activeTab, messages.length]);
+  }, [activeSheet, messages.length]);
 
   useEffect(() => {
     if (!session?.access_token || !meeting || meeting.status !== 'active') return;
@@ -170,6 +218,69 @@ export function MeetingRoomScreen({
     }
   }, [meeting, onBackToLobby]);
 
+  const stageHtml = useMemo(() => {
+    if (!mediaToken) return null;
+    return buildLiveKitStageHtml({
+      url: mediaToken.url,
+      token: mediaToken.token,
+      initialMic: initialMicEnabled,
+      initialCam: initialCamEnabled,
+      localName: myDisplayName,
+    });
+  }, [mediaToken, initialMicEnabled, initialCamEnabled, myDisplayName]);
+
+  const sendStageCommand = (type: string, value?: boolean) => {
+    const js = `window.handleNativeCommand && window.handleNativeCommand(${JSON.stringify({
+      type,
+      value,
+    })}); true;`;
+    webViewRef.current?.injectJavaScript(js);
+  };
+
+  const handleToggleMic = () => {
+    const next = !micEnabled;
+    setMicEnabled(next);
+    sendStageCommand('setMic', next);
+  };
+
+  const handleToggleCam = () => {
+    const next = !camEnabled;
+    setCamEnabled(next);
+    sendStageCommand('setCam', next);
+  };
+
+  const handleToggleSpeaker = () => {
+    const next = !speakerMuted;
+    setSpeakerMuted(next);
+    sendStageCommand('setSpeaker', next);
+  };
+
+  const handleStageMessage = (event: { nativeEvent?: { data?: string } }) => {
+    try {
+      const raw = event.nativeEvent?.data;
+      if (!raw) return;
+      const msg = JSON.parse(raw) as {
+        type?: string;
+        micEnabled?: boolean;
+        camEnabled?: boolean;
+        message?: string;
+      };
+      if (msg.type === 'connected') {
+        setMediaConnected(true);
+        setMediaNotice(null);
+      } else if (msg.type === 'disconnected') {
+        setMediaConnected(false);
+      } else if (msg.type === 'mediaState') {
+        if (typeof msg.micEnabled === 'boolean') setMicEnabled(msg.micEnabled);
+        if (typeof msg.camEnabled === 'boolean') setCamEnabled(msg.camEnabled);
+      } else if (msg.type === 'error' && msg.message) {
+        setMediaNotice(msg.message);
+      }
+    } catch {
+      // Ignore malformed stage messages
+    }
+  };
+
   const handleShare = async () => {
     if (!meeting) return;
     await Share.share({
@@ -178,11 +289,28 @@ export function MeetingRoomScreen({
   };
 
   const handleLeave = async () => {
+    setActiveSheet(null);
+    sendStageCommand('disconnect');
     if (session?.access_token && meeting) {
       setBusy(true);
       await leaveMeeting(session.access_token, meeting.code).catch(() => {});
     }
     onExit();
+  };
+
+  const handleEndForAll = async () => {
+    if (!session?.access_token || !meeting) return;
+    setActiveSheet(null);
+    sendStageCommand('disconnect');
+    setBusy(true);
+    try {
+      const updated = await endMeeting(session.access_token, meeting.code);
+      setMeeting(updated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to end meeting.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const handleToggleLock = async () => {
@@ -288,19 +416,6 @@ export function MeetingRoomScreen({
     }
   };
 
-  const handleEndForAll = async () => {
-    if (!session?.access_token || !meeting) return;
-    setBusy(true);
-    try {
-      const updated = await endMeeting(session.access_token, meeting.code);
-      setMeeting(updated);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to end meeting.');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const handleSendChat = async () => {
     if (!session?.access_token || !meeting || !chatText.trim()) return;
     setSendingChat(true);
@@ -341,7 +456,7 @@ export function MeetingRoomScreen({
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={colors.accent} />
-        <Text style={[styles.subText, { color: colors.textMuted }]}>Joining room...</Text>
+        <Text style={[styles.subText, { color: colors.textMuted }]}>Entering meeting room...</Text>
       </View>
     );
   }
@@ -349,7 +464,7 @@ export function MeetingRoomScreen({
   if (!meeting || meeting.status === 'ended') {
     return (
       <View style={styles.center}>
-        <Text style={[styles.title, { color: colors.text }]}>
+        <Text style={[styles.endedTitle, { color: colors.text }]}>
           {meeting ? 'Meeting Ended' : 'Meeting Unavailable'}
         </Text>
         <Text style={[styles.subText, { color: colors.textMuted, textAlign: 'center' }]}>
@@ -367,12 +482,12 @@ export function MeetingRoomScreen({
         )}
         <Pressable
           style={[
-            styles.smallBtn,
-            { backgroundColor: colors.surface, borderColor: colors.borderStrong, paddingVertical: 11, paddingHorizontal: 20 },
+            styles.outlineBtn,
+            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
           ]}
           onPress={onExit}
         >
-          <Text style={[styles.smallBtnText, { color: colors.text }]}>Back to Home</Text>
+          <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Back to Home</Text>
         </Pressable>
       </View>
     );
@@ -380,511 +495,578 @@ export function MeetingRoomScreen({
 
   const joined = meeting.participants.filter((p) => p.status === 'joined');
   const waiting = meeting.participants.filter((p) => p.status === 'waiting');
-  const unreadChat = activeTab === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
+  const unreadChat = activeSheet === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.flex1}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={styles.headerRow}>
-            <View style={styles.flex1}>
-              <Text style={[styles.title, { color: colors.text }]}>{meeting.title}</Text>
-              <Text style={[styles.subText, { color: colors.textMuted }]}>
-                {meeting.code} · {elapsed} · {joined.length} in call
-              </Text>
+    <View style={styles.roomShell}>
+      {/* Compact Google-Meet-Style Top Bar */}
+      <View style={styles.roomTopBar}>
+        <View style={styles.flex1}>
+          <View style={styles.roomTitleLine}>
+            <Text style={styles.roomTitle} numberOfLines={1}>
+              {meeting.title}
+            </Text>
+            <View style={[styles.liveChip, !mediaConnected && styles.liveChipConnecting]}>
+              <View style={[styles.liveDot, !mediaConnected && styles.liveDotWarn]} />
+              <Text style={styles.liveChipText}>{mediaConnected ? 'LIVE' : 'CONNECTING'}</Text>
             </View>
-            <Pressable
-              style={[
-                styles.smallBtn,
-                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-              ]}
-              onPress={() => void handleShare()}
-            >
-              <Text style={[styles.smallBtnText, { color: colors.text }]}>Share</Text>
-            </Pressable>
           </View>
-
-          <View style={styles.mediaRow}>
-            <Pressable
-              style={[styles.mediaBtn, micEnabled ? styles.mediaOn : styles.mediaOff]}
-              onPress={() => setMicEnabled((p) => !p)}
-            >
-              <Text style={styles.mediaText}>{micEnabled ? 'Mic On' : 'Muted'}</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.mediaBtn, camEnabled ? styles.mediaOn : styles.mediaOff]}
-              onPress={() => setCamEnabled((p) => !p)}
-            >
-              <Text style={styles.mediaText}>{camEnabled ? 'Cam On' : 'Cam Off'}</Text>
-            </Pressable>
-          </View>
-
-          <View
-            style={[
-              styles.rosterRow,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.flex1}>
-              <Text style={[styles.rosterName, { color: colors.text }]}>LiveKit SFU Media</Text>
-              <Text style={[styles.subText, { color: colors.textMuted }]}>
-                {mediaToken
-                  ? `Token ready (${Math.round(mediaToken.expiresInSeconds / 60)}m). Native video uses an Expo Dev Build.`
-                  : mediaNotice ?? 'Requesting LiveKit room token...'}
-              </Text>
-            </View>
-            <StatusBadge
-              label={mediaToken ? 'Token Ready' : 'Setup'}
-              tone={mediaToken ? 'success' : 'warning'}
-            />
-          </View>
+          <Text style={styles.roomSub}>
+            {meeting.code} · {elapsed} · {joined.length} in call
+          </Text>
         </View>
 
-        {error && (
-          <View
-            style={[
-              styles.alert,
-              { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
-            ]}
-          >
-            <Text style={{ color: colors.dangerText, fontSize: 13 }}>{error}</Text>
-          </View>
-        )}
+        <Pressable style={styles.topShareBtn} onPress={() => void handleShare()}>
+          <Text style={styles.topShareText}>Share</Text>
+        </Pressable>
+      </View>
 
-        {notice && (
-          <View
-            style={[
-              styles.alert,
-              { backgroundColor: colors.successBg, borderColor: colors.successBorder },
-            ]}
-          >
-            <Text style={{ color: colors.successText, fontSize: 13 }}>{notice}</Text>
-          </View>
-        )}
+      {/* Waiting Room Quick Banner for Host/Co-Host */}
+      {meeting.can_manage && waiting.length > 0 && (
+        <Pressable style={styles.waitingAlertBar} onPress={() => setActiveSheet('people')}>
+          <Text style={styles.waitingAlertText}>
+            {waiting.length} {waiting.length === 1 ? 'person is' : 'people are'} waiting to join
+          </Text>
+          <Text style={styles.waitingAlertAction}>Review →</Text>
+        </Pressable>
+      )}
 
-        <View
-          style={[
-            styles.tabs,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-          ]}
-        >
-          <Pressable
-            style={[
-              styles.tab,
-              activeTab === 'people' && { backgroundColor: colors.surface },
-            ]}
-            onPress={() => setActiveTab('people')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'people' ? colors.text : colors.textMuted },
-              ]}
-            >
-              People ({joined.length}
-              {waiting.length > 0 ? `+${waiting.length}` : ''})
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.tab,
-              activeTab === 'chat' && { backgroundColor: colors.surface },
-            ]}
-            onPress={() => setActiveTab('chat')}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                { color: activeTab === 'chat' ? colors.text : colors.textMuted },
-              ]}
-            >
-              Chat{unreadChat > 0 ? ` (${unreadChat})` : ''}
-            </Text>
-          </Pressable>
-
-          {meeting.can_manage && (
-            <Pressable
-              style={[
-                styles.tab,
-                activeTab === 'invite' && { backgroundColor: colors.surface },
-              ]}
-              onPress={() => setActiveTab('invite')}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  { color: activeTab === 'invite' ? colors.text : colors.textMuted },
-                ]}
-              >
-                Invite
-              </Text>
-            </Pressable>
-          )}
+      {notice && (
+        <View style={styles.toastBar}>
+          <Text style={styles.toastText}>{notice}</Text>
         </View>
+      )}
 
-        {activeTab === 'people' && (
-          <>
-            {meeting.can_manage && (
-              <View
-                style={[
-                  styles.card,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                  {meeting.is_host ? 'Host Controls' : 'Co-Host Controls'}
-                </Text>
-                <View style={styles.hostRow}>
-                  <Pressable
-                    style={[
-                      styles.hostBtn,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
-                    ]}
-                    disabled={busy}
-                    onPress={() => void handleToggleLock()}
-                  >
-                    <Text style={[styles.hostBtnText, { color: colors.text }]}>
-                      {meeting.is_locked ? 'Unlock Room' : 'Lock Room'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.hostBtn,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
-                    ]}
-                    disabled={busy}
-                    onPress={() => void handleToggleWaitingRoom()}
-                  >
-                    <Text style={[styles.hostBtnText, { color: colors.text }]}>
-                      {meeting.waiting_room_enabled ? 'Waiting: ON' : 'Waiting: OFF'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
+      {(error || mediaNotice) && (
+        <View style={styles.errorBar}>
+          <Text style={styles.errorBarText}>{error || mediaNotice}</Text>
+        </View>
+      )}
 
-            {meeting.can_manage && waiting.length > 0 && (
-              <View
-                style={[
-                  styles.card,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.headerRow}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Waiting Room ({waiting.length})
-                  </Text>
-                  <Pressable
-                    style={[styles.admitBtn, { backgroundColor: colors.accent }]}
-                    disabled={busy}
-                    onPress={() => void handleAdmitAll()}
-                  >
-                    <Text style={styles.admitText}>Admit All</Text>
-                  </Pressable>
-                </View>
-
-                {waiting.map((p) => (
-                  <View
-                    key={p.id}
-                    style={[
-                      styles.rosterRow,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                    ]}
-                  >
-                    <View style={styles.flex1}>
-                      <Text style={[styles.rosterName, { color: colors.text }]}>
-                        {p.full_name || p.email}
-                      </Text>
-                      <Text style={[styles.subText, { color: colors.textMuted }]}>
-                        Waiting to join
-                      </Text>
-                    </View>
-                    <Pressable
-                      style={[styles.admitBtn, { backgroundColor: colors.accent }]}
-                      disabled={busy}
-                      onPress={() => void handleAdmit(p.user_id)}
-                    >
-                      <Text style={styles.admitText}>Admit</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.denyBtn,
-                        { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
-                      ]}
-                      disabled={busy}
-                      onPress={() => void handleRemove(p.user_id)}
-                    >
-                      <Text style={[styles.denyText, { color: colors.dangerText }]}>Deny</Text>
-                    </Pressable>
+      {/* Main Full-Screen Google-Meet Video Blocks Stage */}
+      <View style={styles.stageContainer}>
+        {stageHtml && permissionsReady ? (
+          <StageWebView
+            ref={webViewRef}
+            source={{ html: stageHtml, baseUrl: 'https://localhost' }}
+            style={styles.stageWebView}
+            originWhitelist={['*']}
+            javaScriptEnabled
+            domStorageEnabled
+            allowsInlineMediaPlayback
+            mediaPlaybackRequiresUserAction={false}
+            mediaCapturePermissionGrantType="grant"
+            mixedContentMode="compatibility"
+            onMessage={handleStageMessage}
+            scrollEnabled={false}
+          />
+        ) : (
+          /* Fallback native participant blocks grid while connecting LiveKit token */
+          <ScrollView contentContainerStyle={styles.fallbackBlocksGrid}>
+            {joined.map((p) => {
+              const isMe = p.user_id === user?.id;
+              const name = p.full_name || p.email;
+              return (
+                <View key={p.id} style={[styles.fallbackTile, isMe && styles.fallbackTileMe]}>
+                  <View style={styles.fallbackAvatar}>
+                    <Text style={styles.fallbackAvatarText}>{getInitials(name)}</Text>
                   </View>
-                ))}
-              </View>
-            )}
+                  <View style={styles.fallbackFooter}>
+                    <Text style={styles.fallbackName} numberOfLines={1}>
+                      {isMe ? `${name} (You)` : name}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </View>
 
-            <View
-              style={[
-                styles.card,
-                { backgroundColor: colors.surface, borderColor: colors.border },
-              ]}
-            >
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                Participants ({joined.length})
+      {/* Bottom Google-Meet Floating Control Dock */}
+      <View style={styles.controlDock}>
+        <Pressable
+          style={[styles.dockBtn, !micEnabled && styles.dockBtnDanger]}
+          onPress={handleToggleMic}
+          accessibilityLabel={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+        >
+          <Text style={styles.dockIcon}>{micEnabled ? '🎙' : '🔇'}</Text>
+          <Text style={styles.dockLabel}>{micEnabled ? 'Mic' : 'Muted'}</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.dockBtn, !camEnabled && styles.dockBtnDanger]}
+          onPress={handleToggleCam}
+          accessibilityLabel={camEnabled ? 'Turn off camera' : 'Turn on camera'}
+        >
+          <Text style={styles.dockIcon}>{camEnabled ? '📹' : '📷'}</Text>
+          <Text style={styles.dockLabel}>{camEnabled ? 'Cam' : 'Off'}</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.dockBtn, speakerMuted && styles.dockBtnWarn]}
+          onPress={handleToggleSpeaker}
+          accessibilityLabel={speakerMuted ? 'Unmute speaker' : 'Mute speaker'}
+        >
+          <Text style={styles.dockIcon}>{speakerMuted ? '🔈' : '🔊'}</Text>
+          <Text style={styles.dockLabel}>{speakerMuted ? 'Quiet' : 'Audio'}</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.dockBtn}
+          onPress={() => setActiveSheet('people')}
+          accessibilityLabel="Participants and host controls"
+        >
+          <Text style={styles.dockIcon}>👥</Text>
+          <Text style={styles.dockLabel}>People</Text>
+          {(joined.length > 0 || waiting.length > 0) && (
+            <View style={[styles.dockBadge, waiting.length > 0 && styles.dockBadgeAlert]}>
+              <Text style={styles.dockBadgeText}>
+                {waiting.length > 0 ? `+${waiting.length}` : joined.length}
               </Text>
-              {joined.map((p) => {
-                const isMe = p.user_id === user?.id;
-                const label = p.full_name || p.email;
-                const isPrimaryHost = p.user_id === meeting.host_id;
-                return (
-                  <View
-                    key={p.id}
-                    style={[
-                      styles.rosterCardCol,
-                      { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                    ]}
-                  >
-                    <View style={styles.headerRow}>
-                      <View style={styles.flex1}>
-                        <Text style={[styles.rosterName, { color: colors.text }]}>
-                          {label} {isMe ? '(You)' : ''}
-                        </Text>
-                        <Text style={[styles.subText, { color: colors.textMuted }]}>
-                          {isPrimaryHost
-                            ? 'Host'
-                            : p.role === 'co_host'
-                              ? 'Co-Host'
-                              : 'Participant'}
-                        </Text>
-                      </View>
-                      {isPrimaryHost ? (
-                        <StatusBadge label="Host" tone="success" />
-                      ) : p.role === 'co_host' ? (
-                        <StatusBadge label="Co-Host" tone="warning" />
-                      ) : null}
-                    </View>
+            </View>
+          )}
+        </Pressable>
 
-                    {meeting.can_manage && !isMe && !isPrimaryHost && (
-                      <View style={styles.actionChipsRow}>
+        <Pressable
+          style={styles.dockBtn}
+          onPress={() => setActiveSheet('chat')}
+          accessibilityLabel="In-meeting chat"
+        >
+          <Text style={styles.dockIcon}>💬</Text>
+          <Text style={styles.dockLabel}>Chat</Text>
+          {unreadChat > 0 && (
+            <View style={[styles.dockBadge, styles.dockBadgeAlert]}>
+              <Text style={styles.dockBadgeText}>{unreadChat}</Text>
+            </View>
+          )}
+        </Pressable>
+
+        {meeting.can_manage && (
+          <Pressable
+            style={styles.dockBtn}
+            onPress={() => setActiveSheet('invite')}
+            accessibilityLabel="Invite participants"
+          >
+            <Text style={styles.dockIcon}>✉</Text>
+            <Text style={styles.dockLabel}>Invite</Text>
+          </Pressable>
+        )}
+
+        <Pressable
+          style={styles.dockEndBtn}
+          disabled={busy}
+          onPress={() => (meeting.is_host ? setActiveSheet('leave') : void handleLeave())}
+          accessibilityLabel="Leave or end meeting"
+        >
+          <Text style={styles.dockIcon}>📞</Text>
+          <Text style={styles.dockLabel}>{meeting.is_host ? 'End' : 'Leave'}</Text>
+        </Pressable>
+      </View>
+
+      {/* Slide-Up Bottom Sheet for People / Host Controls / Chat / Invite / Leave */}
+      <Modal
+        visible={activeSheet !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setActiveSheet(null)}
+      >
+        <KeyboardAvoidingView
+          style={styles.sheetOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.sheetBackdropTap} onPress={() => setActiveSheet(null)} />
+          <View
+            style={[
+              styles.sheetCard,
+              { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+            ]}
+          >
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>
+                {activeSheet === 'people'
+                  ? `People (${joined.length})`
+                  : activeSheet === 'chat'
+                    ? 'In-Meeting Chat'
+                    : activeSheet === 'invite'
+                      ? 'Invite by Email'
+                      : 'Leave or End Meeting'}
+              </Text>
+              <Pressable
+                style={[
+                  styles.closeSheetBtn,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                ]}
+                onPress={() => setActiveSheet(null)}
+              >
+                <Text style={{ color: colors.text, fontSize: 12, fontWeight: '700' }}>Close</Text>
+              </Pressable>
+            </View>
+
+            {activeSheet === 'leave' ? (
+              <View style={styles.leaveSheetBody}>
+                <Pressable
+                  style={styles.endAllBtn}
+                  disabled={busy}
+                  onPress={() => void handleEndForAll()}
+                >
+                  <Text style={styles.endAllBtnText}>End Meeting for Everyone</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.justLeaveBtn,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+                  ]}
+                  disabled={busy}
+                  onPress={() => void handleLeave()}
+                >
+                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>
+                    Just Leave Meeting
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <ScrollView
+                style={styles.sheetScroll}
+                contentContainerStyle={styles.sheetScrollContent}
+                keyboardShouldPersistTaps="handled"
+              >
+                {activeSheet === 'people' && (
+                  <>
+                    {meeting.can_manage && (
+                      <View style={styles.hostRow}>
                         <Pressable
                           style={[
-                            styles.chipBtn,
-                            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+                            styles.hostBtn,
+                            {
+                              backgroundColor: colors.surfaceElevated,
+                              borderColor: colors.borderStrong,
+                            },
                           ]}
                           disabled={busy}
-                          onPress={() => void handleMute(p.user_id, label)}
+                          onPress={() => void handleToggleLock()}
                         >
-                          <Text style={[styles.chipText, { color: colors.text }]}>Mute</Text>
+                          <Text style={[styles.hostBtnText, { color: colors.text }]}>
+                            {meeting.is_locked ? 'Unlock Room' : 'Lock Room'}
+                          </Text>
                         </Pressable>
-                        {meeting.is_host && (
-                          <Pressable
-                            style={[
-                              styles.chipBtn,
-                              { backgroundColor: colors.surface, borderColor: colors.borderStrong },
-                            ]}
-                            disabled={busy}
-                            onPress={() => void handleToggleCoHost(p.user_id, p.role)}
-                          >
-                            <Text style={[styles.chipText, { color: colors.text }]}>
-                              {p.role === 'co_host' ? 'Unset Co-Host' : 'Make Co-Host'}
-                            </Text>
-                          </Pressable>
-                        )}
                         <Pressable
                           style={[
-                            styles.denyBtn,
-                            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+                            styles.hostBtn,
+                            {
+                              backgroundColor: colors.surfaceElevated,
+                              borderColor: colors.borderStrong,
+                            },
                           ]}
                           disabled={busy}
-                          onPress={() => void handleRemove(p.user_id)}
+                          onPress={() => void handleToggleWaitingRoom()}
                         >
-                          <Text style={[styles.denyText, { color: colors.dangerText }]}>
-                            Remove
+                          <Text style={[styles.hostBtnText, { color: colors.text }]}>
+                            {meeting.waiting_room_enabled ? 'Waiting: ON' : 'Waiting: OFF'}
                           </Text>
                         </Pressable>
                       </View>
                     )}
-                  </View>
-                );
-              })}
-            </View>
-          </>
-        )}
 
-        {activeTab === 'chat' && (
-          <View
-            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>In-Meeting Chat</Text>
+                    {meeting.can_manage && waiting.length > 0 && (
+                      <View style={styles.sheetSection}>
+                        <View style={styles.headerRow}>
+                          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                            Waiting Room ({waiting.length})
+                          </Text>
+                          <Pressable
+                            style={[styles.admitBtn, { backgroundColor: colors.accent }]}
+                            disabled={busy}
+                            onPress={() => void handleAdmitAll()}
+                          >
+                            <Text style={styles.admitText}>Admit All</Text>
+                          </Pressable>
+                        </View>
+                        {waiting.map((p) => (
+                          <View
+                            key={p.id}
+                            style={[
+                              styles.rosterRow,
+                              {
+                                backgroundColor: colors.surfaceElevated,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          >
+                            <View style={styles.flex1}>
+                              <Text style={[styles.rosterName, { color: colors.text }]}>
+                                {p.full_name || p.email}
+                              </Text>
+                              <Text style={[styles.subText, { color: colors.textMuted }]}>
+                                Waiting to join
+                              </Text>
+                            </View>
+                            <Pressable
+                              style={[styles.admitBtn, { backgroundColor: colors.accent }]}
+                              disabled={busy}
+                              onPress={() => void handleAdmit(p.user_id)}
+                            >
+                              <Text style={styles.admitText}>Admit</Text>
+                            </Pressable>
+                            <Pressable
+                              style={[
+                                styles.denyBtn,
+                                {
+                                  backgroundColor: colors.dangerBg,
+                                  borderColor: colors.dangerBorder,
+                                },
+                              ]}
+                              disabled={busy}
+                              onPress={() => void handleRemove(p.user_id)}
+                            >
+                              <Text style={[styles.denyText, { color: colors.dangerText }]}>
+                                Deny
+                              </Text>
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    )}
 
-            {messages.length === 0 ? (
-              <Text style={[styles.subText, { color: colors.textMuted }]}>
-                No messages yet. Say hello to everyone in the meeting!
-              </Text>
-            ) : (
-              <View style={styles.chatList}>
-                {messages.map((msg) => {
-                  const isMine = msg.sender_id === user?.id;
-                  return (
-                    <View
-                      key={msg.id}
-                      style={[
-                        styles.chatBubble,
-                        isMine
-                          ? {
-                              backgroundColor: colors.accentSoft,
-                              borderColor: colors.accentBorder,
-                              alignSelf: 'flex-end',
-                            }
-                          : {
-                              backgroundColor: colors.surfaceElevated,
-                              borderColor: colors.border,
-                              alignSelf: 'flex-start',
-                            },
-                      ]}
-                    >
-                      <Text style={[styles.chatMeta, { color: colors.textSubtle }]}>
-                        {isMine ? 'You' : msg.sender_name || msg.sender_email} ·{' '}
-                        {new Date(msg.created_at).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </Text>
-                      <Text style={[styles.chatText, { color: colors.text }]}>{msg.content}</Text>
+                    <View style={styles.sheetSection}>
+                      {joined.map((p) => {
+                        const isMe = p.user_id === user?.id;
+                        const label = p.full_name || p.email;
+                        const isPrimaryHost = p.user_id === meeting.host_id;
+                        return (
+                          <View
+                            key={p.id}
+                            style={[
+                              styles.rosterCardCol,
+                              {
+                                backgroundColor: colors.surfaceElevated,
+                                borderColor: colors.border,
+                              },
+                            ]}
+                          >
+                            <View style={styles.headerRow}>
+                              <View style={styles.flex1}>
+                                <Text style={[styles.rosterName, { color: colors.text }]}>
+                                  {label} {isMe ? '(You)' : ''}
+                                </Text>
+                                <Text style={[styles.subText, { color: colors.textMuted }]}>
+                                  {isPrimaryHost
+                                    ? 'Host'
+                                    : p.role === 'co_host'
+                                      ? 'Co-Host'
+                                      : 'Participant'}
+                                </Text>
+                              </View>
+                              {isPrimaryHost ? (
+                                <StatusBadge label="Host" tone="success" />
+                              ) : p.role === 'co_host' ? (
+                                <StatusBadge label="Co-Host" tone="warning" />
+                              ) : null}
+                            </View>
+
+                            {meeting.can_manage && !isMe && !isPrimaryHost && (
+                              <View style={styles.actionChipsRow}>
+                                <Pressable
+                                  style={[
+                                    styles.chipBtn,
+                                    {
+                                      backgroundColor: colors.surface,
+                                      borderColor: colors.borderStrong,
+                                    },
+                                  ]}
+                                  disabled={busy}
+                                  onPress={() => void handleMute(p.user_id, label)}
+                                >
+                                  <Text style={[styles.chipText, { color: colors.text }]}>
+                                    Mute
+                                  </Text>
+                                </Pressable>
+                                {meeting.is_host && (
+                                  <Pressable
+                                    style={[
+                                      styles.chipBtn,
+                                      {
+                                        backgroundColor: colors.surface,
+                                        borderColor: colors.borderStrong,
+                                      },
+                                    ]}
+                                    disabled={busy}
+                                    onPress={() => void handleToggleCoHost(p.user_id, p.role)}
+                                  >
+                                    <Text style={[styles.chipText, { color: colors.text }]}>
+                                      {p.role === 'co_host' ? 'Unset Co-Host' : 'Make Co-Host'}
+                                    </Text>
+                                  </Pressable>
+                                )}
+                                <Pressable
+                                  style={[
+                                    styles.denyBtn,
+                                    {
+                                      backgroundColor: colors.dangerBg,
+                                      borderColor: colors.dangerBorder,
+                                    },
+                                  ]}
+                                  disabled={busy}
+                                  onPress={() => void handleRemove(p.user_id)}
+                                >
+                                  <Text style={[styles.denyText, { color: colors.dangerText }]}>
+                                    Remove
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
                     </View>
-                  );
-                })}
-              </View>
+                  </>
+                )}
+
+                {activeSheet === 'chat' && (
+                  <>
+                    {messages.length === 0 ? (
+                      <Text style={[styles.subText, { color: colors.textMuted }]}>
+                        No messages yet. Say hello to everyone in the meeting!
+                      </Text>
+                    ) : (
+                      <View style={styles.chatList}>
+                        {messages.map((msg) => {
+                          const isMine = msg.sender_id === user?.id;
+                          return (
+                            <View
+                              key={msg.id}
+                              style={[
+                                styles.chatBubble,
+                                isMine
+                                  ? {
+                                      backgroundColor: colors.accentSoft,
+                                      borderColor: colors.accentBorder,
+                                      alignSelf: 'flex-end',
+                                    }
+                                  : {
+                                      backgroundColor: colors.surfaceElevated,
+                                      borderColor: colors.border,
+                                      alignSelf: 'flex-start',
+                                    },
+                              ]}
+                            >
+                              <Text style={[styles.chatMeta, { color: colors.textSubtle }]}>
+                                {isMine ? 'You' : msg.sender_name || msg.sender_email} ·{' '}
+                                {new Date(msg.created_at).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </Text>
+                              <Text style={[styles.chatText, { color: colors.text }]}>
+                                {msg.content}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    <View style={styles.chatInputRow}>
+                      <TextInput
+                        style={[
+                          styles.chatInput,
+                          {
+                            backgroundColor: colors.surfaceElevated,
+                            borderColor: colors.borderStrong,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={chatText}
+                        onChangeText={setChatText}
+                        placeholder="Type a message..."
+                        placeholderTextColor={colors.placeholder}
+                      />
+                      <Pressable
+                        style={[
+                          styles.sendBtn,
+                          { backgroundColor: colors.accent },
+                          (sendingChat || !chatText.trim()) && styles.disabledBtn,
+                        ]}
+                        disabled={sendingChat || !chatText.trim()}
+                        onPress={() => void handleSendChat()}
+                      >
+                        <Text style={styles.admitText}>Send</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+
+                {activeSheet === 'invite' && meeting.can_manage && (
+                  <>
+                    <View style={styles.chatInputRow}>
+                      <TextInput
+                        style={[
+                          styles.chatInput,
+                          {
+                            backgroundColor: colors.surfaceElevated,
+                            borderColor: colors.borderStrong,
+                            color: colors.text,
+                          },
+                        ]}
+                        value={inviteEmail}
+                        onChangeText={setInviteEmail}
+                        placeholder="teammate@example.com"
+                        placeholderTextColor={colors.placeholder}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                      />
+                      <Pressable
+                        style={[
+                          styles.sendBtn,
+                          { backgroundColor: colors.accent },
+                          (sendingInvite || !inviteEmail.trim()) && styles.disabledBtn,
+                        ]}
+                        disabled={sendingInvite || !inviteEmail.trim()}
+                        onPress={() => void handleSendInvite()}
+                      >
+                        <Text style={styles.admitText}>{sendingInvite ? '...' : 'Invite'}</Text>
+                      </Pressable>
+                    </View>
+
+                    {sentInvitations.map((inv) => (
+                      <View
+                        key={inv.id}
+                        style={[
+                          styles.rosterRow,
+                          {
+                            backgroundColor: colors.surfaceElevated,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        <Text style={[styles.rosterName, { color: colors.text, flex: 1 }]}>
+                          {inv.invitee_email}
+                        </Text>
+                        <StatusBadge
+                          label={inv.status}
+                          tone={
+                            inv.status === 'accepted'
+                              ? 'success'
+                              : inv.status === 'declined'
+                                ? 'danger'
+                                : 'warning'
+                          }
+                        />
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
             )}
-
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={[
-                  styles.chatInput,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    borderColor: colors.borderStrong,
-                    color: colors.text,
-                  },
-                ]}
-                value={chatText}
-                onChangeText={setChatText}
-                placeholder="Type a message..."
-                placeholderTextColor={colors.placeholder}
-              />
-              <Pressable
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: colors.accent },
-                  (sendingChat || !chatText.trim()) && styles.disabledBtn,
-                ]}
-                disabled={sendingChat || !chatText.trim()}
-                onPress={() => void handleSendChat()}
-              >
-                <Text style={styles.admitText}>Send</Text>
-              </Pressable>
-            </View>
           </View>
-        )}
-
-        {activeTab === 'invite' && meeting.can_manage && (
-          <View
-            style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-          >
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Invite by Email</Text>
-            <View style={styles.chatInputRow}>
-              <TextInput
-                style={[
-                  styles.chatInput,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    borderColor: colors.borderStrong,
-                    color: colors.text,
-                  },
-                ]}
-                value={inviteEmail}
-                onChangeText={setInviteEmail}
-                placeholder="teammate@example.com"
-                placeholderTextColor={colors.placeholder}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              <Pressable
-                style={[
-                  styles.sendBtn,
-                  { backgroundColor: colors.accent },
-                  (sendingInvite || !inviteEmail.trim()) && styles.disabledBtn,
-                ]}
-                disabled={sendingInvite || !inviteEmail.trim()}
-                onPress={() => void handleSendInvite()}
-              >
-                <Text style={styles.admitText}>{sendingInvite ? '...' : 'Invite'}</Text>
-              </Pressable>
-            </View>
-
-            {sentInvitations.map((inv) => (
-              <View
-                key={inv.id}
-                style={[
-                  styles.rosterRow,
-                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.flex1}>
-                  <Text style={[styles.rosterName, { color: colors.text }]}>
-                    {inv.invitee_email}
-                  </Text>
-                  <Text style={[styles.subText, { color: colors.textMuted }]}>Invitation sent</Text>
-                </View>
-                <StatusBadge
-                  label={inv.status}
-                  tone={
-                    inv.status === 'accepted'
-                      ? 'success'
-                      : inv.status === 'declined'
-                        ? 'danger'
-                        : 'warning'
-                  }
-                />
-              </View>
-            ))}
-          </View>
-        )}
-
-        <View style={styles.exitRow}>
-          <Pressable
-            style={[
-              styles.leaveBtn,
-              { backgroundColor: colors.surface, borderColor: colors.borderStrong },
-            ]}
-            disabled={busy}
-            onPress={() => void handleLeave()}
-          >
-            <Text style={[styles.leaveText, { color: colors.text }]}>Leave Meeting</Text>
-          </Pressable>
-
-          {meeting.is_host && (
-            <Pressable
-              style={styles.endAllBtn}
-              disabled={busy}
-              onPress={() => void handleEndForAll()}
-            >
-              <Text style={styles.endAllText}>End for All</Text>
-            </Pressable>
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
-    padding: 18,
-    gap: 14,
-  },
+  flex1: { flex: 1 },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -892,228 +1074,360 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 12,
   },
-  flex1: {
-    flex: 1,
+  endedTitle: { fontSize: 22, fontWeight: '800' },
+  primaryButton: {
+    paddingVertical: 13,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
   },
-  card: {
-    borderRadius: 16,
-    padding: 16,
+  primaryButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
+  outlineBtn: {
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 12,
     borderWidth: 1,
+  },
+
+  // Full-screen Dark Google-Meet Room Shell
+  roomShell: {
+    flex: 1,
+    backgroundColor: '#070B14',
+  },
+  roomTopBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 10,
+  },
+  roomTitleLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  roomTitle: {
+    color: '#F8FAFC',
+    fontSize: 16,
+    fontWeight: '800',
+    flexShrink: 1,
+  },
+  roomSub: {
+    color: '#94A3B8',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  liveChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(34, 197, 94, 0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.4)',
+  },
+  liveChipConnecting: {
+    backgroundColor: 'rgba(245, 158, 11, 0.16)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#22C55E',
+  },
+  liveDotWarn: {
+    backgroundColor: '#F59E0B',
+  },
+  liveChipText: {
+    color: '#E2E8F0',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  topShareBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+  },
+  topShareText: {
+    color: '#F8FAFC',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  waitingAlertBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 11,
+    backgroundColor: 'rgba(37, 99, 235, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.45)',
+  },
+  waitingAlertText: { color: '#DBEAFE', fontSize: 12, fontWeight: '600' },
+  waitingAlertAction: { color: '#60A5FA', fontSize: 12, fontWeight: '800' },
+  toastBar: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(34, 197, 94, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.4)',
+  },
+  toastText: { color: '#86EFAC', fontSize: 12, fontWeight: '600' },
+  errorBar: {
+    marginHorizontal: 12,
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  errorBarText: { color: '#FCA5A5', fontSize: 12, fontWeight: '600' },
+
+  // Live Video Blocks Stage
+  stageContainer: {
+    flex: 1,
+    backgroundColor: '#070B14',
+  },
+  stageWebView: {
+    flex: 1,
+    backgroundColor: '#070B14',
+  },
+  fallbackBlocksGrid: {
+    padding: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  fallbackTile: {
+    width: '48%',
+    minHeight: 170,
+    borderRadius: 18,
+    backgroundColor: '#111827',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 12,
+  },
+  fallbackTileMe: {
+    borderColor: 'rgba(59, 130, 246, 0.55)',
+  },
+  fallbackAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fallbackAvatarText: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
+  fallbackFooter: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+    backgroundColor: 'rgba(7, 11, 20, 0.78)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  fallbackName: { color: '#F8FAFC', fontSize: 11.5, fontWeight: '700' },
+
+  // Google-Meet Bottom Floating Control Dock
+  controlDock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    backgroundColor: '#0F172A',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 4,
+  },
+  dockBtn: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 48,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    gap: 2,
+  },
+  dockBtnDanger: {
+    backgroundColor: '#DC2626',
+  },
+  dockBtnWarn: {
+    backgroundColor: '#B45309',
+  },
+  dockEndBtn: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 52,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 14,
+    backgroundColor: '#DC2626',
+    gap: 2,
+  },
+  dockIcon: { fontSize: 16 },
+  dockLabel: { color: '#F8FAFC', fontSize: 10, fontWeight: '700' },
+  dockBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dockBadgeAlert: {
+    backgroundColor: '#EF4444',
+  },
+  dockBadgeText: { color: '#FFFFFF', fontSize: 9.5, fontWeight: '800' },
+
+  // Slide-Up Bottom Sheet
+  sheetOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.6)',
+    justifyContent: 'flex-end',
+  },
+  sheetBackdropTap: { flex: 1 },
+  sheetCard: {
+    maxHeight: '78%',
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    padding: 18,
     gap: 12,
   },
-  headerRow: {
+  sheetHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 10,
   },
-  title: {
-    fontSize: 19,
-    fontWeight: '800',
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  subText: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  smallBtn: {
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+  sheetTitle: { fontSize: 17, fontWeight: '800' },
+  closeSheetBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 9,
     borderWidth: 1,
   },
-  smallBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  mediaRow: {
+  sheetScroll: { maxHeight: 440 },
+  sheetScrollContent: { gap: 12, paddingBottom: 16 },
+  sheetSection: { gap: 8 },
+  headerRow: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  mediaBtn: {
-    flex: 1,
-    paddingVertical: 11,
-    borderRadius: 11,
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  mediaOn: {
-    backgroundColor: '#1e293b',
-  },
-  mediaOff: {
-    backgroundColor: '#dc2626',
-  },
-  mediaText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  tabs: {
-    flexDirection: 'row',
-    padding: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 9,
-    alignItems: 'center',
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  hostRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  sectionTitle: { fontSize: 14, fontWeight: '800' },
+  subText: { fontSize: 12 },
+  hostRow: { flexDirection: 'row', gap: 8 },
   hostBtn: {
     flex: 1,
-    paddingVertical: 11,
+    paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
   },
-  hostBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
+  hostBtnText: { fontSize: 12.5, fontWeight: '700' },
   rosterRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    padding: 12,
-    borderRadius: 11,
+    padding: 11,
+    borderRadius: 12,
     borderWidth: 1,
   },
   rosterCardCol: {
-    padding: 12,
-    borderRadius: 11,
+    padding: 11,
+    borderRadius: 12,
     borderWidth: 1,
     gap: 8,
   },
-  actionChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
+  rosterName: { fontSize: 14, fontWeight: '700' },
+  actionChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   chipBtn: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
   },
-  chipText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  rosterName: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  admitBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  admitText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '700',
-  },
+  chipText: { fontSize: 11.5, fontWeight: '700' },
+  admitBtn: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 8 },
+  admitText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
   denyBtn: {
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
   },
-  denyText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  chatList: {
-    gap: 8,
-  },
+  denyText: { fontSize: 11.5, fontWeight: '700' },
+  chatList: { gap: 8 },
   chatBubble: {
+    maxWidth: '88%',
     padding: 10,
-    borderRadius: 11,
+    borderRadius: 12,
     borderWidth: 1,
-    maxWidth: '90%',
+    gap: 3,
   },
-  chatMeta: {
-    fontSize: 11,
-    fontWeight: '600',
-    marginBottom: 3,
-  },
-  chatText: {
-    fontSize: 14,
-    lineHeight: 19,
-  },
-  chatInputRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  chatMeta: { fontSize: 10.5, fontWeight: '600' },
+  chatText: { fontSize: 13.5, lineHeight: 19 },
+  chatInputRow: { flexDirection: 'row', gap: 8, marginTop: 6 },
   chatInput: {
     flex: 1,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 11,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     fontSize: 14,
   },
   sendBtn: {
     paddingHorizontal: 16,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  disabledBtn: {
-    opacity: 0.5,
-  },
-  exitRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  leaveBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  leaveText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  endAllBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    backgroundColor: '#dc2626',
-    alignItems: 'center',
-  },
-  endAllText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  primaryButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  alert: {
-    padding: 12,
     borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  disabledBtn: { opacity: 0.45 },
+  leaveSheetBody: { gap: 10, paddingBottom: 12 },
+  endAllBtn: {
+    backgroundColor: '#DC2626',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  endAllBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  justLeaveBtn: {
+    paddingVertical: 13,
+    borderRadius: 12,
     borderWidth: 1,
+    alignItems: 'center',
   },
 });

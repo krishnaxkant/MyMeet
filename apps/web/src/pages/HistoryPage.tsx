@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   ClockIcon,
   DownloadIcon,
   RefreshIcon,
@@ -120,6 +122,22 @@ export function HistoryPage() {
   }, [selected?.title, selected?.ai_summary]);
 
   const currentPage = renderedPages[activePageIdx] ?? renderedPages[0] ?? null;
+
+  // Keyboard Left/Right/Escape navigation inside fullscreen lightbox
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setLightboxOpen(false);
+      } else if (e.key === 'ArrowLeft') {
+        setActivePageIdx((p) => Math.max(0, p - 1));
+      } else if (e.key === 'ArrowRight') {
+        setActivePageIdx((p) => Math.min(renderedPages.length - 1, p + 1));
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightboxOpen, renderedPages.length]);
 
   const handleDownloadCurrentPage = () => {
     if (!selected || !currentPage) return;
@@ -300,11 +318,12 @@ export function HistoryPage() {
                   <div className="page-pills-bar">
                     <button
                       type="button"
-                      className="btn btn-secondary btn-xs"
+                      className="nav-arrow-btn nav-arrow-prev"
                       disabled={activePageIdx === 0}
                       onClick={() => setActivePageIdx((p) => Math.max(0, p - 1))}
                     >
-                      ← Prev
+                      <ChevronLeftIcon size={15} />
+                      <span>Prev</span>
                     </button>
                     <div className="page-pills-list">
                       {renderedPages.map((pg, idx) => (
@@ -320,13 +339,14 @@ export function HistoryPage() {
                     </div>
                     <button
                       type="button"
-                      className="btn btn-secondary btn-xs"
+                      className="nav-arrow-btn nav-arrow-next"
                       disabled={activePageIdx >= renderedPages.length - 1}
                       onClick={() =>
                         setActivePageIdx((p) => Math.min(renderedPages.length - 1, p + 1))
                       }
                     >
-                      Next →
+                      <span>Next</span>
+                      <ChevronRightIcon size={15} />
                     </button>
                   </div>
                 )}
@@ -448,21 +468,23 @@ export function HistoryPage() {
                   <>
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm"
+                      className="nav-arrow-btn nav-arrow-prev"
                       disabled={activePageIdx === 0}
                       onClick={() => setActivePageIdx((p) => Math.max(0, p - 1))}
                     >
-                      ← Prev
+                      <ChevronLeftIcon size={15} />
+                      <span>Prev</span>
                     </button>
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm"
+                      className="nav-arrow-btn nav-arrow-next"
                       disabled={activePageIdx >= renderedPages.length - 1}
                       onClick={() =>
                         setActivePageIdx((p) => Math.min(renderedPages.length - 1, p + 1))
                       }
                     >
-                      Next →
+                      <span>Next</span>
+                      <ChevronRightIcon size={15} />
                     </button>
                   </>
                 )}

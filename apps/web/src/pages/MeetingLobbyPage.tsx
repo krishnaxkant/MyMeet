@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  ArrowLeftIcon,
   CheckIcon,
   CopyIcon,
   LockIcon,
@@ -249,8 +250,9 @@ export function MeetingLobbyPage() {
           >
             {isEnded ? 'Ended' : meeting.is_host ? 'You are the Host' : 'Meeting Lobby'}
           </span>
-          <Link to="/" className="text-link">
-            ← Dashboard
+          <Link to="/" className="back-pill-link">
+            <ArrowLeftIcon size={14} />
+            <span>Back to Home</span>
           </Link>
         </div>
 

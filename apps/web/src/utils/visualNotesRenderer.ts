@@ -789,8 +789,19 @@ export function renderVisualNotesPages(
         ctx.font = bulletFont;
         let ky = cursorY + 46;
         for (const kp of item.items) {
-          ctx.fillStyle = '#38BDF8';
-          ctx.fillText('▸', PAD_X + 24, ky);
+          // Crisp drawn vector right chevron instead of raw font glyph
+          ctx.save();
+          ctx.strokeStyle = '#38BDF8';
+          ctx.lineWidth = 2.2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(PAD_X + 26, ky + 4);
+          ctx.lineTo(PAD_X + 33, ky + 10);
+          ctx.lineTo(PAD_X + 26, ky + 16);
+          ctx.stroke();
+          ctx.restore();
+
           ctx.fillStyle = '#F1F5F9';
           for (const line of kp.lines) {
             ctx.fillText(line, PAD_X + 46, ky);

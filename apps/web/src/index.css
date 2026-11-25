@@ -2727,3 +2727,132 @@ code {
   border-color: var(--accent);
   color: #ffffff;
 }
+
+/* Polished Vector Arrow Controls (Carousel, Pagination & Back Pills) */
+.carousel-arrow-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.carousel-arrow-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.carousel-arrow-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-sm);
+}
+
+.carousel-arrow-prev:hover svg {
+  transform: translateX(-1.5px);
+}
+
+.carousel-arrow-next:hover svg {
+  transform: translateX(1.5px);
+}
+
+.carousel-arrow-btn svg {
+  transition: transform 0.16s ease;
+}
+
+.carousel-arrow-btn:active {
+  transform: scale(0.93);
+}
+
+.nav-arrow-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease,
+    transform 0.14s ease;
+}
+
+.nav-arrow-btn svg {
+  transition: transform 0.16s ease;
+}
+
+.nav-arrow-btn:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.nav-arrow-prev:hover:not(:disabled) svg {
+  transform: translateX(-2px);
+}
+
+.nav-arrow-next:hover:not(:disabled) svg {
+  transform: translateX(2px);
+}
+
+.nav-arrow-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.nav-arrow-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.back-pill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.back-pill-link svg {
+  transition: transform 0.16s ease;
+}
+
+.back-pill-link:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-text);
+}
+
+.back-pill-link:hover svg {
+  transform: translateX(-2px);
+}

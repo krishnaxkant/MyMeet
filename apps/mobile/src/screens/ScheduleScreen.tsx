@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { BackButton } from '../components/BackButton';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -144,15 +145,7 @@ export function ScheduleScreen({ onBack, onOpenLobby }: ScheduleScreenProps) {
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.topBar}>
-        <Pressable
-          style={[
-            styles.secondaryButton,
-            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
-          ]}
-          onPress={onBack}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>← Dashboard</Text>
-        </Pressable>
+        <BackButton label="Home" onPress={onBack} />
         <Pressable
           style={[
             styles.secondaryButton,

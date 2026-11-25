@@ -3,6 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   CalendarIcon,
   CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
   ClockIcon,
   CopyIcon,
   KeyboardIcon,
@@ -471,22 +473,24 @@ export function HomePage() {
                 />
               ))}
             </div>
-            <div className="actions-row">
+            <div className="carousel-arrow-group">
               <button
                 type="button"
-                className="btn btn-secondary btn-xs"
+                className="carousel-arrow-btn carousel-arrow-prev"
+                aria-label="Previous highlight"
                 onClick={() =>
                   setSlideIdx((prev) => (prev - 1 + SPOTLIGHT_SLIDES.length) % SPOTLIGHT_SLIDES.length)
                 }
               >
-                ←
+                <ChevronLeftIcon size={16} />
               </button>
               <button
                 type="button"
-                className="btn btn-secondary btn-xs"
+                className="carousel-arrow-btn carousel-arrow-next"
+                aria-label="Next highlight"
                 onClick={() => setSlideIdx((prev) => (prev + 1) % SPOTLIGHT_SLIDES.length)}
               >
-                →
+                <ChevronRightIcon size={16} />
               </button>
             </div>
           </div>
