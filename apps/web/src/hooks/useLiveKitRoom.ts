@@ -23,6 +23,18 @@ export interface LiveParticipantMedia {
   screenShareTrack: LocalTrack | RemoteTrack | null;
 }
 
+export interface LiveCaptionItem {
+  id: string;
+  speaker: string;
+  text: string;
+  timestamp: number;
+}
+
+export interface RecordingBroadcastState {
+  active: boolean;
+  by: string | null;
+}
+
 interface UseLiveKitRoomOptions {
   meetingCode: string;
   accessToken: string | null;
@@ -86,6 +98,43 @@ export function useLiveKitRoom({
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [isUnconfigured, setIsUnconfigured] = useState(false);
+  const [latestCaption, setLatestCaption] = useState<LiveCaptionItem | null>(null);
+  const [remoteRecording, setRemoteRecording] = useState<RecordingBroadcastState>({
+    active: false,
+    by: null,
+  });
+
+  const publishDataPayload = useCallback(async (payload: Record<string, unknown>) => {
+    const room = roomRef.current;
+    if (!room || room.state !== ConnectionState.Connected) return;
+    try {
+      const encoded = new TextEncoder().encode(JSON.stringify(payload));
+      await room.localParticipant.publishData(encoded, { reliable: true });
+    } catch {
+      // Ignore transient data-channel errors
+    }
+  }, []);
+
+  const broadcastCaption = useCallback(
+    async (speaker: string, text: string) => {
+      setLatestCaption({
+        id: `${Date.now()}`,
+        speaker,
+        text,
+        timestamp: Date.now(),
+      });
+      await publishDataPayload({ type: 'caption', speaker, text });
+    },
+    [publishDataPayload],
+  );
+
+  const broadcastRecordingState = useCallback(
+    async (active: boolean, by: string) => {
+      setRemoteRecording({ active, by: active ? by : null });
+      await publishDataPayload({ type: 'recording', active, by });
+    },
+    [publishDataPayload],
+  );
 
   const syncParticipants = useCallback((room: Room) => {
     const list: LiveParticipantMedia[] = [
@@ -145,6 +194,32 @@ export function useLiveKitRoom({
         .on(RoomEvent.LocalTrackPublished, handleUpdate)
         .on(RoomEvent.LocalTrackUnpublished, handleUpdate)
         .on(RoomEvent.ActiveSpeakersChanged, handleUpdate)
+        .on(RoomEvent.DataReceived, (payload, participant) => {
+          try {
+            const parsed = JSON.parse(new TextDecoder().decode(payload)) as {
+              type?: string;
+              speaker?: string;
+              text?: string;
+              active?: boolean;
+              by?: string;
+            };
+            if (parsed.type === 'caption' && parsed.text) {
+              setLatestCaption({
+                id: `${Date.now()}-${Math.random()}`,
+                speaker: parsed.speaker || participant?.name || 'Participant',
+                text: parsed.text,
+                timestamp: Date.now(),
+              });
+            } else if (parsed.type === 'recording') {
+              setRemoteRecording({
+                active: Boolean(parsed.active),
+                by: parsed.active ? parsed.by || participant?.name || 'Host' : null,
+              });
+            }
+          } catch {
+            // Ignore malformed data packets
+          }
+        })
         .on(RoomEvent.Disconnected, () => {
           setConnectionState(ConnectionState.Disconnected);
           setParticipants([]);
@@ -246,9 +321,13 @@ export function useLiveKitRoom({
     screenShareEnabled,
     mediaError,
     isUnconfigured,
+    latestCaption,
+    remoteRecording,
     toggleMic,
     toggleCamera,
     toggleScreenShare,
+    broadcastCaption,
+    broadcastRecordingState,
     disconnect,
     reconnect: connect,
   };

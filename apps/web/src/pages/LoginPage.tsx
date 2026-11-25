@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { AuthShell } from '../components/AuthShell';
 import { VideoIcon } from '../components/Icons';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 export function LoginPage() {
@@ -35,13 +35,9 @@ export function LoginPage() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-topbar">
-        <ThemeToggle />
-      </div>
-
+    <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 18 }}>
+        <div className="brand" style={{ marginBottom: 20 }}>
           <span className="brand-mark">
             <VideoIcon size={18} />
           </span>
@@ -49,7 +45,7 @@ export function LoginPage() {
         </div>
 
         <h1 className="auth-title">Welcome back</h1>
-        <p className="auth-subtitle">Sign in to start or join a Meet session.</p>
+        <p className="auth-subtitle">Sign in to start or join a meeting.</p>
 
         {!isConfigured && (
           <div className="alert alert-warning">
@@ -62,7 +58,7 @@ export function LoginPage() {
 
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">
-            <span className="field-label">Email</span>
+            <span className="field-label">Email address</span>
             <input
               type="email"
               className="input"
@@ -99,12 +95,12 @@ export function LoginPage() {
         </form>
 
         <p className="auth-footer">
-          Don&apos;t have an account?{' '}
+          New to Meet?{' '}
           <Link to="/signup" className="text-link">
-            Create one
+            Create an account
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   );
 }

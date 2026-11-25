@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { LocalTrack, RemoteTrack } from 'livekit-client';
 import { MicOffIcon } from './Icons';
 
+export type VideoEffectMode = 'none' | 'blur' | 'warm' | 'studio' | 'dim';
+
 interface VideoTileProps {
   name: string;
   isLocal?: boolean;
@@ -12,6 +14,7 @@ interface VideoTileProps {
   audioTrack?: LocalTrack | RemoteTrack | null;
   speakerMuted?: boolean;
   isScreenShare?: boolean;
+  videoEffect?: VideoEffectMode;
 }
 
 function getInitials(name: string): string {
@@ -31,6 +34,7 @@ export function VideoTile({
   audioTrack = null,
   speakerMuted = false,
   isScreenShare = false,
+  videoEffect = 'none',
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -77,9 +81,14 @@ export function VideoTile({
           autoPlay
           playsInline
           muted
-          className={`video-stream ${isLocal && !isScreenShare ? 'video-stream-mirrored' : ''} ${
-            isScreenShare ? 'video-stream-contain' : ''
-          }`}
+          className={[
+            'video-stream',
+            isLocal && !isScreenShare ? 'video-stream-mirrored' : '',
+            isScreenShare ? 'video-stream-contain' : '',
+            isLocal && !isScreenShare && videoEffect !== 'none' ? `video-fx-${videoEffect}` : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
         />
       ) : (
         <div className="avatar-circle avatar-circle-lg">{getInitials(name)}</div>

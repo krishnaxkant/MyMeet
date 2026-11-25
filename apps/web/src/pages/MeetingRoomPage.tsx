@@ -2,18 +2,22 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ConnectionState } from 'livekit-client';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
+  CaptionsIcon,
   ChatIcon,
   CheckIcon,
   CopyIcon,
+  DownloadIcon,
   LockIcon,
   MailIcon,
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
+  RecordIcon,
   RefreshIcon,
   ScreenShareIcon,
   SendIcon,
   ShieldIcon,
+  SparklesIcon,
   UnlockIcon,
   UsersIcon,
   VideoIcon,
@@ -21,9 +25,11 @@ import {
   VolumeIcon,
   VolumeOffIcon,
 } from '../components/Icons';
-import { VideoTile } from '../components/VideoTile';
+import { VideoTile, type VideoEffectMode } from '../components/VideoTile';
 import { useAuth } from '../hooks/useAuth';
+import { useLiveCaptions } from '../hooks/useLiveCaptions';
 import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
+import { useMeetingRecorder } from '../hooks/useMeetingRecorder';
 import {
   admitAllParticipants,
   admitParticipant,
@@ -58,7 +64,7 @@ function formatElapsed(startedAt: string | null): string {
 
 export function MeetingRoomPage() {
   const { code = '' } = useParams<{ code: string }>();
-  const { session, user } = useAuth();
+  const { session, user, profile } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const navState = (location.state as { micEnabled?: boolean; camEnabled?: boolean } | null) ?? {};
@@ -74,6 +80,14 @@ export function MeetingRoomPage() {
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [elapsed, setElapsed] = useState('00:00');
+  const [videoEffect, setVideoEffect] = useState<VideoEffectMode>('none');
+  const [showEffectsBar, setShowEffectsBar] = useState(false);
+
+  const myDisplayName =
+    profile?.full_name ||
+    (user?.user_metadata?.full_name as string | undefined) ||
+    user?.email ||
+    'Participant';
 
   // Chat state
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
@@ -100,6 +114,38 @@ export function MeetingRoomPage() {
     initialMicEnabled: navState.micEnabled ?? true,
     initialCamEnabled: navState.camEnabled ?? false,
   });
+
+  const recorder = useMeetingRecorder(meeting?.code ?? code);
+  const captions = useLiveCaptions((text) => {
+    void livekit.broadcastCaption(myDisplayName, text);
+  });
+
+  const handleToggleRecording = async () => {
+    if (recorder.isRecording) {
+      recorder.stopRecording();
+      await livekit.broadcastRecordingState(false, myDisplayName);
+      if (session?.access_token && meeting) {
+        void sendMessage(
+          session.access_token,
+          meeting.code,
+          `[Recording stopped by ${myDisplayName}]`,
+        ).catch(() => {});
+      }
+      showTempNotice('Recording stopped. Click Download Recording to save your .webm video.');
+    } else {
+      const started = await recorder.startRecording();
+      if (started) {
+        await livekit.broadcastRecordingState(true, myDisplayName);
+        if (session?.access_token && meeting) {
+          void sendMessage(
+            session.access_token,
+            meeting.code,
+            `[Recording started by ${myDisplayName} — all participants notified]`,
+          ).catch(() => {});
+        }
+      }
+    }
+  };
 
   const fetchRoomState = useCallback(async () => {
     if (!session?.access_token || !code) return;
@@ -462,6 +508,54 @@ export function MeetingRoomPage() {
 
       {error && <div className="alert alert-danger">{error}</div>}
       {statusNotice && <div className="alert alert-success">{statusNotice}</div>}
+      {recorder.recorderError && <div className="alert alert-warning">{recorder.recorderError}</div>}
+      {captions.captionError && <div className="alert alert-warning">{captions.captionError}</div>}
+
+      {(recorder.isRecording || livekit.remoteRecording.active) && (
+        <div className="recording-banner" role="alert">
+          <div className="recording-banner-left">
+            <span className="rec-dot" />
+            <strong>REC</strong>
+            <span>
+              This meeting is being recorded by{' '}
+              <strong>
+                {recorder.isRecording ? `${myDisplayName} (You)` : livekit.remoteRecording.by || 'Host'}
+              </strong>
+              {recorder.isRecording
+                ? ` · ${String(Math.floor(recorder.recordingSeconds / 60)).padStart(2, '0')}:${String(
+                    recorder.recordingSeconds % 60,
+                  ).padStart(2, '0')}`
+                : ''}
+            </span>
+          </div>
+          {recorder.isRecording && (
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={() => void handleToggleRecording()}
+            >
+              Stop Recording
+            </button>
+          )}
+        </div>
+      )}
+
+      {!recorder.isRecording && recorder.downloadUrl && (
+        <div
+          className="alert alert-success"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+        >
+          <span>Your local meeting recording is ready to download.</span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={recorder.downloadRecording}
+          >
+            <DownloadIcon size={14} />
+            <span>Download Recording (.webm)</span>
+          </button>
+        </div>
+      )}
 
       {livekit.mediaError && (
         <div
@@ -517,6 +611,7 @@ export function MeetingRoomPage() {
                     videoTrack={p.videoTrack}
                     audioTrack={p.audioTrack}
                     speakerMuted={speakerMuted}
+                    videoEffect={p.isLocal ? videoEffect : 'none'}
                   />
                 ))
               : joinedParticipants.map((participant) => {
@@ -533,6 +628,39 @@ export function MeetingRoomPage() {
                   );
                 })}
           </div>
+
+          {livekit.latestCaption && (captions.captionsEnabled || Date.now() - livekit.latestCaption.timestamp < 8000) && (
+            <div className="captions-bar" role="status" aria-live="polite">
+              <span className="captions-speaker">{livekit.latestCaption.speaker}:</span>{' '}
+              <span>{livekit.latestCaption.text}</span>
+            </div>
+          )}
+
+          {showEffectsBar && (
+            <div className="effects-bar">
+              <span className="effects-label">
+                <SparklesIcon size={14} /> Camera Effects:
+              </span>
+              {(
+                [
+                  ['none', 'None'],
+                  ['blur', 'Soft Blur'],
+                  ['warm', 'Warm Studio'],
+                  ['studio', 'Crisp HD'],
+                  ['dim', 'Low Light'],
+                ] as Array<[VideoEffectMode, string]>
+              ).map(([mode, label]) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`btn btn-xs ${videoEffect === mode ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setVideoEffect(mode)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
         </section>
 
         {showSidebar && (
@@ -867,6 +995,33 @@ export function MeetingRoomPage() {
             title={speakerMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
           >
             {speakerMuted ? <VolumeOffIcon size={18} /> : <VolumeIcon size={18} />}
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${captions.captionsEnabled ? 'media-btn-accent' : 'media-btn-on'}`}
+            onClick={captions.toggleCaptions}
+            title={captions.captionsEnabled ? 'Turn off live captions' : 'Turn on live captions'}
+          >
+            <CaptionsIcon size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${showEffectsBar || videoEffect !== 'none' ? 'media-btn-accent' : 'media-btn-on'}`}
+            onClick={() => setShowEffectsBar((prev) => !prev)}
+            title="Camera & background effects"
+          >
+            <SparklesIcon size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${recorder.isRecording ? 'media-btn-off' : 'media-btn-on'}`}
+            onClick={() => void handleToggleRecording()}
+            title={recorder.isRecording ? 'Stop recording' : 'Record meeting (visible to all)'}
+          >
+            <RecordIcon size={18} />
           </button>
 
           <button

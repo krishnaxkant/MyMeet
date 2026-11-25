@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { AuthShell } from '../components/AuthShell';
 import { VideoIcon } from '../components/Icons';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 export function ResetPasswordPage() {
@@ -41,13 +41,9 @@ export function ResetPasswordPage() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-topbar">
-        <ThemeToggle />
-      </div>
-
+    <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 18 }}>
+        <div className="brand" style={{ marginBottom: 20 }}>
           <span className="brand-mark">
             <VideoIcon size={18} />
           </span>
@@ -55,7 +51,7 @@ export function ResetPasswordPage() {
         </div>
 
         <h1 className="auth-title">Choose a new password</h1>
-        <p className="auth-subtitle">Enter your new password below.</p>
+        <p className="auth-subtitle">Enter your new password below to regain access.</p>
 
         {error && <div className="alert alert-danger">{error}</div>}
         {done && (
@@ -102,6 +98,6 @@ export function ResetPasswordPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   );
 }

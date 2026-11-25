@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
+  CalendarIcon,
   CheckIcon,
+  ClockIcon,
   CopyIcon,
   KeyboardIcon,
   LockIcon,
@@ -11,7 +13,6 @@ import {
   UsersIcon,
   VideoIcon,
 } from '../components/Icons';
-import { StatusCard } from '../components/StatusCard';
 import { useAuth } from '../hooks/useAuth';
 import {
   buildMeetingInviteUrl,
@@ -19,20 +20,40 @@ import {
   extractMeetingCode,
   listMeetings,
   listMyInvitations,
+  listSchedules,
   respondToInvitation,
-  type HealthResponse,
+  startSchedule,
   type MeetingInvitation,
   type MeetingSummary,
+  type ScheduledMeeting,
 } from '../services/api';
 
-interface HomePageProps {
-  health: HealthResponse | null;
-  loading: boolean;
-  error: string | null;
-  onRefresh: () => void;
+const SPOTLIGHT_SLIDES = [
+  {
+    badge: 'Instant Rooms',
+    title: 'Get a link you can share in seconds',
+    copy: 'Click New Meeting to generate an encrypted room link, preview your camera in the lobby, and invite anyone by code or email.',
+  },
+  {
+    badge: 'Built for Privacy',
+    title: 'Your meetings stay under your control',
+    copy: 'Use Waiting Rooms, Co-Host permissions, one-click meeting lock, and explicit recording alerts for every participant.',
+  },
+  {
+    badge: 'Everywhere You Work',
+    title: 'Seamless across Web & Android',
+    copy: 'Start a call on your laptop and chat, schedule, or manage participants from your Android phone with one synced account.',
+  },
+];
+
+function getTimeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
-export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
+export function HomePage() {
   const { session, user, profile } = useAuth();
   const navigate = useNavigate();
 
@@ -44,16 +65,19 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
-  const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [schedules, setSchedules] = useState<ScheduledMeeting[]>([]);
   const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [slideIdx, setSlideIdx] = useState(0);
 
-  const displayName =
+  const firstName = (
     profile?.full_name ||
     (user?.user_metadata?.full_name as string | undefined) ||
     user?.email?.split('@')[0] ||
-    'there';
+    'there'
+  ).split(' ')[0];
 
   const todayFormatted = new Date().toLocaleDateString([], {
     weekday: 'long',
@@ -61,46 +85,28 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
     day: 'numeric',
   });
 
-  const loadMeetings = useCallback(async () => {
+  const loadDashboardData = useCallback(async () => {
     if (!session?.access_token) return;
     setMeetingsLoading(true);
     try {
-      const [list, invites] = await Promise.all([
+      const [list, invites, upcoming] = await Promise.all([
         listMeetings(session.access_token),
         listMyInvitations(session.access_token).catch(() => []),
+        listSchedules(session.access_token).catch(() => []),
       ]);
       setMeetings(list);
       setInvitations(invites);
+      setSchedules(upcoming);
     } catch (err) {
-      console.warn('[meetings] Failed to load recent meetings:', err);
+      console.warn('[meetings] Failed to load dashboard data:', err);
     } finally {
       setMeetingsLoading(false);
     }
   }, [session?.access_token]);
 
-  const handleRespondInvite = async (
-    invitation: MeetingInvitation,
-    action: 'accepted' | 'declined',
-  ) => {
-    if (!session?.access_token) return;
-    setInviteBusyId(invitation.id);
-    setActionError(null);
-    try {
-      const updated = await respondToInvitation(session.access_token, invitation.id, action);
-      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      if (action === 'accepted') {
-        navigate(`/meet/${invitation.meeting_code}`);
-      }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
-    } finally {
-      setInviteBusyId(null);
-    }
-  };
-
   useEffect(() => {
-    void loadMeetings();
-  }, [loadMeetings]);
+    void loadDashboardData();
+  }, [loadDashboardData]);
 
   const handleCreateMeeting = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -110,7 +116,7 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
     setCreating(true);
     try {
       const created = await createMeeting(session.access_token, {
-        title: newTitle.trim() || `${displayName}'s Meeting`,
+        title: newTitle.trim() || `${firstName}'s Meeting`,
         waiting_room_enabled: waitingRoom,
       });
       setShowCreateForm(false);
@@ -134,30 +140,68 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
     navigate(`/meet/${normalized}`);
   };
 
+  const handleRespondInvite = async (
+    invitation: MeetingInvitation,
+    action: 'accepted' | 'declined',
+  ) => {
+    if (!session?.access_token) return;
+    setInviteBusyId(invitation.id);
+    setActionError(null);
+    try {
+      const updated = await respondToInvitation(session.access_token, invitation.id, action);
+      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (action === 'accepted') {
+        navigate(`/meet/${invitation.meeting_code}`);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
+    } finally {
+      setInviteBusyId(null);
+    }
+  };
+
+  const handleStartScheduled = async (sched: ScheduledMeeting) => {
+    if (!session?.access_token) return;
+    try {
+      const started = await startSchedule(session.access_token, sched.id);
+      if (started.meeting_code) navigate(`/meet/${started.meeting_code}`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to start scheduled meeting.');
+    }
+  };
+
   const handleCopyInvite = async (code: string) => {
     try {
       await navigator.clipboard.writeText(buildMeetingInviteUrl(code));
       setCopiedCode(code);
       setTimeout(() => setCopiedCode((prev) => (prev === code ? null : prev)), 2000);
     } catch {
-      // Fallback ignored
+      // Ignore clipboard failures
     }
   };
+
+  const pendingInvites = invitations.filter(
+    (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
+  );
+  const nextSchedule = schedules.find((s) => s.meeting_status !== 'ended') ?? null;
+  const activeSlide = SPOTLIGHT_SLIDES[slideIdx];
 
   return (
     <div className="hero-grid">
       <div>
-        <span className="pill">
+        <span className="greeting-pill">
           <ShieldIcon size={14} />
           <span>{todayFormatted}</span>
         </span>
-        <h1 className="hero-title">Video calls and meetings for everyone, {displayName}.</h1>
+        <h1 className="hero-title">
+          {getTimeGreeting()}, {firstName}.
+        </h1>
         <p className="hero-subtitle">
-          Create a meeting with an unguessable code, manage a pre-join lobby and waiting room, and
-          join seamlessly from Meet Web or Meet Android.
+          Start a crystal-clear video meeting, schedule ahead with your team, or join an existing
+          room with a code or link.
         </p>
 
-        <form className="meeting-action-bar" onSubmit={handleJoinByCode}>
+        <form className="launch-bar" onSubmit={handleJoinByCode}>
           <button
             type="button"
             className="btn btn-primary"
@@ -168,37 +212,41 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
             <span>{creating ? 'Creating...' : 'New Meeting'}</span>
           </button>
 
-          <div className="code-input-wrap">
-            <span className="code-input-icon">
-              <KeyboardIcon size={18} />
+          <Link to="/schedule" className="btn btn-secondary">
+            <CalendarIcon size={16} />
+            <span>Schedule</span>
+          </Link>
+
+          <div className="join-capsule">
+            <span className="join-capsule-icon">
+              <KeyboardIcon size={17} />
             </span>
             <input
               type="text"
-              className="code-input"
+              className="join-capsule-input"
               value={meetingCode}
               onChange={(e) => setMeetingCode(e.target.value)}
-              placeholder="Enter a code or link"
+              placeholder="Enter code or link"
               aria-label="Meeting code or link"
             />
+            <button type="submit" className="btn btn-ghost btn-sm" disabled={!meetingCode.trim()}>
+              Join
+            </button>
           </div>
-
-          <button type="submit" className="btn btn-ghost" disabled={!meetingCode.trim()}>
-            Join
-          </button>
         </form>
 
         {actionError && <div className="alert alert-danger">{actionError}</div>}
 
         {showCreateForm && (
           <form className="card create-meeting-panel" onSubmit={handleCreateMeeting}>
-            <div className="card-header" style={{ marginBottom: 12 }}>
-              <h2 className="card-title">Create a New Meeting</h2>
+            <div className="card-header" style={{ marginBottom: 14 }}>
+              <h2 className="card-title">Start a New Meeting</h2>
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={() => setShowCreateForm(false)}
               >
-                Cancel
+                Close
               </button>
             </div>
             <div className="form">
@@ -209,7 +257,7 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
                   className="input"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder={`${displayName}'s Meeting`}
+                  placeholder={`${firstName}'s Meeting`}
                   maxLength={120}
                 />
               </label>
@@ -221,7 +269,7 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
                   onChange={(e) => setWaitingRoom(e.target.checked)}
                 />
                 <span>
-                  <strong>Enable Waiting Room</strong> — Host must admit guests before they enter
+                  <strong>Enable Waiting Room</strong> — Approve guests before they join
                 </span>
               </label>
 
@@ -235,89 +283,83 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
           </form>
         )}
 
-        {invitations.filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
-          .length > 0 && (
-          <section className="card" style={{ marginTop: 20 }}>
+        {pendingInvites.length > 0 && (
+          <section className="card invite-highlight-card" style={{ marginTop: 22 }}>
             <div className="card-header" style={{ marginBottom: 12 }}>
               <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MailIcon size={16} />
+                <MailIcon size={17} />
                 <span>Meeting Invitations</span>
               </h2>
-              <span className="badge badge-warning">
-                {
-                  invitations.filter(
-                    (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
-                  ).length
-                }{' '}
-                pending
-              </span>
+              <span className="badge badge-warning">{pendingInvites.length} pending</span>
             </div>
 
             <div className="meeting-list">
-              {invitations
-                .filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
-                .map((inv) => (
-                  <div key={inv.id} className="meeting-row">
-                    <div className="meeting-row-main">
-                      <div className="meeting-row-title">
-                        <span>{inv.meeting_title}</span>
-                        <span className="badge badge-success">Invited</span>
-                      </div>
-                      <div className="meeting-row-meta">
-                        <span>
-                          From <strong>{inv.inviter_name || inv.inviter_email || 'Host'}</strong>
-                        </span>
-                        <span>·</span>
-                        <code>{inv.meeting_code}</code>
-                      </div>
+              {pendingInvites.map((inv) => (
+                <div key={inv.id} className="meeting-row">
+                  <div className="meeting-row-main">
+                    <div className="meeting-row-title">
+                      <span>{inv.meeting_title}</span>
+                      <span className="badge badge-success">Invited</span>
                     </div>
-                    <div className="meeting-row-actions">
-                      <button
-                        type="button"
-                        className="btn btn-primary btn-sm"
-                        disabled={inviteBusyId === inv.id}
-                        onClick={() => void handleRespondInvite(inv, 'accepted')}
-                      >
-                        Accept & Join
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-danger-soft btn-sm"
-                        disabled={inviteBusyId === inv.id}
-                        onClick={() => void handleRespondInvite(inv, 'declined')}
-                      >
-                        Decline
-                      </button>
+                    <div className="meeting-row-meta">
+                      <span>
+                        From <strong>{inv.inviter_name || inv.inviter_email || 'Host'}</strong>
+                      </span>
+                      <span>·</span>
+                      <code>{inv.meeting_code}</code>
                     </div>
                   </div>
-                ))}
+                  <div className="meeting-row-actions">
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={inviteBusyId === inv.id}
+                      onClick={() => void handleRespondInvite(inv, 'accepted')}
+                    >
+                      Accept & Join
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-danger-soft btn-sm"
+                      disabled={inviteBusyId === inv.id}
+                      onClick={() => void handleRespondInvite(inv, 'declined')}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           </section>
         )}
 
-        <section className="card" style={{ marginTop: 24 }}>
+        <section className="card" style={{ marginTop: 22 }}>
           <div className="card-header">
-            <h2 className="card-title">Your Recent Meetings</h2>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => void loadMeetings()}
-              disabled={meetingsLoading}
-            >
-              <RefreshIcon size={14} />
-              <span>{meetingsLoading ? 'Loading...' : 'Refresh'}</span>
-            </button>
+            <h2 className="card-title">Recent Meetings</h2>
+            <div className="actions-row">
+              <Link to="/history" className="text-link">
+                View all history
+              </Link>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void loadDashboardData()}
+                disabled={meetingsLoading}
+              >
+                <RefreshIcon size={14} />
+              </button>
+            </div>
           </div>
 
           {meetingsLoading && meetings.length === 0 ? (
             <p className="status-item-desc">Loading your meetings...</p>
           ) : meetings.length === 0 ? (
             <div className="empty-state">
-              No meetings yet. Click <strong>New Meeting</strong> to generate your first room link.
+              No meetings yet. Click <strong>New Meeting</strong> to start your first room.
             </div>
           ) : (
             <div className="meeting-list">
-              {meetings.slice(0, 6).map((m) => (
+              {meetings.slice(0, 5).map((m) => (
                 <div key={m.id} className="meeting-row">
                   <div className="meeting-row-main">
                     <div className="meeting-row-title">
@@ -327,7 +369,7 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
                           m.status === 'active'
                             ? 'badge-success'
                             : m.status === 'ended'
-                              ? 'badge-danger'
+                              ? 'badge-neutral'
                               : 'badge-warning'
                         }`}
                       >
@@ -367,7 +409,7 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
                       className="btn btn-primary btn-sm"
                       onClick={() => navigate(`/meet/${m.code}`)}
                     >
-                      {m.status === 'ended' ? 'View' : 'Open'}
+                      {m.status === 'ended' ? 'Details' : 'Open'}
                     </button>
                   </div>
                 </div>
@@ -378,29 +420,114 @@ export function HomePage({ health, loading, error, onRefresh }: HomePageProps) {
       </div>
 
       <div className="right-stack">
-        <div className="card preview-card">
-          <div className="preview-stage">
-            <div className="preview-stage-top">
-              <span>Phase 3 · Meeting Management</span>
-              <span className="preview-live-pill">Active</span>
-            </div>
+        <section className="card spotlight-card">
+          <div className="spotlight-visual">
+            <span className="spotlight-badge">{activeSlide.badge}</span>
             <div>
-              <div className="preview-stage-title">Shareable codes & host controls</div>
-              <div className="preview-stage-sub">
-                Every room gets an unguessable 12-char code, pre-join lobby, waiting room, and
-                host-only lock & removal controls.
+              <h2 className="spotlight-heading">{activeSlide.title}</h2>
+              <p className="spotlight-copy">{activeSlide.copy}</p>
+            </div>
+          </div>
+          <div className="carousel-controls">
+            <div className="carousel-dots" role="tablist" aria-label="Meet highlights">
+              {SPOTLIGHT_SLIDES.map((s, idx) => (
+                <button
+                  key={s.badge}
+                  type="button"
+                  className={`carousel-dot ${idx === slideIdx ? 'active' : ''}`}
+                  aria-label={s.badge}
+                  onClick={() => setSlideIdx(idx)}
+                />
+              ))}
+            </div>
+            <div className="actions-row">
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() =>
+                  setSlideIdx((prev) => (prev - 1 + SPOTLIGHT_SLIDES.length) % SPOTLIGHT_SLIDES.length)
+                }
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                onClick={() => setSlideIdx((prev) => (prev + 1) % SPOTLIGHT_SLIDES.length)}
+              >
+                →
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="card">
+          <div className="card-header" style={{ marginBottom: 14 }}>
+            <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CalendarIcon size={17} />
+              <span>Up Next</span>
+            </h2>
+            <Link to="/schedule" className="text-link">
+              Manage schedule
+            </Link>
+          </div>
+
+          {nextSchedule ? (
+            <div className="meeting-row roster-row-col">
+              <div className="roster-top-line">
+                <div className="meeting-row-title">{nextSchedule.title}</div>
+                <span className="badge badge-success">
+                  {nextSchedule.is_host ? 'Host' : 'Invited'}
+                </span>
+              </div>
+              <div className="meeting-row-meta">
+                <span className="inline-meta">
+                  <ClockIcon size={13} />
+                  {new Date(nextSchedule.scheduled_start).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </span>
+                {nextSchedule.meeting_code && (
+                  <>
+                    <span>·</span>
+                    <code>{nextSchedule.meeting_code}</code>
+                  </>
+                )}
+              </div>
+              <div className="actions-row" style={{ marginTop: 4 }}>
+                {nextSchedule.is_host ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => void handleStartScheduled(nextSchedule)}
+                  >
+                    <VideoIcon size={14} />
+                    <span>Start Meeting</span>
+                  </button>
+                ) : nextSchedule.meeting_code ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={() => navigate(`/meet/${nextSchedule.meeting_code}`)}
+                  >
+                    Open Lobby
+                  </button>
+                ) : null}
               </div>
             </div>
-          </div>
-          <div className="feature-strip-compact">
-            <div className="status-item-desc">
-              <strong>Cross-Platform:</strong> Create a meeting on Web and join it using the code on
-              your Android phone (or vice versa).
+          ) : (
+            <div className="empty-state">
+              No upcoming scheduled calls.{' '}
+              <Link to="/schedule" className="text-link">
+                Schedule one now
+              </Link>
+              .
             </div>
-          </div>
-        </div>
-
-        <StatusCard data={health} loading={loading} error={error} onRefresh={onRefresh} />
+          )}
+        </section>
       </div>
     </div>
   );

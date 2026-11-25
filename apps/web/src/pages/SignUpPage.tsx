@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { AuthShell } from '../components/AuthShell';
 import { VideoIcon } from '../components/Icons';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 export function SignUpPage() {
@@ -47,13 +47,9 @@ export function SignUpPage() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-topbar">
-        <ThemeToggle />
-      </div>
-
+    <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 18 }}>
+        <div className="brand" style={{ marginBottom: 20 }}>
           <span className="brand-mark">
             <VideoIcon size={18} />
           </span>
@@ -61,7 +57,7 @@ export function SignUpPage() {
         </div>
 
         <h1 className="auth-title">Create your account</h1>
-        <p className="auth-subtitle">Join Meet on web and Android with one account.</p>
+        <p className="auth-subtitle">One account for Meet Web and Meet Android.</p>
 
         {!isConfigured && (
           <div className="alert alert-warning">
@@ -88,7 +84,7 @@ export function SignUpPage() {
           </label>
 
           <label className="field">
-            <span className="field-label">Email</span>
+            <span className="field-label">Email address</span>
             <input
               type="email"
               className="input"
@@ -126,6 +122,6 @@ export function SignUpPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   );
 }

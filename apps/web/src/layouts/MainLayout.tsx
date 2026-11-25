@@ -37,8 +37,6 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
       ? 'dot dot-success'
       : 'dot dot-danger';
 
-  const statusLabel = loading ? 'Checking' : backendConnected ? 'Online' : 'Offline';
-
   const displayName =
     profile?.full_name ||
     (user?.user_metadata?.full_name as string | undefined) ||
@@ -62,7 +60,19 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
                 to="/"
                 className={`nav-link ${location.pathname === '/' ? 'nav-link-active' : ''}`}
               >
-                Dashboard
+                Home
+              </Link>
+              <Link
+                to="/schedule"
+                className={`nav-link ${location.pathname === '/schedule' ? 'nav-link-active' : ''}`}
+              >
+                Schedule
+              </Link>
+              <Link
+                to="/history"
+                className={`nav-link ${location.pathname === '/history' ? 'nav-link-active' : ''}`}
+              >
+                History
               </Link>
               <Link
                 to="/profile"
@@ -77,16 +87,26 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
         <div className="nav-right">
           <span className="nav-clock">{clockText}</span>
 
-          <div className="nav-status" role="status" title="Backend API status">
+          <Link
+            to="/profile"
+            className="nav-dot-pill"
+            title={
+              loading
+                ? 'Checking connection...'
+                : backendConnected
+                  ? 'All systems operational — click for details'
+                  : 'Server offline — click for details'
+            }
+          >
             <span className={dotClass} />
-            <span>{statusLabel}</span>
-          </div>
+            <span>{loading ? 'Syncing' : backendConnected ? 'Ready' : 'Offline'}</span>
+          </Link>
 
           <ThemeToggle />
 
           {user && (
             <div className="nav-user">
-              <Link to="/profile" className="avatar-chip" title="Open profile">
+              <Link to="/profile" className="avatar-chip" title="Open profile & settings">
                 <span className="avatar-circle">
                   {profile?.avatar_url ? (
                     <img src={profile.avatar_url} alt={displayName} className="avatar-img" />

@@ -113,6 +113,55 @@ export interface MeetingInvitation {
   created_at: string;
 }
 
+export interface ScheduledMeeting {
+  id: string;
+  meeting_id: string | null;
+  meeting_code: string | null;
+  meeting_status: MeetingStatus | null;
+  host_id: string;
+  host_name: string | null;
+  host_email: string | null;
+  title: string;
+  description: string | null;
+  scheduled_start: string;
+  scheduled_end: string;
+  timezone: string;
+  is_host: boolean;
+  created_at: string;
+}
+
+export interface MeetingHistoryItem {
+  id: string;
+  code: string;
+  title: string;
+  status: MeetingStatus;
+  host_id: string;
+  host_name: string | null;
+  host_email: string | null;
+  my_role: ParticipantRole;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  duration_seconds: number;
+  participant_count: number;
+  message_count: number;
+}
+
+export interface MeetingHistoryDetail extends MeetingHistoryItem {
+  participants: MeetingParticipant[];
+  messages: MeetingMessage[];
+}
+
+export interface UserDevice {
+  id: string;
+  user_id: string;
+  platform: 'android' | 'web' | 'ios';
+  push_token: string;
+  device_name: string | null;
+  last_active_at: string;
+  created_at: string;
+}
+
 export const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:4000').replace(
   /\/$/,
   '',
@@ -432,4 +481,91 @@ export async function respondToInvitation(
     },
   );
   return payload.invitation;
+}
+
+export async function listSchedules(accessToken: string): Promise<ScheduledMeeting[]> {
+  const payload = await authFetch<{ schedules: ScheduledMeeting[] }>('/api/schedules', accessToken);
+  return payload.schedules;
+}
+
+export async function createSchedule(
+  accessToken: string,
+  input: {
+    title: string;
+    description?: string;
+    scheduled_start: string;
+    scheduled_end: string;
+    timezone: string;
+    waiting_room_enabled?: boolean;
+    invite_emails?: string[];
+  },
+): Promise<{ schedule: ScheduledMeeting; invitedCount: number }> {
+  return authFetch<{ schedule: ScheduledMeeting; invitedCount: number }>(
+    '/api/schedules',
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function startSchedule(
+  accessToken: string,
+  scheduleId: string,
+): Promise<ScheduledMeeting> {
+  const payload = await authFetch<{ schedule: ScheduledMeeting }>(
+    `/api/schedules/${encodeURIComponent(scheduleId)}/start`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.schedule;
+}
+
+export async function deleteSchedule(accessToken: string, scheduleId: string): Promise<void> {
+  await authFetch<{ ok: boolean }>(
+    `/api/schedules/${encodeURIComponent(scheduleId)}`,
+    accessToken,
+    { method: 'DELETE' },
+  );
+}
+
+export async function listHistory(accessToken: string): Promise<MeetingHistoryItem[]> {
+  const payload = await authFetch<{ history: MeetingHistoryItem[] }>('/api/history', accessToken);
+  return payload.history;
+}
+
+export async function getHistoryDetail(
+  accessToken: string,
+  code: string,
+): Promise<MeetingHistoryDetail> {
+  const payload = await authFetch<{ detail: MeetingHistoryDetail }>(
+    `/api/history/${encodeURIComponent(code)}`,
+    accessToken,
+  );
+  return payload.detail;
+}
+
+export async function listDevices(accessToken: string): Promise<UserDevice[]> {
+  const payload = await authFetch<{ devices: UserDevice[] }>('/api/devices', accessToken);
+  return payload.devices;
+}
+
+export async function registerDevice(
+  accessToken: string,
+  input: { platform: 'android' | 'web' | 'ios'; push_token: string; device_name?: string },
+): Promise<UserDevice> {
+  const payload = await authFetch<{ device: UserDevice }>('/api/devices', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+  return payload.device;
+}
+
+export async function deleteDevice(accessToken: string, deviceId: string): Promise<void> {
+  await authFetch<{ ok: boolean }>(
+    `/api/devices/${encodeURIComponent(deviceId)}`,
+    accessToken,
+    { method: 'DELETE' },
+  );
 }

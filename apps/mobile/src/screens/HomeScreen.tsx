@@ -1,24 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { StatusBadge, type BadgeTone } from '../components/StatusBadge';
+import { StatusBadge } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import { useTheme } from '../hooks/useTheme';
 import {
-  API_BASE_URL,
   createMeeting,
   extractMeetingCode,
   listMeetings,
   listMyInvitations,
+  listSchedules,
   respondToInvitation,
+  startSchedule,
   type MeetingInvitation,
   type MeetingSummary,
+  type ScheduledMeeting,
 } from '../services/api';
 
 interface HomeScreenProps {
   onOpenProfile: () => void;
   onOpenLobby: (code: string) => void;
+  onOpenSchedule: () => void;
+  onOpenHistory: () => void;
 }
 
 function getInitials(name: string): string {
@@ -28,10 +32,22 @@ function getInitials(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
-  const { session, user, profile, signOut } = useAuth();
+function getGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function HomeScreen({
+  onOpenProfile,
+  onOpenLobby,
+  onOpenSchedule,
+  onOpenHistory,
+}: HomeScreenProps) {
+  const { session, user, profile } = useAuth();
   const { colors } = useTheme();
-  const { data, loading, error, refresh } = useBackendHealth();
+  const { data: healthData, loading: healthLoading } = useBackendHealth();
 
   const [meetingCode, setMeetingCode] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -41,56 +57,40 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
-  const [meetingsLoading, setMeetingsLoading] = useState(true);
+  const [schedules, setSchedules] = useState<ScheduledMeeting[]>([]);
   const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
 
-  const displayName =
+  const firstName = (
     profile?.full_name ||
     (user?.user_metadata?.full_name as string | undefined) ||
     user?.email?.split('@')[0] ||
-    'User';
+    'there'
+  ).split(' ')[0];
 
-  const loadMeetings = useCallback(async () => {
+  const loadDashboard = useCallback(async () => {
     if (!session?.access_token) return;
     setMeetingsLoading(true);
     try {
-      const [list, invites] = await Promise.all([
+      const [list, invites, upcoming] = await Promise.all([
         listMeetings(session.access_token),
         listMyInvitations(session.access_token).catch(() => []),
+        listSchedules(session.access_token).catch(() => []),
       ]);
       setMeetings(list);
       setInvitations(invites);
+      setSchedules(upcoming);
     } catch (err) {
-      console.warn('[mobile meetings] Failed to load recent meetings:', err);
+      console.warn('[mobile meetings] Failed to load dashboard:', err);
     } finally {
       setMeetingsLoading(false);
     }
   }, [session?.access_token]);
 
-  const handleRespondInvite = async (
-    invitation: MeetingInvitation,
-    action: 'accepted' | 'declined',
-  ) => {
-    if (!session?.access_token) return;
-    setInviteBusyId(invitation.id);
-    setActionError(null);
-    try {
-      const updated = await respondToInvitation(session.access_token, invitation.id, action);
-      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      if (action === 'accepted') {
-        onOpenLobby(invitation.meeting_code);
-      }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
-    } finally {
-      setInviteBusyId(null);
-    }
-  };
-
   useEffect(() => {
-    void loadMeetings();
-  }, [loadMeetings]);
+    void loadDashboard();
+  }, [loadDashboard]);
 
   const handleCreateMeeting = async () => {
     if (!session?.access_token) return;
@@ -98,7 +98,7 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
     setCreating(true);
     try {
       const created = await createMeeting(session.access_token, {
-        title: newTitle.trim() || `${displayName}'s Meeting`,
+        title: newTitle.trim() || `${firstName}'s Meeting`,
         waiting_room_enabled: waitingRoom,
       });
       setShowCreateForm(false);
@@ -121,69 +121,112 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
     onOpenLobby(normalized);
   };
 
-  const backendTone: BadgeTone = loading ? 'warning' : data ? 'success' : 'danger';
-  const backendLabel = loading ? 'Checking' : data ? 'Online' : 'Offline';
+  const handleRespondInvite = async (
+    invitation: MeetingInvitation,
+    action: 'accepted' | 'declined',
+  ) => {
+    if (!session?.access_token) return;
+    setInviteBusyId(invitation.id);
+    setActionError(null);
+    try {
+      const updated = await respondToInvitation(session.access_token, invitation.id, action);
+      setInvitations((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
+      if (action === 'accepted') {
+        onOpenLobby(invitation.meeting_code);
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to respond to invitation.');
+    } finally {
+      setInviteBusyId(null);
+    }
+  };
 
-  const supabaseTone: BadgeTone = loading
-    ? 'warning'
-    : !data
-      ? 'warning'
-      : data.supabase.status === 'connected'
-        ? 'success'
-        : data.supabase.status === 'not_configured'
-          ? 'warning'
-          : 'danger';
+  const handleStartScheduled = async (sched: ScheduledMeeting) => {
+    if (!session?.access_token) return;
+    try {
+      const started = await startSchedule(session.access_token, sched.id);
+      if (started.meeting_code) onOpenLobby(started.meeting_code);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to start scheduled meeting.');
+    }
+  };
 
-  const supabaseLabel = loading
-    ? 'Checking'
-    : !data
-      ? 'Waiting'
-      : data.supabase.status === 'connected'
-        ? 'Connected'
-        : data.supabase.status === 'not_configured'
-          ? 'Needs Keys'
-          : 'Error';
+  const pendingInvites = invitations.filter(
+    (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
+  );
+  const nextSchedule = schedules.find((s) => s.meeting_status !== 'ended') ?? null;
 
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.topBar}>
-        <View style={styles.brandRow}>
-          <Pressable
-            style={[styles.avatar, { backgroundColor: colors.accent }]}
-            onPress={onOpenProfile}
-          >
-            <Text style={styles.avatarText}>{getInitials(displayName)}</Text>
-          </Pressable>
-          <View style={styles.headerText}>
-            <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-              Hi, {displayName}
-            </Text>
-            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Meet Android</Text>
+        <Pressable style={styles.brandRow} onPress={onOpenProfile}>
+          <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+            <Text style={styles.avatarText}>{getInitials(firstName)}</Text>
           </View>
-        </View>
+          <View style={styles.headerText}>
+            <Text style={[styles.greetingSmall, { color: colors.textMuted }]}>
+              {getGreeting()}
+            </Text>
+            <View style={styles.nameStatusRow}>
+              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                {firstName}
+              </Text>
+              <View
+                style={[
+                  styles.statusDot,
+                  {
+                    backgroundColor: healthLoading
+                      ? '#f59e0b'
+                      : healthData
+                        ? '#22c55e'
+                        : '#ef4444',
+                  },
+                ]}
+              />
+            </View>
+          </View>
+        </Pressable>
         <ThemeToggle />
       </View>
 
       <View
         style={[
           styles.heroCard,
-          { backgroundColor: colors.surface, borderColor: colors.border },
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            shadowColor: colors.shadowColor,
+          },
         ]}
       >
-        <Text style={[styles.heroTitle, { color: colors.text }]}>Start or join a meeting</Text>
+        <Text style={[styles.heroTitle, { color: colors.text }]}>
+          Video calls made simple
+        </Text>
         <Text style={[styles.heroSub, { color: colors.textMuted }]}>
-          Create an instant room with a secure code or enter a code from Meet Web.
+          Start an instant room, plan ahead with your team, or enter a meeting code.
         </Text>
 
-        <Pressable
-          style={[styles.primaryButton, { backgroundColor: colors.accent }]}
-          onPress={() => setShowCreateForm((prev) => !prev)}
-          disabled={creating}
-        >
-          <Text style={styles.primaryButtonText}>
-            {showCreateForm ? 'Close New Meeting' : '+ New Meeting'}
-          </Text>
-        </Pressable>
+        <View style={styles.primaryActionsRow}>
+          <Pressable
+            style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+            onPress={() => setShowCreateForm((prev) => !prev)}
+            disabled={creating}
+          >
+            <Text style={styles.primaryButtonText}>
+              {showCreateForm ? 'Close' : '+ New Meeting'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.secondaryActionBtn,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+            ]}
+            onPress={onOpenSchedule}
+          >
+            <Text style={[styles.secondaryActionText, { color: colors.text }]}>Schedule</Text>
+          </Pressable>
+        </View>
 
         {showCreateForm && (
           <View
@@ -203,7 +246,7 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
               ]}
               value={newTitle}
               onChangeText={setNewTitle}
-              placeholder={`${displayName}'s Meeting`}
+              placeholder={`${firstName}'s Meeting`}
               placeholderTextColor={colors.placeholder}
             />
 
@@ -211,7 +254,7 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: colors.text }]}>Waiting Room</Text>
                 <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                  Host approves guests before entry
+                  Approve guests before they enter
                 </Text>
               </View>
               <Switch value={waitingRoom} onValueChange={setWaitingRoom} />
@@ -233,16 +276,14 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
           </View>
         )}
 
-        <View style={styles.joinRow}>
+        <View
+          style={[
+            styles.joinCapsule,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+          ]}
+        >
           <TextInput
-            style={[
-              styles.codeInput,
-              {
-                backgroundColor: colors.surfaceElevated,
-                borderColor: colors.borderStrong,
-                color: colors.text,
-              },
-            ]}
+            style={[styles.joinCapsuleInput, { color: colors.text }]}
             value={meetingCode}
             onChangeText={setMeetingCode}
             placeholder="Enter meeting code or link"
@@ -252,10 +293,7 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
           <Pressable
             style={[
               styles.joinButton,
-              {
-                backgroundColor: colors.accentSoft,
-                borderColor: colors.accentBorder,
-              },
+              { backgroundColor: colors.accentSoft },
               !meetingCode.trim() && styles.buttonDisabled,
             ]}
             disabled={!meetingCode.trim()}
@@ -277,95 +315,149 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
         )}
       </View>
 
-      {invitations.filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
-        .length > 0 && (
+      {pendingInvites.length > 0 && (
         <View
           style={[
             styles.card,
-            { backgroundColor: colors.surface, borderColor: colors.border },
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.accentBorder,
+              shadowColor: colors.shadowColor,
+            },
           ]}
         >
           <View style={styles.cardHeader}>
             <Text style={[styles.cardTitle, { color: colors.text }]}>Meeting Invitations</Text>
-            <StatusBadge
-              label={`${
-                invitations.filter(
-                  (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
-                ).length
-              } Pending`}
-              tone="warning"
-            />
+            <StatusBadge label={`${pendingInvites.length} Pending`} tone="warning" />
           </View>
-          {invitations
-            .filter((inv) => inv.status === 'pending' && inv.meeting_status !== 'ended')
-            .map((inv) => (
-              <View
-                key={inv.id}
-                style={[
-                  styles.inviteCardRow,
-                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.rowText}>
-                  <Text style={[styles.rowTitle, { color: colors.text }]}>{inv.meeting_title}</Text>
-                  <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                    From {inv.inviter_name || inv.inviter_email || 'Host'} · {inv.meeting_code}
-                  </Text>
-                </View>
-                <View style={styles.inviteBtnRow}>
-                  <Pressable
-                    style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
-                    disabled={inviteBusyId === inv.id}
-                    onPress={() => void handleRespondInvite(inv, 'accepted')}
-                  >
-                    <Text style={styles.acceptBtnText}>Accept & Join</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.declineBtn,
-                      { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
-                    ]}
-                    disabled={inviteBusyId === inv.id}
-                    onPress={() => void handleRespondInvite(inv, 'declined')}
-                  >
-                    <Text style={[styles.declineBtnText, { color: colors.dangerText }]}>
-                      Decline
-                    </Text>
-                  </Pressable>
-                </View>
+          {pendingInvites.map((inv) => (
+            <View
+              key={inv.id}
+              style={[
+                styles.inviteCardRow,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>{inv.meeting_title}</Text>
+                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                  From {inv.inviter_name || inv.inviter_email || 'Host'} · {inv.meeting_code}
+                </Text>
               </View>
-            ))}
+              <View style={styles.inviteBtnRow}>
+                <Pressable
+                  style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
+                  disabled={inviteBusyId === inv.id}
+                  onPress={() => void handleRespondInvite(inv, 'accepted')}
+                >
+                  <Text style={styles.acceptBtnText}>Accept & Join</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.declineBtn,
+                    { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+                  ]}
+                  disabled={inviteBusyId === inv.id}
+                  onPress={() => void handleRespondInvite(inv, 'declined')}
+                >
+                  <Text style={[styles.declineBtnText, { color: colors.dangerText }]}>Decline</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {nextSchedule && (
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              shadowColor: colors.shadowColor,
+            },
+          ]}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Up Next</Text>
+            <Pressable onPress={onOpenSchedule}>
+              <Text style={[styles.linkText, { color: colors.accentText }]}>See all</Text>
+            </Pressable>
+          </View>
+          <View
+            style={[
+              styles.inviteCardRow,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.rowText}>
+              <Text style={[styles.rowTitle, { color: colors.text }]}>{nextSchedule.title}</Text>
+              <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                {new Date(nextSchedule.scheduled_start).toLocaleString([], {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}{' '}
+                · {nextSchedule.meeting_code}
+              </Text>
+            </View>
+            <Pressable
+              style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
+              onPress={() =>
+                nextSchedule.is_host
+                  ? void handleStartScheduled(nextSchedule)
+                  : nextSchedule.meeting_code
+                    ? onOpenLobby(nextSchedule.meeting_code)
+                    : undefined
+              }
+            >
+              <Text style={styles.acceptBtnText}>
+                {nextSchedule.is_host ? 'Start Meeting' : 'Open Lobby'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
       <View
         style={[
           styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
+          {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+            shadowColor: colors.shadowColor,
+          },
         ]}
       >
         <View style={styles.cardHeader}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Meetings</Text>
-          <Pressable
-            style={[
-              styles.smallButton,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-              meetingsLoading && styles.buttonDisabled,
-            ]}
-            onPress={() => void loadMeetings()}
-            disabled={meetingsLoading}
-          >
-            <Text style={[styles.smallButtonText, { color: colors.text }]}>
-              {meetingsLoading ? 'Loading...' : 'Refresh'}
-            </Text>
-          </Pressable>
+          <View style={styles.headerActions}>
+            <Pressable onPress={onOpenHistory}>
+              <Text style={[styles.linkText, { color: colors.accentText }]}>History</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.smallButton,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                meetingsLoading && styles.buttonDisabled,
+              ]}
+              onPress={() => void loadDashboard()}
+              disabled={meetingsLoading}
+            >
+              <Text style={[styles.smallButtonText, { color: colors.text }]}>
+                {meetingsLoading ? '...' : '↻'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
 
         {meetings.length === 0 ? (
           <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
             {meetingsLoading
               ? 'Loading your meetings...'
-              : 'No meetings yet. Tap + New Meeting to start your first room.'}
+              : 'No meetings yet. Tap + New Meeting to start your first call.'}
           </Text>
         ) : (
           meetings.slice(0, 5).map((m) => (
@@ -391,114 +483,13 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
                   m.status === 'active'
                     ? 'success'
                     : m.status === 'ended'
-                      ? 'danger'
+                      ? 'warning'
                       : 'warning'
                 }
               />
             </Pressable>
           ))
         )}
-      </View>
-
-      <View style={styles.quickRow}>
-        <Pressable
-          style={[
-            styles.secondaryButton,
-            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
-          ]}
-          onPress={onOpenProfile}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-            Profile & Theme
-          </Text>
-        </Pressable>
-        <Pressable
-          style={[
-            styles.signOutPill,
-            { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
-          ]}
-          onPress={() => void signOut()}
-        >
-          <Text style={[styles.signOutPillText, { color: colors.dangerText }]}>Sign Out</Text>
-        </Pressable>
-      </View>
-
-      <View
-        style={[
-          styles.card,
-          { backgroundColor: colors.surface, borderColor: colors.border },
-        ]}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>System Health</Text>
-          <Pressable
-            style={[
-              styles.smallButton,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-              loading && styles.buttonDisabled,
-            ]}
-            onPress={() => void refresh()}
-            disabled={loading}
-          >
-            <Text style={[styles.smallButtonText, { color: colors.text }]}>
-              {loading ? 'Checking...' : 'Refresh'}
-            </Text>
-          </Pressable>
-        </View>
-
-        <View
-          style={[
-            styles.row,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>Meet Backend API</Text>
-            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-              {error ? `${API_BASE_URL} — ${error}` : `${API_BASE_URL}/api/health`}
-            </Text>
-          </View>
-          <StatusBadge label={backendLabel} tone={backendTone} />
-        </View>
-
-        <View
-          style={[
-            styles.row,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>Supabase</Text>
-            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-              {data
-                ? data.supabase.message
-                : 'Start the Node.js backend to inspect Supabase status.'}
-            </Text>
-          </View>
-          <StatusBadge label={supabaseLabel} tone={supabaseTone} />
-        </View>
-
-        <View
-          style={[
-            styles.row,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>LiveKit SFU</Text>
-            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-              {!data
-                ? 'Start/connect the backend to inspect LiveKit status.'
-                : data.livekit
-                  ? data.livekit.message
-                  : 'Add LiveKit keys to .env for live video streaming.'}
-            </Text>
-          </View>
-          <StatusBadge
-            label={!data ? 'Waiting' : data.livekit?.status === 'configured' ? 'Ready' : 'Needs Keys'}
-            tone={data?.livekit?.status === 'configured' ? 'success' : 'warning'}
-          />
-        </View>
       </View>
     </ScrollView>
   );
@@ -507,6 +498,7 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
 const styles = StyleSheet.create({
   content: {
     padding: 18,
+    paddingBottom: 28,
     gap: 16,
   },
   topBar: {
@@ -526,44 +518,85 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
   avatarText: {
     color: '#ffffff',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
+  },
+  greetingSmall: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  nameStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  subtitle: {
-    fontSize: 12,
-    marginTop: 1,
-  },
-  heroCard: {
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1,
-    gap: 12,
-  },
-  heroTitle: {
     fontSize: 19,
     fontWeight: '800',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  heroCard: {
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    gap: 14,
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.3,
   },
   heroSub: {
     fontSize: 13,
     lineHeight: 19,
-    marginTop: -4,
+    marginTop: -6,
+  },
+  primaryActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  primaryButton: {
+    flex: 1.35,
+    paddingVertical: 13,
+    borderRadius: 13,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  secondaryActionBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  secondaryActionText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   createBox: {
-    borderRadius: 12,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 12,
+    padding: 13,
     gap: 12,
   },
   switchRow: {
@@ -572,33 +605,32 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
-  primaryButton: {
-    paddingVertical: 13,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  primaryButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  joinRow: {
+  joinCapsule: {
     flexDirection: 'row',
-    gap: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingLeft: 14,
+    paddingRight: 5,
+    paddingVertical: 4,
+    gap: 8,
+  },
+  joinCapsuleInput: {
+    flex: 1,
+    fontSize: 14,
+    paddingVertical: 8,
   },
   codeInput: {
-    flex: 1,
     borderWidth: 1,
     borderRadius: 11,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 13,
+    paddingVertical: 10,
     fontSize: 14,
   },
   joinButton: {
-    borderWidth: 1,
-    borderRadius: 11,
-    paddingHorizontal: 18,
-    justifyContent: 'center',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
     alignItems: 'center',
   },
   joinButtonText: {
@@ -606,7 +638,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   noticeBox: {
-    borderRadius: 10,
+    borderRadius: 11,
     borderWidth: 1,
     padding: 11,
   },
@@ -614,60 +646,47 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-  quickRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  secondaryButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  signOutPill: {
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  signOutPillText: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
   card: {
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    gap: 10,
+    gap: 11,
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 4,
+    marginBottom: 2,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  linkText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   cardTitle: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   smallButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
     borderWidth: 1,
   },
   smallButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
   buttonDisabled: {
-    opacity: 0.5,
+    opacity: 0.45,
   },
   row: {
     flexDirection: 'row',
@@ -675,7 +694,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
     padding: 13,
-    borderRadius: 12,
+    borderRadius: 13,
     borderWidth: 1,
   },
   rowText: {
@@ -683,7 +702,7 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   rowDesc: {
     fontSize: 12,
@@ -691,7 +710,7 @@ const styles = StyleSheet.create({
   },
   inviteCardRow: {
     padding: 13,
-    borderRadius: 12,
+    borderRadius: 13,
     borderWidth: 1,
     gap: 10,
   },
@@ -701,8 +720,8 @@ const styles = StyleSheet.create({
   },
   acceptBtn: {
     flex: 1,
-    paddingVertical: 9,
-    borderRadius: 9,
+    paddingVertical: 10,
+    borderRadius: 10,
     alignItems: 'center',
   },
   acceptBtnText: {
@@ -712,8 +731,8 @@ const styles = StyleSheet.create({
   },
   declineBtn: {
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 9,
+    paddingVertical: 10,
+    borderRadius: 10,
     borderWidth: 1,
     alignItems: 'center',
   },

@@ -107,3 +107,52 @@ export interface MeetingInvitation {
   status: InvitationStatus;
   created_at: string;
 }
+
+export interface ScheduledMeeting {
+  id: string;
+  meeting_id: string | null;
+  meeting_code: string | null;
+  meeting_status: MeetingStatus | null;
+  host_id: string;
+  host_name: string | null;
+  host_email: string | null;
+  title: string;
+  description: string | null;
+  scheduled_start: string;
+  scheduled_end: string;
+  timezone: string;
+  is_host: boolean;
+  created_at: string;
+}
+
+export interface MeetingHistoryItem {
+  id: string;
+  code: string;
+  title: string;
+  status: MeetingStatus;
+  host_id: string;
+  host_name: string | null;
+  host_email: string | null;
+  my_role: ParticipantRole;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  duration_seconds: number;
+  participant_count: number;
+  message_count: number;
+}
+
+export interface MeetingHistoryDetail extends MeetingHistoryItem {
+  participants: MeetingParticipant[];
+  messages: MeetingMessage[];
+}
+
+export interface UserDevice {
+  id: string;
+  user_id: string;
+  platform: 'android' | 'web' | 'ios';
+  push_token: string;
+  device_name: string | null;
+  last_active_at: string;
+  created_at: string;
+}

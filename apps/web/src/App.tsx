@@ -5,12 +5,14 @@ import { useBackendHealth } from './hooks/useBackendHealth';
 import { ThemeProvider } from './hooks/useTheme';
 import { MainLayout } from './layouts/MainLayout';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { HistoryPage } from './pages/HistoryPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
 import { MeetingLobbyPage } from './pages/MeetingLobbyPage';
 import { MeetingRoomPage } from './pages/MeetingRoomPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { SchedulePage } from './pages/SchedulePage';
 import { SignUpPage } from './pages/SignUpPage';
 
 function AppRoutes() {
@@ -28,12 +30,7 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MainLayout backendConnected={Boolean(data)} loading={loading}>
-              <HomePage
-                health={data}
-                loading={loading}
-                error={error}
-                onRefresh={() => void refresh()}
-              />
+              <HomePage />
             </MainLayout>
           </ProtectedRoute>
         }
@@ -43,7 +40,32 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MainLayout backendConnected={Boolean(data)} loading={loading}>
-              <ProfilePage />
+              <ProfilePage
+                health={data}
+                healthLoading={loading}
+                healthError={error}
+                onRefreshHealth={() => void refresh()}
+              />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/schedule"
+        element={
+          <ProtectedRoute>
+            <MainLayout backendConnected={Boolean(data)} loading={loading}>
+              <SchedulePage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/history"
+        element={
+          <ProtectedRoute>
+            <MainLayout backendConnected={Boolean(data)} loading={loading}>
+              <HistoryPage />
             </MainLayout>
           </ProtectedRoute>
         }

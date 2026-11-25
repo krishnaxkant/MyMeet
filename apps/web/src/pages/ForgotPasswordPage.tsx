@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
+import { AuthShell } from '../components/AuthShell';
 import { VideoIcon } from '../components/Icons';
-import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 
 export function ForgotPasswordPage() {
@@ -27,13 +27,9 @@ export function ForgotPasswordPage() {
   };
 
   return (
-    <div className="auth-shell">
-      <div className="auth-topbar">
-        <ThemeToggle />
-      </div>
-
+    <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 18 }}>
+        <div className="brand" style={{ marginBottom: 20 }}>
           <span className="brand-mark">
             <VideoIcon size={18} />
           </span>
@@ -42,7 +38,7 @@ export function ForgotPasswordPage() {
 
         <h1 className="auth-title">Reset your password</h1>
         <p className="auth-subtitle">
-          Enter your email and we&apos;ll send you a password recovery link.
+          Enter your email and we&apos;ll send you a recovery link right away.
         </p>
 
         {error && <div className="alert alert-danger">{error}</div>}
@@ -54,7 +50,7 @@ export function ForgotPasswordPage() {
 
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">
-            <span className="field-label">Email</span>
+            <span className="field-label">Email address</span>
             <input
               type="email"
               className="input"
@@ -78,6 +74,6 @@ export function ForgotPasswordPage() {
           </Link>
         </p>
       </div>
-    </div>
+    </AuthShell>
   );
 }

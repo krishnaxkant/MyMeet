@@ -1,5 +1,6 @@
 import { getSupabaseAdmin } from '../config/supabase.js';
 import type { AuthenticatedUser } from '../middleware/authMiddleware.js';
+import { sendPushNotificationToUser } from './deviceService.js';
 import { sendMeetingInviteEmail, type EmailSendResult } from './emailService.js';
 import { getMeetingByCode, HttpError, type MeetingStatus } from './meetingService.js';
 import { getOrCreateProfile } from './profileService.js';
@@ -190,6 +191,14 @@ export async function createMeetingInvitation(
     meetingTitle: meeting.title,
     meetingCode: meeting.code,
   });
+
+  if (invitationInfo?.invitee_user_id) {
+    void sendPushNotificationToUser(invitationInfo.invitee_user_id, {
+      title: `Meeting Invite: ${meeting.title}`,
+      body: `${inviterDisplayName} invited you · Code ${meeting.code}`,
+      data: { meetingCode: meeting.code },
+    });
+  }
 
   return { invitation: invitationInfo, emailDelivery };
 }

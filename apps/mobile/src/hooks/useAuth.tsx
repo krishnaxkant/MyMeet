@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -42,24 +43,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [profileLoading, setProfileLoading] = useState<boolean>(false);
+  const lastFetchedTokenRef = useRef<string | null>(null);
 
-  const loadProfileForSession = useCallback(async (activeSession: Session | null) => {
-    if (!activeSession?.access_token) {
-      setProfile(null);
-      return;
-    }
+  const loadProfileForSession = useCallback(
+    async (activeSession: Session | null, force = false) => {
+      if (!activeSession?.access_token) {
+        lastFetchedTokenRef.current = null;
+        setProfile(null);
+        return;
+      }
 
-    setProfileLoading(true);
-    try {
-      const nextProfile = await fetchProfile(activeSession.access_token);
-      setProfile(nextProfile);
-    } catch (err) {
-      console.warn('[mobile auth] Could not load profile from backend:', err);
-      setProfile(null);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
+      if (!force && lastFetchedTokenRef.current === activeSession.access_token) {
+        return;
+      }
+      lastFetchedTokenRef.current = activeSession.access_token;
+
+      setProfileLoading(true);
+      try {
+        const nextProfile = await fetchProfile(activeSession.access_token);
+        setProfile(nextProfile);
+      } catch (err) {
+        lastFetchedTokenRef.current = null;
+        console.warn('[mobile auth] Could not load profile from backend:', err);
+        setProfile(null);
+      } finally {
+        setProfileLoading(false);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!supabase) {
@@ -155,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshProfile = useCallback(async () => {
-    await loadProfileForSession(session);
+    await loadProfileForSession(session, true);
   }, [loadProfileForSession, session]);
 
   const saveProfile = useCallback(
