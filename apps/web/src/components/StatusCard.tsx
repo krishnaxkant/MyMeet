@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { API_BASE_URL, type HealthResponse } from '../services/api';
 import { RefreshIcon } from './Icons';
 
@@ -9,6 +10,8 @@ interface StatusCardProps {
 }
 
 export function StatusCard({ data, loading, error, onRefresh }: StatusCardProps) {
+  const [showDetails, setShowDetails] = useState(false);
+
   const backendBadge = loading
     ? { label: 'Checking', className: 'badge badge-warning' }
     : data
@@ -26,77 +29,77 @@ export function StatusCard({ data, loading, error, onRefresh }: StatusCardProps)
           ? { label: 'Needs Keys', className: 'badge badge-warning' }
           : { label: 'Error', className: 'badge badge-danger' };
 
+  const livekitReady = data?.livekit?.status === 'configured';
+
   return (
-    <section className="card" aria-label="System Health">
-      <div className="card-header">
-        <h2 className="card-title">System Health</h2>
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={onRefresh}
-          disabled={loading}
-        >
-          <RefreshIcon size={14} />
-          <span>{loading ? 'Checking...' : 'Refresh'}</span>
-        </button>
+    <section className="card" aria-label="System Status">
+      <div className="card-header" style={{ marginBottom: 14 }}>
+        <div>
+          <h2 className="card-title">System Status</h2>
+          <p className="status-item-desc">Live connection diagnostics</p>
+        </div>
+        <div className="actions-row">
+          <button
+            type="button"
+            className="btn btn-ghost btn-xs"
+            onClick={() => setShowDetails((prev) => !prev)}
+          >
+            {showDetails ? 'Hide details' : 'Details'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={onRefresh}
+            disabled={loading}
+          >
+            <RefreshIcon size={14} />
+            <span>{loading ? 'Checking' : 'Refresh'}</span>
+          </button>
+        </div>
       </div>
 
-      <div className="status-list">
-        <div className="status-item">
-          <div>
-            <div className="status-item-label">Meet Backend API</div>
-            <div className="status-item-desc">
-              {error
-                ? `${API_BASE_URL} — ${error}`
-                : data
-                  ? `${API_BASE_URL} · v${data.version} · uptime ${data.uptimeSeconds}s`
-                  : `Connecting to ${API_BASE_URL}...`}
-            </div>
-          </div>
+      <div className="status-compact-grid">
+        <div className="status-compact-pill">
+          <span className="status-compact-name">Backend API</span>
           <span className={backendBadge.className}>{backendBadge.label}</span>
         </div>
-
-        <div className="status-item">
-          <div>
-            <div className="status-item-label">Supabase (PostgreSQL + Auth)</div>
-            <div className="status-item-desc">
-              {data
-                ? data.supabase.message
-                : error
-                  ? 'Start the backend server to check Supabase status.'
-                  : 'Verifying connection...'}
-            </div>
-          </div>
+        <div className="status-compact-pill">
+          <span className="status-compact-name">Supabase</span>
           <span className={supabaseBadge.className}>{supabaseBadge.label}</span>
         </div>
-
-        <div className="status-item">
-          <div>
-            <div className="status-item-label">LiveKit SFU (Real-Time Video)</div>
-            <div className="status-item-desc">
-              {data?.livekit
-                ? data.livekit.message
-                : 'Add LiveKit keys to .env for live video & screen share.'}
-            </div>
-          </div>
-          <span
-            className={
-              data?.livekit?.status === 'configured'
-                ? 'badge badge-success'
-                : 'badge badge-warning'
-            }
-          >
-            {data?.livekit?.status === 'configured' ? 'Ready' : 'Needs Keys'}
+        <div className="status-compact-pill">
+          <span className="status-compact-name">LiveKit SFU</span>
+          <span className={livekitReady ? 'badge badge-success' : 'badge badge-warning'}>
+            {!data ? 'Waiting' : livekitReady ? 'Ready' : 'Setup'}
           </span>
         </div>
       </div>
 
-      <div className="meta-footer">
-        <span>Environment: {data?.environment ?? 'unknown'}</span>
-        <span>
-          {data?.timestamp ? `Checked ${new Date(data.timestamp).toLocaleTimeString()}` : 'Not checked'}
-        </span>
-      </div>
+      {showDetails && (
+        <div className="status-list" style={{ marginTop: 12 }}>
+          <div className="status-item">
+            <div>
+              <div className="status-item-label">Endpoint</div>
+              <div className="status-item-desc">
+                {error
+                  ? `${API_BASE_URL} — ${error}`
+                  : data
+                    ? `${API_BASE_URL} · v${data.version} · uptime ${data.uptimeSeconds}s`
+                    : API_BASE_URL}
+              </div>
+            </div>
+          </div>
+          <div className="status-item">
+            <div>
+              <div className="status-item-label">Services</div>
+              <div className="status-item-desc">
+                {data?.supabase.message}
+                {data?.livekit ? ` · ${data.livekit.message}` : ''}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

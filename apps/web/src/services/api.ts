@@ -147,9 +147,44 @@ export interface MeetingHistoryItem {
   message_count: number;
 }
 
+export type VisualNoteKind = 'concept' | 'formula' | 'step' | 'example' | 'takeaway';
+
+export interface VisualNoteStep {
+  title: string;
+  kind: VisualNoteKind;
+  body: string;
+  formula?: string;
+  bullets?: string[];
+  show_arrow?: boolean;
+  arrow_label?: string;
+}
+
+export interface MeetingAiSummary {
+  id: string;
+  meeting_id: string;
+  environment_type: string;
+  environment_label: string;
+  overview: string;
+  detailed_notes_markdown: string;
+  key_points: string[];
+  action_items: string[];
+  sources_summary: {
+    transcript_segments?: number;
+    screen_captures?: number;
+    chat_messages?: number;
+    visual_flow?: VisualNoteStep[];
+  };
+  model_used: string;
+  generated_at: string;
+  updated_at: string;
+}
+
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
   participants: MeetingParticipant[];
   messages: MeetingMessage[];
+  ai_summary: MeetingAiSummary | null;
+  transcript_count: number;
+  screen_note_count: number;
 }
 
 export interface UserDevice {
@@ -568,4 +603,73 @@ export async function deleteDevice(accessToken: string, deviceId: string): Promi
     accessToken,
     { method: 'DELETE' },
   );
+}
+
+export async function recordMeetingTranscript(
+  accessToken: string,
+  code: string,
+  content: string,
+  speakerName?: string,
+): Promise<{ ok: boolean; skipped?: boolean }> {
+  return authFetch<{ ok: boolean; skipped?: boolean }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/transcript`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({ content, speaker_name: speakerName }),
+    },
+  );
+}
+
+export async function transcribeAudioChunk(
+  accessToken: string,
+  code: string,
+  audioBase64: string,
+  mimeType: string,
+  speakerName?: string,
+): Promise<{ saved: boolean; skipped: boolean; usedAi: boolean; text?: string }> {
+  return authFetch<{ saved: boolean; skipped: boolean; usedAi: boolean; text?: string }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/audio-chunk`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        audio_base64: audioBase64,
+        mime_type: mimeType,
+        speaker_name: speakerName,
+      }),
+    },
+  );
+}
+
+export async function analyzeScreenFrame(
+  accessToken: string,
+  code: string,
+  imageBase64: string,
+  sharerName?: string,
+): Promise<{ extractedText: string; usedAi: boolean }> {
+  return authFetch<{ extractedText: string; usedAi: boolean }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/screen-frame`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        image_base64: imageBase64,
+        mime_type: 'image/jpeg',
+        sharer_name: sharerName,
+      }),
+    },
+  );
+}
+
+export async function generateAiSummary(
+  accessToken: string,
+  code: string,
+): Promise<MeetingAiSummary> {
+  const payload = await authFetch<{ summary: MeetingAiSummary }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/summary`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.summary;
 }

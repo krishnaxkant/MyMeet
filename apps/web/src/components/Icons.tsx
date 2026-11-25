@@ -406,3 +406,127 @@ export function DownloadIcon({ size = 15 }: { size?: number }) {
     </svg>
   );
 }
+
+export function HomeIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 10.5L12 3.5L20.5 10.5V19C20.5 19.83 19.83 20.5 19 20.5H14.5V14.5H9.5V20.5H5C4.17 20.5 3.5 19.83 3.5 19V10.5Z"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function UserIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.75" stroke="currentColor" strokeWidth="1.9" />
+      <path
+        d="M4.5 20C4.5 16.4 7.7 14 12 14C16.3 14 19.5 16.4 19.5 20"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 9.5L12 15L17.5 9.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function LogOutIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M15 4H18.5C19.6 4 20.5 4.9 20.5 6V18C20.5 19.1 19.6 20 18.5 20H15M10 16.5L14.5 12L10 7.5M14.5 12H3.5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function MenuIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 7H20M4 12H20M4 17H20"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function CloseIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6 6L18 18M18 6L6 18"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function CameraIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 8.5C4 7.4 4.9 6.5 6 6.5H8L9.6 4.5H14.4L16 6.5H18C19.1 6.5 20 7.4 20 8.5V17.5C20 18.6 19.1 19.5 18 19.5H6C4.9 19.5 4 18.6 4 17.5V8.5Z"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="13" r="3.25" stroke="currentColor" strokeWidth="1.9" />
+    </svg>
+  );
+}
+
+export function UploadIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M12 16V5M12 5L7.5 9.5M12 5L16.5 9.5M4.5 19.5H19.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function TrashIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4.5 7H19.5M9.5 7V5C9.5 4.45 9.95 4 10.5 4H13.5C14.05 4 14.5 4.45 14.5 5V7M6.5 7L7.4 18.5C7.48 19.35 8.19 20 9.04 20H14.96C15.81 20 16.52 19.35 16.6 18.5L17.5 7"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBadge } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
@@ -22,7 +22,7 @@ interface HomeScreenProps {
   onOpenProfile: () => void;
   onOpenLobby: (code: string) => void;
   onOpenSchedule: () => void;
-  onOpenHistory: () => void;
+  onOpenHistory: (code?: string) => void;
 }
 
 function getInitials(name: string): string {
@@ -61,6 +61,16 @@ export function HomeScreen({
   const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
+  const [clockText, setClockText] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const tick = setInterval(() => {
+      setClockText(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   const firstName = (
     profile?.full_name ||
@@ -160,12 +170,19 @@ export function HomeScreen({
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.topBar}>
         <Pressable style={styles.brandRow} onPress={onOpenProfile}>
-          <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
-            <Text style={styles.avatarText}>{getInitials(firstName)}</Text>
+          <View style={[styles.avatar, { backgroundColor: colors.accent, overflow: 'hidden' }]}>
+            {profile?.avatar_url ? (
+              <Image
+                source={{ uri: profile.avatar_url }}
+                style={{ width: '100%', height: '100%' }}
+              />
+            ) : (
+              <Text style={styles.avatarText}>{getInitials(firstName)}</Text>
+            )}
           </View>
           <View style={styles.headerText}>
             <Text style={[styles.greetingSmall, { color: colors.textMuted }]}>
-              {getGreeting()}
+              {getGreeting()} · {clockText}
             </Text>
             <View style={styles.nameStatusRow}>
               <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
@@ -434,7 +451,7 @@ export function HomeScreen({
         <View style={styles.cardHeader}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Meetings</Text>
           <View style={styles.headerActions}>
-            <Pressable onPress={onOpenHistory}>
+            <Pressable onPress={() => onOpenHistory()}>
               <Text style={[styles.linkText, { color: colors.accentText }]}>History</Text>
             </Pressable>
             <Pressable
@@ -467,25 +484,23 @@ export function HomeScreen({
                 styles.row,
                 { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
               ]}
-              onPress={() => onOpenLobby(m.code)}
+              onPress={() =>
+                m.status === 'ended' ? onOpenHistory(m.code) : onOpenLobby(m.code)
+              }
             >
               <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
                   {m.title}
                 </Text>
                 <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                  {m.code} · {m.joined_count} in call{m.my_role === 'host' ? ' · Host' : ''}
+                  {m.status === 'ended'
+                    ? `${m.code}${m.my_role === 'host' ? ' · Host' : ''} · ${new Date(m.created_at).toLocaleDateString()}`
+                    : `${m.code} · ${m.joined_count} in call${m.my_role === 'host' ? ' · Host' : ''}`}
                 </Text>
               </View>
               <StatusBadge
-                label={m.status}
-                tone={
-                  m.status === 'active'
-                    ? 'success'
-                    : m.status === 'ended'
-                      ? 'warning'
-                      : 'warning'
-                }
+                label={m.status === 'ended' ? 'Ended' : m.status === 'active' ? 'Active' : m.status}
+                tone={m.status === 'active' ? 'success' : 'warning'}
               />
             </Pressable>
           ))

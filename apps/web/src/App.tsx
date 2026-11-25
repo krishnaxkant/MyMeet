@@ -16,7 +16,7 @@ import { SchedulePage } from './pages/SchedulePage';
 import { SignUpPage } from './pages/SignUpPage';
 
 function AppRoutes() {
-  const { data, loading, error, refresh } = useBackendHealth();
+  const { data, loading } = useBackendHealth();
 
   return (
     <Routes>
@@ -40,12 +40,7 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <MainLayout backendConnected={Boolean(data)} loading={loading}>
-              <ProfilePage
-                health={data}
-                healthLoading={loading}
-                healthError={error}
-                onRefreshHealth={() => void refresh()}
-              />
+              <ProfilePage />
             </MainLayout>
           </ProtectedRoute>
         }

@@ -1,4 +1,10 @@
 import { Router } from 'express';
+import {
+  analyzeScreenFrameHandler,
+  generateAiSummaryHandler,
+  recordTranscriptHandler,
+  transcribeAudioChunkHandler,
+} from '../controllers/aiAgentController.js';
 import { listMessagesHandler, sendMessageHandler } from '../controllers/chatController.js';
 import {
   createInvitationHandler,
@@ -47,6 +53,12 @@ router.post('/:code/messages', sendMessageHandler);
 // Meeting invitations (host/co-host)
 router.get('/:code/invitations', listMeetingInvitationsHandler);
 router.post('/:code/invitations', createInvitationHandler);
+
+// Internal AI Meeting Agent (voice transcript, Gemini audio chunks, shared screen visual notes, AI summary)
+router.post('/:code/ai/transcript', recordTranscriptHandler);
+router.post('/:code/ai/audio-chunk', transcribeAudioChunkHandler);
+router.post('/:code/ai/screen-frame', analyzeScreenFrameHandler);
+router.post('/:code/ai/summary', generateAiSummaryHandler);
 
 router.post('/:code/end', endMeetingHandler);
 

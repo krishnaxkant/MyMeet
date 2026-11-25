@@ -142,9 +142,44 @@ export interface MeetingHistoryItem {
   message_count: number;
 }
 
+export type VisualNoteKind = 'concept' | 'formula' | 'step' | 'example' | 'takeaway';
+
+export interface VisualNoteStep {
+  title: string;
+  kind: VisualNoteKind;
+  body: string;
+  formula?: string;
+  bullets?: string[];
+  show_arrow?: boolean;
+  arrow_label?: string;
+}
+
+export interface MeetingAiSummary {
+  id: string;
+  meeting_id: string;
+  environment_type: string;
+  environment_label: string;
+  overview: string;
+  detailed_notes_markdown: string;
+  key_points: string[];
+  action_items: string[];
+  sources_summary: {
+    transcript_segments?: number;
+    screen_captures?: number;
+    chat_messages?: number;
+    visual_flow?: VisualNoteStep[];
+  };
+  model_used: string;
+  generated_at: string;
+  updated_at: string;
+}
+
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
   participants: MeetingParticipant[];
   messages: MeetingMessage[];
+  ai_summary: MeetingAiSummary | null;
+  transcript_count: number;
+  screen_note_count: number;
 }
 
 export interface UserDevice {

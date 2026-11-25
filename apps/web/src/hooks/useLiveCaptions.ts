@@ -21,13 +21,18 @@ interface SpeechRecognitionLike {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
 
-export function useLiveCaptions(onCaptionText: (text: string) => void) {
+export function useLiveCaptions(
+  onCaptionText: (text: string) => void,
+  onFinalTranscript?: (text: string) => void,
+) {
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [captionError, setCaptionError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const activeRef = useRef(false);
   const onCaptionRef = useRef(onCaptionText);
+  const onFinalRef = useRef(onFinalTranscript);
   onCaptionRef.current = onCaptionText;
+  onFinalRef.current = onFinalTranscript;
 
   const stopCaptions = useCallback(() => {
     activeRef.current = false;
@@ -40,11 +45,8 @@ export function useLiveCaptions(onCaptionText: (text: string) => void) {
     recognitionRef.current = null;
   }, []);
 
-  const toggleCaptions = useCallback(() => {
-    if (activeRef.current) {
-      stopCaptions();
-      return;
-    }
+  const startCaptions = useCallback(() => {
+    if (activeRef.current) return;
 
     setCaptionError(null);
     const win = window as unknown as {
@@ -54,7 +56,7 @@ export function useLiveCaptions(onCaptionText: (text: string) => void) {
     const Ctor = win.SpeechRecognition || win.webkitSpeechRecognition;
 
     if (!Ctor) {
-      setCaptionError('Live captions require Chrome or Edge (Web Speech API).');
+      setCaptionError('Voice transcription & live captions require Chrome or Edge.');
       return;
     }
 
@@ -66,18 +68,27 @@ export function useLiveCaptions(onCaptionText: (text: string) => void) {
 
       recognition.onresult = (event) => {
         let latest = '';
+        let finalChunk = '';
         for (let i = event.resultIndex; i < event.results.length; i += 1) {
-          latest += event.results[i][0].transcript;
+          const piece = event.results[i][0].transcript;
+          latest += piece;
+          if (event.results[i].isFinal) {
+            finalChunk += `${piece} `;
+          }
         }
         const trimmed = latest.trim();
         if (trimmed) {
           onCaptionRef.current(trimmed);
         }
+        const trimmedFinal = finalChunk.trim();
+        if (trimmedFinal && onFinalRef.current) {
+          onFinalRef.current(trimmedFinal);
+        }
       };
 
       recognition.onerror = (event) => {
         if (event.error === 'not-allowed') {
-          setCaptionError('Microphone permission is needed for live captions.');
+          setCaptionError('Microphone permission is needed for live captions & AI voice notes.');
           stopCaptions();
         }
       };
@@ -97,10 +108,18 @@ export function useLiveCaptions(onCaptionText: (text: string) => void) {
       setCaptionsEnabled(true);
       recognition.start();
     } catch {
-      setCaptionError('Could not start live captions.');
+      setCaptionError('Could not start voice transcription.');
       stopCaptions();
     }
   }, [stopCaptions]);
+
+  const toggleCaptions = useCallback(() => {
+    if (activeRef.current) {
+      stopCaptions();
+    } else {
+      startCaptions();
+    }
+  }, [startCaptions, stopCaptions]);
 
   useEffect(() => {
     return () => {
@@ -116,6 +135,7 @@ export function useLiveCaptions(onCaptionText: (text: string) => void) {
   return {
     captionsEnabled,
     captionError,
+    startCaptions,
     toggleCaptions,
     stopCaptions,
   };

@@ -1,4 +1,5 @@
 import { getSupabaseAdmin } from '../config/supabase.js';
+import type { MeetingAiSummaryRecord } from './aiAgentService.js';
 import type { MeetingMessageInfo } from './chatService.js';
 import {
   HttpError,
@@ -29,6 +30,9 @@ export interface MeetingHistoryItem {
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
   participants: MeetingParticipantInfo[];
   messages: MeetingMessageInfo[];
+  ai_summary: MeetingAiSummaryRecord | null;
+  transcript_count: number;
+  screen_note_count: number;
 }
 
 interface MeetingRow {
@@ -201,7 +205,7 @@ export async function getMeetingHistoryDetail(
     throw new HttpError(404, 'Meeting history record not found.');
   }
 
-  const [partsRes, msgsRes] = await Promise.all([
+  const [partsRes, msgsRes, summaryRes, transcriptCountRes, screenCountRes] = await Promise.all([
     supabase
       .from('meeting_participants')
       .select('id, meeting_id, user_id, role, status, joined_at, left_at')
@@ -213,6 +217,19 @@ export async function getMeetingHistoryDetail(
       .eq('meeting_id', meeting.id)
       .order('created_at', { ascending: true })
       .limit(300),
+    supabase
+      .from('meeting_ai_summaries')
+      .select('*')
+      .eq('meeting_id', meeting.id)
+      .maybeSingle<MeetingAiSummaryRecord>(),
+    supabase
+      .from('meeting_transcripts')
+      .select('id', { count: 'exact', head: true })
+      .eq('meeting_id', meeting.id),
+    supabase
+      .from('meeting_screen_notes')
+      .select('id', { count: 'exact', head: true })
+      .eq('meeting_id', meeting.id),
   ]);
 
   if (partsRes.error) {
@@ -245,16 +262,20 @@ export async function getMeetingHistoryDetail(
   }
 
   const host = profileMap.get(meeting.host_id);
+  const isHost = meeting.host_id === userId;
 
-  const participants: MeetingParticipantInfo[] = partRows.map((row) => {
-    const prof = profileMap.get(row.user_id);
-    return {
-      ...row,
-      full_name: prof?.full_name ?? null,
-      email: prof?.email ?? '',
-      avatar_url: prof?.avatar_url ?? null,
-    };
-  });
+  // Only the meeting host receives participant attendance history; participants see ONLY summary notes
+  const participants: MeetingParticipantInfo[] = isHost
+    ? partRows.map((row) => {
+        const prof = profileMap.get(row.user_id);
+        return {
+          ...row,
+          full_name: prof?.full_name ?? null,
+          email: prof?.email ?? '',
+          avatar_url: prof?.avatar_url ?? null,
+        };
+      })
+    : [];
 
   const messages: MeetingMessageInfo[] = msgRows.map((row) => {
     const author = profileMap.get(row.sender_id);
@@ -278,14 +299,17 @@ export async function getMeetingHistoryDetail(
     host_id: meeting.host_id,
     host_name: host?.full_name ?? null,
     host_email: host?.email ?? null,
-    my_role: meeting.host_id === userId ? 'host' : myPart?.role ?? 'participant',
+    my_role: isHost ? 'host' : myPart?.role ?? 'participant',
     started_at: meeting.started_at,
     ended_at: meeting.ended_at,
     created_at: meeting.created_at,
     duration_seconds: computeDurationSeconds(meeting),
-    participant_count: participants.length,
+    participant_count: isHost ? participants.length : 0,
     message_count: messages.length,
     participants,
     messages,
+    ai_summary: summaryRes.error ? null : summaryRes.data ?? null,
+    transcript_count: transcriptCountRes.error ? 0 : transcriptCountRes.count ?? 0,
+    screen_note_count: screenCountRes.error ? 0 : screenCountRes.count ?? 0,
   };
 }

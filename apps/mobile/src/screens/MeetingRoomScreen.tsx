@@ -43,6 +43,17 @@ interface MeetingRoomScreenProps {
   initialCamEnabled: boolean;
   onExit: () => void;
   onBackToLobby: (code: string) => void;
+  onOpenHistory: (code: string) => void;
+}
+
+function formatElapsed(startedAt: string | null): string {
+  if (!startedAt) return '00:00';
+  const diffSec = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime()) / 1000));
+  const hrs = Math.floor(diffSec / 3600);
+  const mins = Math.floor((diffSec % 3600) / 60);
+  const secs = diffSec % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
 export function MeetingRoomScreen({
@@ -51,6 +62,7 @@ export function MeetingRoomScreen({
   initialCamEnabled,
   onExit,
   onBackToLobby,
+  onOpenHistory,
 }: MeetingRoomScreenProps) {
   const { session, user } = useAuth();
   const { colors } = useTheme();
@@ -64,6 +76,7 @@ export function MeetingRoomScreen({
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
   const [mediaToken, setMediaToken] = useState<MeetingMediaToken | null>(null);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
+  const [elapsed, setElapsed] = useState('00:00');
 
   const [activeTab, setActiveTab] = useState<RoomTab>('people');
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
@@ -112,6 +125,15 @@ export function MeetingRoomScreen({
     }, 2500);
     return () => clearInterval(timer);
   }, [loadRoom]);
+
+  useEffect(() => {
+    if (!meeting?.started_at) return;
+    setElapsed(formatElapsed(meeting.started_at));
+    const tick = setInterval(() => {
+      setElapsed(formatElapsed(meeting.started_at));
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [meeting?.started_at]);
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -330,16 +352,27 @@ export function MeetingRoomScreen({
         <Text style={[styles.title, { color: colors.text }]}>
           {meeting ? 'Meeting Ended' : 'Meeting Unavailable'}
         </Text>
-        <Text style={[styles.subText, { color: colors.textMuted }]}>
+        <Text style={[styles.subText, { color: colors.textMuted, textAlign: 'center' }]}>
           {meeting
-            ? `${meeting.title} has been ended by the host.`
+            ? `${meeting.title} has ended. Your AI study notes are ready in History.`
             : error ?? 'Unable to load meeting.'}
         </Text>
+        {meeting && (
+          <Pressable
+            style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+            onPress={() => onOpenHistory(meeting.code)}
+          >
+            <Text style={styles.primaryButtonText}>View AI Study Notes</Text>
+          </Pressable>
+        )}
         <Pressable
-          style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+          style={[
+            styles.smallBtn,
+            { backgroundColor: colors.surface, borderColor: colors.borderStrong, paddingVertical: 11, paddingHorizontal: 20 },
+          ]}
           onPress={onExit}
         >
-          <Text style={styles.primaryButtonText}>Back to Dashboard</Text>
+          <Text style={[styles.smallBtnText, { color: colors.text }]}>Back to Home</Text>
         </Pressable>
       </View>
     );
@@ -360,7 +393,7 @@ export function MeetingRoomScreen({
             <View style={styles.flex1}>
               <Text style={[styles.title, { color: colors.text }]}>{meeting.title}</Text>
               <Text style={[styles.subText, { color: colors.textMuted }]}>
-                {meeting.code} · {joined.length} in call
+                {meeting.code} · {elapsed} · {joined.length} in call
               </Text>
             </View>
             <Pressable

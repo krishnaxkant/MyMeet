@@ -29,6 +29,7 @@ import { VideoTile, type VideoEffectMode } from '../components/VideoTile';
 import { useAuth } from '../hooks/useAuth';
 import { useLiveCaptions } from '../hooks/useLiveCaptions';
 import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
+import { useMeetingAiAgent } from '../hooks/useMeetingAiAgent';
 import { useMeetingRecorder } from '../hooks/useMeetingRecorder';
 import {
   admitAllParticipants,
@@ -115,10 +116,40 @@ export function MeetingRoomPage() {
     initialCamEnabled: navState.camEnabled ?? false,
   });
 
-  const recorder = useMeetingRecorder(meeting?.code ?? code);
-  const captions = useLiveCaptions((text) => {
-    void livekit.broadcastCaption(myDisplayName, text);
+  const activeScreenSharer =
+    livekit.participants.find((p) => Boolean(p.screenShareTrack)) ?? null;
+  const localParticipantMedia =
+    livekit.participants.find((p) => p.isLocal) ?? null;
+
+  const aiAgent = useMeetingAiAgent({
+    meetingCode: meeting?.code ?? code,
+    accessToken: session?.access_token ?? null,
+    speakerName: myDisplayName,
+    enabled: isAdmittedAndActive,
+    localAudioTrack: localParticipantMedia?.audioTrack ?? null,
+    screenShareTrack: activeScreenSharer?.screenShareTrack ?? null,
+    screenSharerName: activeScreenSharer?.name ?? null,
   });
+
+  const recorder = useMeetingRecorder(meeting?.code ?? code);
+  const captions = useLiveCaptions(
+    (text) => {
+      void livekit.broadcastCaption(myDisplayName, text);
+    },
+    (finalText) => {
+      void aiAgent.saveVoiceTranscript(finalText);
+    },
+  );
+
+  // Automatically start live voice transcription whenever the user is active, AI Notes is on, and mic is unmuted
+  const { startCaptions, stopCaptions } = captions;
+  useEffect(() => {
+    if (isAdmittedAndActive && aiAgent.aiAgentActive && livekit.micEnabled) {
+      startCaptions();
+    } else {
+      stopCaptions();
+    }
+  }, [isAdmittedAndActive, aiAgent.aiAgentActive, livekit.micEnabled, startCaptions, stopCaptions]);
 
   const handleToggleRecording = async () => {
     if (recorder.isRecording) {
@@ -471,10 +502,41 @@ export function MeetingRoomPage() {
             {meeting.waiting_room_enabled && (
               <span className="badge badge-warning">Waiting Room</span>
             )}
+            <button
+              type="button"
+              className={`ai-agent-pill ${aiAgent.aiAgentActive ? 'active' : ''}`}
+              onClick={() => {
+                const next = !aiAgent.aiAgentActive;
+                aiAgent.setAiAgentActive(next);
+                if (next && !captions.captionsEnabled) {
+                  captions.startCaptions();
+                }
+              }}
+              title="Internal AI Agent analyzes voice + shared screen to prepare downloadable notes in History"
+            >
+              <SparklesIcon size={13} />
+              <span>
+                {aiAgent.aiAgentActive
+                  ? `AI Notes Active (${aiAgent.voiceCount} voice · ${aiAgent.screenCount} screen)`
+                  : 'AI Notes Paused'}
+              </span>
+            </button>
           </div>
         </div>
 
         <div className="actions-row">
+          {activeScreenSharer && aiAgent.aiAgentActive && (
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              disabled={aiAgent.capturingScreen}
+              onClick={() => void aiAgent.captureScreenNow()}
+              title="Analyze current shared screen / whiteboard slide right now"
+            >
+              <SparklesIcon size={14} />
+              <span>{aiAgent.capturingScreen ? 'Analyzing...' : 'Snap Screen Notes'}</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -508,6 +570,9 @@ export function MeetingRoomPage() {
 
       {error && <div className="alert alert-danger">{error}</div>}
       {statusNotice && <div className="alert alert-success">{statusNotice}</div>}
+      {aiAgent.lastCaptureNotice && (
+        <div className="alert alert-success">{aiAgent.lastCaptureNotice}</div>
+      )}
       {recorder.recorderError && <div className="alert alert-warning">{recorder.recorderError}</div>}
       {captions.captionError && <div className="alert alert-warning">{captions.captionError}</div>}
 

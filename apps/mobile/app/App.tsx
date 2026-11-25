@@ -14,7 +14,10 @@ import { ProfileScreen } from '../src/screens/ProfileScreen';
 import { ScheduleScreen } from '../src/screens/ScheduleScreen';
 
 type ScreenState =
-  | { name: MainTab }
+  | { name: 'home' }
+  | { name: 'schedule' }
+  | { name: 'history'; initialCode?: string }
+  | { name: 'profile' }
   | { name: 'lobby'; code: string }
   | { name: 'room'; code: string; micEnabled: boolean; camEnabled: boolean };
 
@@ -51,6 +54,7 @@ function RootNavigator() {
               />
             ) : screen.name === 'history' ? (
               <HistoryScreen
+                initialCode={screen.initialCode}
                 onBack={() => setScreen({ name: 'home' })}
                 onOpenLobby={(code) => setScreen({ name: 'lobby', code })}
               />
@@ -69,13 +73,14 @@ function RootNavigator() {
                 initialCamEnabled={screen.camEnabled}
                 onExit={() => setScreen({ name: 'home' })}
                 onBackToLobby={(code) => setScreen({ name: 'lobby', code })}
+                onOpenHistory={(code) => setScreen({ name: 'history', initialCode: code })}
               />
             ) : (
               <HomeScreen
                 onOpenProfile={() => setScreen({ name: 'profile' })}
                 onOpenLobby={(code) => setScreen({ name: 'lobby', code })}
                 onOpenSchedule={() => setScreen({ name: 'schedule' })}
-                onOpenHistory={() => setScreen({ name: 'history' })}
+                onOpenHistory={(code) => setScreen({ name: 'history', initialCode: code })}
               />
             )}
           </View>
@@ -83,7 +88,7 @@ function RootNavigator() {
           {isMainTab && (
             <BottomTabBar
               activeTab={screen.name as MainTab}
-              onSelect={(tab) => setScreen({ name: tab })}
+              onSelect={(tab) => setScreen({ name: tab } as ScreenState)}
             />
           )}
         </View>

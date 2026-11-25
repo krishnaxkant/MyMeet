@@ -734,6 +734,11 @@ export async function endMeeting(rawCode: string, hostId: string): Promise<Meeti
 
   await deleteLiveKitRoom(meeting.code);
 
+  // Automatically generate AI meeting notes in the background when the meeting ends
+  void import('./aiAgentService.js')
+    .then(({ generateMeetingAiSummaryById }) => generateMeetingAiSummaryById(meeting.id))
+    .catch(() => {});
+
   return buildMeetingDetail(endedMeeting, hostId);
 }
 

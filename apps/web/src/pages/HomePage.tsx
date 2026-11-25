@@ -359,61 +359,92 @@ export function HomePage() {
             </div>
           ) : (
             <div className="meeting-list">
-              {meetings.slice(0, 5).map((m) => (
-                <div key={m.id} className="meeting-row">
-                  <div className="meeting-row-main">
-                    <div className="meeting-row-title">
-                      <span>{m.title}</span>
-                      <span
-                        className={`badge ${
-                          m.status === 'active'
-                            ? 'badge-success'
-                            : m.status === 'ended'
-                              ? 'badge-neutral'
-                              : 'badge-warning'
-                        }`}
-                      >
-                        {m.status}
-                      </span>
-                      {m.my_role === 'host' && <span className="badge badge-neutral">Host</span>}
-                      {m.is_locked && (
-                        <span className="inline-icon-tag" title="Meeting locked">
-                          <LockIcon size={13} />
-                        </span>
-                      )}
+              {meetings.slice(0, 5).map((m) =>
+                m.status === 'ended' ? (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className="meeting-row meeting-row-clickable"
+                    onClick={() => navigate(`/history?code=${encodeURIComponent(m.code)}`)}
+                  >
+                    <div className="meeting-row-main">
+                      <div className="meeting-row-title">
+                        <span>{m.title}</span>
+                      </div>
+                      <div className="meeting-row-meta">
+                        <code>{m.code}</code>
+                        {m.my_role === 'host' && (
+                          <>
+                            <span>·</span>
+                            <span>Host</span>
+                          </>
+                        )}
+                        <span>·</span>
+                        <span>{new Date(m.created_at).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                    <div className="meeting-row-meta">
-                      <code>{m.code}</code>
-                      <span>·</span>
-                      <span className="inline-meta">
-                        <UsersIcon size={13} />
-                        {m.joined_count} in call
-                      </span>
-                      <span>·</span>
-                      <span>{new Date(m.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
 
-                  <div className="meeting-row-actions">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void handleCopyInvite(m.code)}
-                      title="Copy invite link"
-                    >
-                      {copiedCode === m.code ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-                      <span>{copiedCode === m.code ? 'Copied' : 'Link'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-primary btn-sm"
-                      onClick={() => navigate(`/meet/${m.code}`)}
-                    >
-                      {m.status === 'ended' ? 'Details' : 'Open'}
-                    </button>
+                    <div className="meeting-row-actions">
+                      <span className="badge badge-warning">Ended</span>
+                    </div>
+                  </button>
+                ) : (
+                  <div key={m.id} className="meeting-row">
+                    <div className="meeting-row-main">
+                      <div className="meeting-row-title">
+                        <span>{m.title}</span>
+                        <span
+                          className={`badge ${
+                            m.status === 'active' ? 'badge-success' : 'badge-warning'
+                          }`}
+                        >
+                          {m.status}
+                        </span>
+                        {m.is_locked && (
+                          <span className="inline-icon-tag" title="Meeting locked">
+                            <LockIcon size={13} />
+                          </span>
+                        )}
+                      </div>
+                      <div className="meeting-row-meta">
+                        <code>{m.code}</code>
+                        <span>·</span>
+                        <span className="inline-meta">
+                          <UsersIcon size={13} />
+                          {m.joined_count} in call
+                        </span>
+                        {m.my_role === 'host' && (
+                          <>
+                            <span>·</span>
+                            <span>Host</span>
+                          </>
+                        )}
+                        <span>·</span>
+                        <span>{new Date(m.created_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="meeting-row-actions">
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => void handleCopyInvite(m.code)}
+                        title="Copy invite link"
+                      >
+                        {copiedCode === m.code ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+                        <span>{copiedCode === m.code ? 'Copied' : 'Link'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        onClick={() => navigate(`/meet/${m.code}`)}
+                      >
+                        Open
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ),
+              )}
             </div>
           )}
         </section>
