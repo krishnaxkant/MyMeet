@@ -387,6 +387,28 @@ export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
           </View>
           <StatusBadge label={supabaseLabel} tone={supabaseTone} />
         </View>
+
+        <View
+          style={[
+            styles.row,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.rowText}>
+            <Text style={[styles.rowTitle, { color: colors.text }]}>LiveKit SFU</Text>
+            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+              {!data
+                ? 'Start/connect the backend to inspect LiveKit status.'
+                : data.livekit
+                  ? data.livekit.message
+                  : 'Add LiveKit keys to .env for live video streaming.'}
+            </Text>
+          </View>
+          <StatusBadge
+            label={!data ? 'Waiting' : data.livekit?.status === 'configured' ? 'Ready' : 'Needs Keys'}
+            tone={data?.livekit?.status === 'configured' ? 'success' : 'warning'}
+          />
+        </View>
       </View>
     </ScrollView>
   );

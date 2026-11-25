@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { ConnectionState } from 'livekit-client';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   CheckIcon,
@@ -7,13 +8,19 @@ import {
   MicIcon,
   MicOffIcon,
   PhoneOffIcon,
+  RefreshIcon,
+  ScreenShareIcon,
   ShieldIcon,
   UnlockIcon,
   UsersIcon,
   VideoIcon,
   VideoOffIcon,
+  VolumeIcon,
+  VolumeOffIcon,
 } from '../components/Icons';
+import { VideoTile } from '../components/VideoTile';
 import { useAuth } from '../hooks/useAuth';
+import { useLiveKitRoom } from '../hooks/useLiveKitRoom';
 import {
   admitParticipant,
   buildMeetingInviteUrl,
@@ -24,13 +31,6 @@ import {
   updateMeetingSettings,
   type MeetingDetail,
 } from '../services/api';
-
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return 'M';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
 
 function formatElapsed(startedAt: string | null): string {
   if (!startedAt) return '00:00';
@@ -54,11 +54,24 @@ export function MeetingRoomPage() {
   const [error, setError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
-  const [micEnabled, setMicEnabled] = useState(navState.micEnabled ?? true);
-  const [camEnabled, setCamEnabled] = useState(navState.camEnabled ?? false);
   const [showSidebar, setShowSidebar] = useState(true);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [elapsed, setElapsed] = useState('00:00');
+
+  const isAdmittedAndActive = Boolean(
+    meeting &&
+      meeting.status === 'active' &&
+      (meeting.is_host || meeting.my_status === 'joined'),
+  );
+
+  const livekit = useLiveKitRoom({
+    meetingCode: meeting?.code ?? code,
+    accessToken: session?.access_token ?? null,
+    enabled: isAdmittedAndActive,
+    initialMicEnabled: navState.micEnabled ?? true,
+    initialCamEnabled: navState.camEnabled ?? false,
+  });
 
   const fetchRoomState = useCallback(async () => {
     if (!session?.access_token || !code) return;
@@ -90,14 +103,14 @@ export function MeetingRoomPage() {
     return () => clearInterval(tick);
   }, [meeting?.started_at]);
 
-  // If user is not joined (e.g. removed, waiting, or direct URL), redirect back to lobby
+  // If user is removed or not yet admitted, disconnect LiveKit and return to lobby
   useEffect(() => {
-    if (!meeting) return;
-    if (meeting.status === 'ended') return;
+    if (!meeting || meeting.status === 'ended') return;
     if (!meeting.is_host && meeting.my_status !== 'joined') {
+      void livekit.disconnect();
       navigate(`/meet/${meeting.code}`, { replace: true });
     }
-  }, [meeting, navigate]);
+  }, [meeting, navigate, livekit]);
 
   const handleCopyLink = async () => {
     if (!meeting) return;
@@ -111,13 +124,12 @@ export function MeetingRoomPage() {
   };
 
   const handleLeave = async () => {
-    if (!session?.access_token || !meeting) {
-      navigate('/', { replace: true });
-      return;
-    }
     setActionBusy(true);
     try {
-      await leaveMeeting(session.access_token, meeting.code);
+      await livekit.disconnect();
+      if (session?.access_token && meeting) {
+        await leaveMeeting(session.access_token, meeting.code);
+      }
     } finally {
       navigate('/', { replace: true });
     }
@@ -188,6 +200,7 @@ export function MeetingRoomPage() {
     setActionBusy(true);
     setError(null);
     try {
+      await livekit.disconnect();
       const updated = await endMeeting(session.access_token, meeting.code);
       setMeeting(updated);
     } catch (err) {
@@ -232,6 +245,16 @@ export function MeetingRoomPage() {
 
   const joinedParticipants = meeting.participants.filter((p) => p.status === 'joined');
   const waitingParticipants = meeting.participants.filter((p) => p.status === 'waiting');
+  const isLiveKitConnected = livekit.connectionState === ConnectionState.Connected;
+  const screenShares = livekit.participants.filter((p) => Boolean(p.screenShareTrack));
+
+  const liveBadge = isLiveKitConnected
+    ? { label: 'Live Video Connected', className: 'badge badge-success' }
+    : livekit.connectionState === ConnectionState.Connecting
+      ? { label: 'Connecting Media...', className: 'badge badge-warning' }
+      : livekit.isUnconfigured
+        ? { label: 'LiveKit Setup Needed', className: 'badge badge-warning' }
+        : { label: 'Media Disconnected', className: 'badge badge-danger' };
 
   return (
     <div className="room-shell">
@@ -242,6 +265,7 @@ export function MeetingRoomPage() {
             <code>{meeting.code}</code>
             <span>·</span>
             <span>{elapsed}</span>
+            <span className={liveBadge.className}>{liveBadge.label}</span>
             {meeting.is_locked && (
               <span className="badge badge-danger">
                 <LockIcon size={11} /> Locked
@@ -254,7 +278,11 @@ export function MeetingRoomPage() {
         </div>
 
         <div className="actions-row">
-          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void handleCopyLink()}>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void handleCopyLink()}
+          >
             {copiedLink ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
             <span>{copiedLink ? 'Invite Copied' : 'Copy Invite Link'}</span>
           </button>
@@ -273,38 +301,73 @@ export function MeetingRoomPage() {
       </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
+      {livekit.mediaError && (
+        <div className="alert alert-warning" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <span>{livekit.mediaError}</span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void livekit.reconnect()}
+          >
+            <RefreshIcon size={13} />
+            <span>Retry</span>
+          </button>
+        </div>
+      )}
+
+      {livekit.isUnconfigured && (
+        <div className="alert alert-warning">
+          <strong>LiveKit keys not configured yet:</strong> Add <code>LIVEKIT_URL</code>,{' '}
+          <code>LIVEKIT_API_KEY</code>, and <code>LIVEKIT_API_SECRET</code> from{' '}
+          <strong>cloud.livekit.io</strong> into your root <code>.env</code> file and restart the
+          backend to activate live camera, microphone, and screen sharing.
+        </div>
+      )}
 
       <div className={`room-body ${showSidebar ? '' : 'room-body-full'}`}>
         <section className="room-stage card">
-          <div className="stage-banner">
-            <ShieldIcon size={15} />
-            <span>
-              Phase 3 Room Active — LiveKit real-time video & audio streams connect into these tiles
-              in Phase 4.
-            </span>
-          </div>
+          {screenShares.length > 0 && (
+            <div className="screen-share-spotlight">
+              {screenShares.map((sharer) => (
+                <VideoTile
+                  key={`screen-${sharer.identity}`}
+                  name={sharer.name}
+                  isLocal={sharer.isLocal}
+                  videoTrack={sharer.screenShareTrack}
+                  isScreenShare
+                />
+              ))}
+            </div>
+          )}
 
           <div className="participant-tiles-grid">
-            {joinedParticipants.map((participant) => {
-              const name = participant.full_name || participant.email || 'Participant';
-              const isMe = participant.user_id === user?.id;
-              return (
-                <div key={participant.id} className={`video-tile ${isMe ? 'video-tile-me' : ''}`}>
-                  <div className="avatar-circle avatar-circle-lg">{getInitials(name)}</div>
-                  <div className="video-tile-footer">
-                    <span className="video-tile-name">
-                      {name} {isMe ? '(You)' : ''}
-                    </span>
-                    <div className="video-tile-badges">
-                      {participant.role === 'host' && (
-                        <span className="badge badge-success">Host</span>
-                      )}
-                      {isMe && !micEnabled && <span className="badge badge-danger">Muted</span>}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {isLiveKitConnected && livekit.participants.length > 0
+              ? livekit.participants.map((p) => (
+                  <VideoTile
+                    key={p.identity}
+                    name={p.name}
+                    isLocal={p.isLocal}
+                    isHost={p.isHost || p.identity === meeting.host_id}
+                    isSpeaking={p.isSpeaking}
+                    micEnabled={p.micEnabled}
+                    videoTrack={p.videoTrack}
+                    audioTrack={p.audioTrack}
+                    speakerMuted={speakerMuted}
+                  />
+                ))
+              : joinedParticipants.map((participant) => {
+                  const name = participant.full_name || participant.email || 'Participant';
+                  const isMe = participant.user_id === user?.id;
+                  return (
+                    <VideoTile
+                      key={participant.id}
+                      name={name}
+                      isLocal={isMe}
+                      isHost={participant.role === 'host'}
+                      micEnabled={isMe ? livekit.micEnabled : true}
+                    />
+                  );
+                })}
           </div>
         </section>
 
@@ -344,9 +407,7 @@ export function MeetingRoomPage() {
 
             {meeting.is_host && waitingParticipants.length > 0 && (
               <div className="sidebar-section">
-                <h2 className="sidebar-title">
-                  Waiting Room ({waitingParticipants.length})
-                </h2>
+                <h2 className="sidebar-title">Waiting Room ({waitingParticipants.length})</h2>
                 <div className="roster-list">
                   {waitingParticipants.map((p) => (
                     <div key={p.id} className="roster-row">
@@ -379,9 +440,7 @@ export function MeetingRoomPage() {
             )}
 
             <div className="sidebar-section">
-              <h2 className="sidebar-title">
-                In This Meeting ({joinedParticipants.length})
-              </h2>
+              <h2 className="sidebar-title">In This Meeting ({joinedParticipants.length})</h2>
               <div className="roster-list">
                 {joinedParticipants.map((p) => {
                   const isMe = p.user_id === user?.id;
@@ -418,19 +477,38 @@ export function MeetingRoomPage() {
         <div className="controls-group">
           <button
             type="button"
-            className={`media-btn ${micEnabled ? 'media-btn-on' : 'media-btn-off'}`}
-            onClick={() => setMicEnabled((prev) => !prev)}
-            title={micEnabled ? 'Mute mic' : 'Unmute mic'}
+            className={`media-btn ${livekit.micEnabled ? 'media-btn-on' : 'media-btn-off'}`}
+            onClick={() => void livekit.toggleMic()}
+            title={livekit.micEnabled ? 'Mute microphone' : 'Unmute microphone'}
           >
-            {micEnabled ? <MicIcon size={18} /> : <MicOffIcon size={18} />}
+            {livekit.micEnabled ? <MicIcon size={18} /> : <MicOffIcon size={18} />}
           </button>
+
           <button
             type="button"
-            className={`media-btn ${camEnabled ? 'media-btn-on' : 'media-btn-off'}`}
-            onClick={() => setCamEnabled((prev) => !prev)}
-            title={camEnabled ? 'Turn camera off' : 'Turn camera on'}
+            className={`media-btn ${livekit.camEnabled ? 'media-btn-on' : 'media-btn-off'}`}
+            onClick={() => void livekit.toggleCamera()}
+            title={livekit.camEnabled ? 'Turn camera off' : 'Turn camera on'}
           >
-            {camEnabled ? <VideoIcon size={18} /> : <VideoOffIcon size={18} />}
+            {livekit.camEnabled ? <VideoIcon size={18} /> : <VideoOffIcon size={18} />}
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${livekit.screenShareEnabled ? 'media-btn-accent' : 'media-btn-on'}`}
+            onClick={() => void livekit.toggleScreenShare()}
+            title={livekit.screenShareEnabled ? 'Stop screen share' : 'Share screen'}
+          >
+            <ScreenShareIcon size={18} />
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${speakerMuted ? 'media-btn-off' : 'media-btn-on'}`}
+            onClick={() => setSpeakerMuted((prev) => !prev)}
+            title={speakerMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
+          >
+            {speakerMuted ? <VolumeOffIcon size={18} /> : <VolumeIcon size={18} />}
           </button>
         </div>
 

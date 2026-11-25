@@ -14,11 +14,13 @@ import { useTheme } from '../hooks/useTheme';
 import {
   admitParticipant,
   endMeeting,
+  fetchMeetingToken,
   getMeeting,
   leaveMeeting,
   removeParticipant,
   updateMeetingSettings,
   type MeetingDetail,
+  type MeetingMediaToken,
 } from '../services/api';
 
 interface MeetingRoomScreenProps {
@@ -45,6 +47,8 @@ export function MeetingRoomScreen({
   const [error, setError] = useState<string | null>(null);
   const [micEnabled, setMicEnabled] = useState(initialMicEnabled);
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
+  const [mediaToken, setMediaToken] = useState<MeetingMediaToken | null>(null);
+  const [mediaNotice, setMediaNotice] = useState<string | null>(null);
 
   const loadRoom = useCallback(async () => {
     if (!session?.access_token) return;
@@ -58,6 +62,30 @@ export function MeetingRoomScreen({
       setLoading(false);
     }
   }, [session?.access_token, code]);
+
+  useEffect(() => {
+    if (!session?.access_token || !meeting || meeting.status !== 'active') return;
+    if (!meeting.is_host && meeting.my_status !== 'joined') return;
+    if (mediaToken) return;
+
+    let cancelled = false;
+    void fetchMeetingToken(session.access_token, meeting.code)
+      .then((tok) => {
+        if (cancelled) return;
+        setMediaToken(tok);
+        setMediaNotice(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setMediaNotice(
+          err instanceof Error ? err.message : 'LiveKit media token unavailable.',
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.access_token, meeting, mediaToken]);
 
   useEffect(() => {
     void loadRoom();
@@ -222,6 +250,26 @@ export function MeetingRoomScreen({
           >
             <Text style={styles.mediaText}>{camEnabled ? 'Cam On' : 'Cam Off'}</Text>
           </Pressable>
+        </View>
+
+        <View
+          style={[
+            styles.rosterRow,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.flex1}>
+            <Text style={[styles.rosterName, { color: colors.text }]}>LiveKit SFU Media</Text>
+            <Text style={[styles.subText, { color: colors.textMuted }]}>
+              {mediaToken
+                ? `Short-lived token issued (${Math.round(mediaToken.expiresInSeconds / 60)}m). Native Android WebRTC activates in an Expo Dev Build.`
+                : mediaNotice ?? 'Requesting LiveKit room token...'}
+            </Text>
+          </View>
+          <StatusBadge
+            label={mediaToken ? 'Token Ready' : 'Setup'}
+            tone={mediaToken ? 'success' : 'warning'}
+          />
         </View>
       </View>
 

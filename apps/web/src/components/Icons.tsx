@@ -233,3 +233,51 @@ export function RefreshIcon({ size = 15 }: { size?: number }) {
     </svg>
   );
 }
+
+export function ScreenShareIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="4.5" width="19" height="13" rx="2.5" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M8.5 20.5H15.5M12 17.5V20.5M12 14V8.5M12 8.5L9.2 11.3M12 8.5L14.8 11.3"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function VolumeIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M11 5.5L6.5 9.2H3.5V14.8H6.5L11 18.5V5.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M15.2 9.2A4.2 4.2 0 0 1 15.2 14.8M18 6.8A7.5 7.5 0 0 1 18 17.2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function VolumeOffIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M11 5.5L6.5 9.2H3.5V14.8H6.5L11 18.5V5.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M15.5 9.5L20.5 14.5M20.5 9.5L15.5 14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}

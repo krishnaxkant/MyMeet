@@ -4,6 +4,7 @@ import {
   createMeetingHandler,
   endMeetingHandler,
   getMeetingHandler,
+  issueMeetingTokenHandler,
   joinMeetingHandler,
   leaveMeetingHandler,
   listMeetingsHandler,
@@ -21,6 +22,7 @@ router.get('/', listMeetingsHandler);
 router.get('/:code', getMeetingHandler);
 router.post('/:code/join', joinMeetingHandler);
 router.post('/:code/leave', leaveMeetingHandler);
+router.post('/:code/token', issueMeetingTokenHandler);
 router.patch('/:code/settings', updateMeetingSettingsHandler);
 router.post('/:code/participants/:userId/admit', admitParticipantHandler);
 router.post('/:code/participants/:userId/remove', removeParticipantHandler);

@@ -69,6 +69,26 @@ export function StatusCard({ data, loading, error, onRefresh }: StatusCardProps)
           </div>
           <span className={supabaseBadge.className}>{supabaseBadge.label}</span>
         </div>
+
+        <div className="status-item">
+          <div>
+            <div className="status-item-label">LiveKit SFU (Real-Time Video)</div>
+            <div className="status-item-desc">
+              {data?.livekit
+                ? data.livekit.message
+                : 'Add LiveKit keys to .env for live video & screen share.'}
+            </div>
+          </div>
+          <span
+            className={
+              data?.livekit?.status === 'configured'
+                ? 'badge badge-success'
+                : 'badge badge-warning'
+            }
+          >
+            {data?.livekit?.status === 'configured' ? 'Ready' : 'Needs Keys'}
+          </span>
+        </div>
       </div>
 
       <div className="meta-footer">

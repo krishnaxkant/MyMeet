@@ -1,4 +1,11 @@
 import crypto from 'node:crypto';
+import {
+  createLiveKitToken,
+  deleteLiveKitRoom,
+  disconnectLiveKitParticipant,
+  isLiveKitConfigured,
+  type MeetingTokenResult,
+} from '../config/livekit.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
 import type { AuthenticatedUser } from '../middleware/authMiddleware.js';
 import { getOrCreateProfile } from './profileService.js';
@@ -586,6 +593,8 @@ export async function removeParticipant(
     throw new HttpError(500, `Failed to remove participant: ${error.message}`);
   }
 
+  await disconnectLiveKitParticipant(meeting.code, targetUserId);
+
   return buildMeetingDetail(meeting, hostId);
 }
 
@@ -626,5 +635,60 @@ export async function endMeeting(rawCode: string, hostId: string): Promise<Meeti
     throw new HttpError(500, `Failed to update participants on end: ${partError.message}`);
   }
 
+  await deleteLiveKitRoom(meeting.code);
+
   return buildMeetingDetail(endedMeeting, hostId);
+}
+
+export async function issueMeetingMediaToken(
+  rawCode: string,
+  user: AuthenticatedUser,
+): Promise<MeetingTokenResult> {
+  if (!isLiveKitConfigured()) {
+    throw new HttpError(
+      503,
+      'LiveKit SFU is not configured yet. Add LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET to .env.',
+    );
+  }
+
+  const supabase = requireSupabase();
+  const meeting = await fetchMeetingRowByCode(rawCode);
+
+  if (meeting.status === 'ended') {
+    throw new HttpError(410, 'This meeting has already ended.');
+  }
+
+  const isHost = meeting.host_id === user.id;
+
+  if (!isHost) {
+    const { data: part, error } = await supabase
+      .from('meeting_participants')
+      .select('status')
+      .eq('meeting_id', meeting.id)
+      .eq('user_id', user.id)
+      .maybeSingle<{ status: ParticipantStatus }>();
+
+    if (error) {
+      throw new HttpError(500, `Failed to verify participant access: ${error.message}`);
+    }
+
+    if (part?.status !== 'joined') {
+      throw new HttpError(
+        403,
+        part?.status === 'waiting'
+          ? 'Waiting for the host to admit you before connecting media.'
+          : 'You must join the meeting before connecting audio or video.',
+      );
+    }
+  }
+
+  const profile = await getOrCreateProfile(user.id, user.email, user.fullName);
+  const displayName = profile.full_name || user.fullName || user.email || 'Meet Participant';
+
+  return createLiveKitToken({
+    roomName: meeting.code,
+    identity: user.id,
+    name: displayName,
+    isHost,
+  });
 }

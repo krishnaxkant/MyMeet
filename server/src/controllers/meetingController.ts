@@ -5,6 +5,7 @@ import {
   endMeeting,
   getMeetingByCode,
   HttpError,
+  issueMeetingMediaToken,
   joinMeeting,
   leaveMeeting,
   listUserMeetings,
@@ -204,6 +205,24 @@ export const endMeetingHandler = async (
 
     const meeting = await endMeeting(String(req.params.code ?? ''), req.user.id);
     res.json({ meeting });
+  } catch (err) {
+    handleControllerError(err, res, next);
+  }
+};
+
+export const issueMeetingTokenHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Not authenticated.' });
+      return;
+    }
+
+    const media = await issueMeetingMediaToken(String(req.params.code ?? ''), req.user);
+    res.json(media);
   } catch (err) {
     handleControllerError(err, res, next);
   }

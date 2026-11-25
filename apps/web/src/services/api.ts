@@ -5,6 +5,11 @@ export interface SupabaseHealthInfo {
   message: string;
 }
 
+export interface LiveKitHealthInfo {
+  status: 'configured' | 'not_configured';
+  message: string;
+}
+
 export interface HealthResponse {
   status: 'ok' | 'degraded';
   service: string;
@@ -13,6 +18,16 @@ export interface HealthResponse {
   timestamp: string;
   uptimeSeconds: number;
   supabase: SupabaseHealthInfo;
+  livekit?: LiveKitHealthInfo;
+}
+
+export interface MeetingMediaToken {
+  token: string;
+  url: string;
+  roomName: string;
+  identity: string;
+  name: string;
+  expiresInSeconds: number;
 }
 
 export interface UserProfile {
@@ -253,4 +268,15 @@ export async function endMeeting(accessToken: string, code: string): Promise<Mee
     { method: 'POST' },
   );
   return payload.meeting;
+}
+
+export async function fetchMeetingToken(
+  accessToken: string,
+  code: string,
+): Promise<MeetingMediaToken> {
+  return authFetch<MeetingMediaToken>(
+    `/api/meetings/${encodeURIComponent(code)}/token`,
+    accessToken,
+    { method: 'POST' },
+  );
 }

@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env.js';
+import { getLiveKitHealth } from '../config/livekit.js';
 import { checkSupabaseConnection } from '../config/supabase.js';
 
 export const getHealth = async (
@@ -9,6 +10,7 @@ export const getHealth = async (
 ): Promise<void> => {
   try {
     const supabase = await checkSupabaseConnection();
+    const livekit = getLiveKitHealth();
     const isDegraded = supabase.status === 'error';
 
     res.status(isDegraded ? 503 : 200).json({
@@ -19,6 +21,7 @@ export const getHealth = async (
       timestamp: new Date().toISOString(),
       uptimeSeconds: Math.round(process.uptime()),
       supabase,
+      livekit,
     });
   } catch (error) {
     next(error);
