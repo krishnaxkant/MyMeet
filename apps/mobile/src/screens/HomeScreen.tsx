@@ -1,14 +1,21 @@
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBadge, type BadgeTone } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import { useTheme } from '../hooks/useTheme';
-import { API_BASE_URL } from '../services/api';
+import {
+  API_BASE_URL,
+  createMeeting,
+  extractMeetingCode,
+  listMeetings,
+  type MeetingSummary,
+} from '../services/api';
 
 interface HomeScreenProps {
   onOpenProfile: () => void;
+  onOpenLobby: (code: string) => void;
 }
 
 function getInitials(name: string): string {
@@ -18,18 +25,72 @@ function getInitials(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function HomeScreen({ onOpenProfile }: HomeScreenProps) {
-  const { user, profile, signOut } = useAuth();
+export function HomeScreen({ onOpenProfile, onOpenLobby }: HomeScreenProps) {
+  const { session, user, profile, signOut } = useAuth();
   const { colors } = useTheme();
   const { data, loading, error, refresh } = useBackendHealth();
+
   const [meetingCode, setMeetingCode] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
+  const [showCreateForm, setShowCreateForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [waitingRoom, setWaitingRoom] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
+  const [meetingsLoading, setMeetingsLoading] = useState(true);
 
   const displayName =
     profile?.full_name ||
     (user?.user_metadata?.full_name as string | undefined) ||
     user?.email?.split('@')[0] ||
     'User';
+
+  const loadMeetings = useCallback(async () => {
+    if (!session?.access_token) return;
+    setMeetingsLoading(true);
+    try {
+      const list = await listMeetings(session.access_token);
+      setMeetings(list);
+    } catch (err) {
+      console.warn('[mobile meetings] Failed to load recent meetings:', err);
+    } finally {
+      setMeetingsLoading(false);
+    }
+  }, [session?.access_token]);
+
+  useEffect(() => {
+    void loadMeetings();
+  }, [loadMeetings]);
+
+  const handleCreateMeeting = async () => {
+    if (!session?.access_token) return;
+    setActionError(null);
+    setCreating(true);
+    try {
+      const created = await createMeeting(session.access_token, {
+        title: newTitle.trim() || `${displayName}'s Meeting`,
+        waiting_room_enabled: waitingRoom,
+      });
+      setShowCreateForm(false);
+      setNewTitle('');
+      onOpenLobby(created.code);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unable to create meeting.');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleJoinByCode = () => {
+    setActionError(null);
+    const normalized = extractMeetingCode(meetingCode);
+    if (!normalized || normalized.length < 4) {
+      setActionError('Enter a valid meeting code (e.g. k9m4-x7p2-q3r8) or meeting link.');
+      return;
+    }
+    onOpenLobby(normalized);
+  };
 
   const backendTone: BadgeTone = loading ? 'warning' : data ? 'success' : 'danger';
   const backendLabel = loading ? 'Checking' : data ? 'Online' : 'Offline';
@@ -80,19 +141,68 @@ export function HomeScreen({ onOpenProfile }: HomeScreenProps) {
           { backgroundColor: colors.surface, borderColor: colors.border },
         ]}
       >
-        <Text style={[styles.heroTitle, { color: colors.text }]}>
-          Start or join a meeting
-        </Text>
+        <Text style={[styles.heroTitle, { color: colors.text }]}>Start or join a meeting</Text>
         <Text style={[styles.heroSub, { color: colors.textMuted }]}>
-          Secure audio & video calls synced across Meet Web and Android.
+          Create an instant room with a secure code or enter a code from Meet Web.
         </Text>
 
         <Pressable
           style={[styles.primaryButton, { backgroundColor: colors.accent }]}
-          onPress={() => setNotice('Creating a new meeting unlocks in Phase 3.')}
+          onPress={() => setShowCreateForm((prev) => !prev)}
+          disabled={creating}
         >
-          <Text style={styles.primaryButtonText}>+ New Meeting</Text>
+          <Text style={styles.primaryButtonText}>
+            {showCreateForm ? 'Close New Meeting' : '+ New Meeting'}
+          </Text>
         </Pressable>
+
+        {showCreateForm && (
+          <View
+            style={[
+              styles.createBox,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            ]}
+          >
+            <TextInput
+              style={[
+                styles.codeInput,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.borderStrong,
+                  color: colors.text,
+                },
+              ]}
+              value={newTitle}
+              onChangeText={setNewTitle}
+              placeholder={`${displayName}'s Meeting`}
+              placeholderTextColor={colors.placeholder}
+            />
+
+            <View style={styles.switchRow}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>Waiting Room</Text>
+                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                  Host approves guests before entry
+                </Text>
+              </View>
+              <Switch value={waitingRoom} onValueChange={setWaitingRoom} />
+            </View>
+
+            <Pressable
+              style={[
+                styles.primaryButton,
+                { backgroundColor: colors.accent },
+                creating && styles.buttonDisabled,
+              ]}
+              onPress={() => void handleCreateMeeting()}
+              disabled={creating}
+            >
+              <Text style={styles.primaryButtonText}>
+                {creating ? 'Creating room...' : 'Create & Open Lobby'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
 
         <View style={styles.joinRow}>
           <TextInput
@@ -106,7 +216,7 @@ export function HomeScreen({ onOpenProfile }: HomeScreenProps) {
             ]}
             value={meetingCode}
             onChangeText={setMeetingCode}
-            placeholder="Enter meeting code"
+            placeholder="Enter meeting code or link"
             placeholderTextColor={colors.placeholder}
             autoCapitalize="none"
           />
@@ -120,21 +230,83 @@ export function HomeScreen({ onOpenProfile }: HomeScreenProps) {
               !meetingCode.trim() && styles.buttonDisabled,
             ]}
             disabled={!meetingCode.trim()}
-            onPress={() => setNotice(`Joining "${meetingCode.trim()}" unlocks in Phase 3.`)}
+            onPress={handleJoinByCode}
           >
             <Text style={[styles.joinButtonText, { color: colors.accentText }]}>Join</Text>
           </Pressable>
         </View>
 
-        {notice && (
+        {actionError && (
           <View
             style={[
               styles.noticeBox,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
             ]}
           >
-            <Text style={[styles.noticeText, { color: colors.textMuted }]}>{notice}</Text>
+            <Text style={[styles.noticeText, { color: colors.dangerText }]}>{actionError}</Text>
           </View>
+        )}
+      </View>
+
+      <View
+        style={[
+          styles.card,
+          { backgroundColor: colors.surface, borderColor: colors.border },
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Meetings</Text>
+          <Pressable
+            style={[
+              styles.smallButton,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              meetingsLoading && styles.buttonDisabled,
+            ]}
+            onPress={() => void loadMeetings()}
+            disabled={meetingsLoading}
+          >
+            <Text style={[styles.smallButtonText, { color: colors.text }]}>
+              {meetingsLoading ? 'Loading...' : 'Refresh'}
+            </Text>
+          </Pressable>
+        </View>
+
+        {meetings.length === 0 ? (
+          <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+            {meetingsLoading
+              ? 'Loading your meetings...'
+              : 'No meetings yet. Tap + New Meeting to start your first room.'}
+          </Text>
+        ) : (
+          meetings.slice(0, 5).map((m) => (
+            <Pressable
+              key={m.id}
+              style={[
+                styles.row,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+              onPress={() => onOpenLobby(m.code)}
+            >
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                  {m.title}
+                </Text>
+                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                  {m.code} · {m.joined_count} in call{m.my_role === 'host' ? ' · Host' : ''}
+                </Text>
+              </View>
+              <StatusBadge
+                label={m.status}
+                tone={
+                  m.status === 'active'
+                    ? 'success'
+                    : m.status === 'ended'
+                      ? 'danger'
+                      : 'warning'
+                }
+              />
+            </Pressable>
+          ))
         )}
       </View>
 
@@ -182,21 +354,6 @@ export function HomeScreen({ onOpenProfile }: HomeScreenProps) {
               {loading ? 'Checking...' : 'Refresh'}
             </Text>
           </Pressable>
-        </View>
-
-        <View
-          style={[
-            styles.row,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-          ]}
-        >
-          <View style={styles.rowText}>
-            <Text style={[styles.rowTitle, { color: colors.text }]}>Session & Profile</Text>
-            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-              {profile ? `Synced as ${profile.email}` : user?.email ?? 'Signed in'}
-            </Text>
-          </View>
-          <StatusBadge label={profile ? 'Synced' : 'Active'} tone="success" />
         </View>
 
         <View
@@ -290,6 +447,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: -4,
+  },
+  createBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    gap: 12,
+  },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
   },
   primaryButton: {
     paddingVertical: 13,
@@ -390,7 +559,7 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
     padding: 13,

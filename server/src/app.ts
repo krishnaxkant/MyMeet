@@ -3,6 +3,7 @@ import express from 'express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import healthRoutes from './routes/healthRoutes.js';
+import meetingRoutes from './routes/meetingRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 
 export const createApp = () => {
@@ -22,11 +23,13 @@ export const createApp = () => {
       version: '1.0.0',
       health: '/api/health',
       me: '/api/me',
+      meetings: '/api/meetings',
     });
   });
 
   app.use('/api/health', healthRoutes);
   app.use('/api/me', profileRoutes);
+  app.use('/api/meetings', meetingRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

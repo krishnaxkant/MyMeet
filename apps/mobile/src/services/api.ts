@@ -1,5 +1,6 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { supabase } from './supabase';
 
 export interface SupabaseHealthInfo {
   status: 'connected' | 'not_configured' | 'error';
@@ -30,6 +31,46 @@ export interface UpdateProfilePayload {
   avatar_url?: string | null;
 }
 
+export type MeetingStatus = 'scheduled' | 'active' | 'ended';
+export type ParticipantRole = 'host' | 'co_host' | 'participant';
+export type ParticipantStatus = 'waiting' | 'joined' | 'left' | 'removed';
+
+export interface MeetingParticipant {
+  id: string;
+  meeting_id: string;
+  user_id: string;
+  role: ParticipantRole;
+  status: ParticipantStatus;
+  joined_at: string;
+  left_at: string | null;
+  full_name: string | null;
+  email: string;
+  avatar_url: string | null;
+}
+
+export interface MeetingSummary {
+  id: string;
+  code: string;
+  title: string;
+  host_id: string;
+  host_name: string | null;
+  host_email: string | null;
+  status: MeetingStatus;
+  waiting_room_enabled: boolean;
+  is_locked: boolean;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string;
+  joined_count: number;
+  my_role: ParticipantRole | null;
+  my_status: ParticipantStatus | null;
+}
+
+export interface MeetingDetail extends MeetingSummary {
+  participants: MeetingParticipant[];
+  is_host: boolean;
+}
+
 function isEmulatorOrLoopbackUrl(url: string): boolean {
   return (
     url.includes('://10.0.2.2') ||
@@ -41,12 +82,10 @@ function isEmulatorOrLoopbackUrl(url: string): boolean {
 function resolveApiBaseUrl(): string {
   const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
 
-  // If explicitly configured to a real LAN/production host, always honor it
   if (configured && !isEmulatorOrLoopbackUrl(configured)) {
     return configured.replace(/\/$/, '');
   }
 
-  // On a physical device using Expo Go, hostUri gives the exact reachable LAN IP of the PC
   const hostUri =
     Constants.expoConfig?.hostUri ??
     (Constants as unknown as { manifest2?: { extra?: { expoGo?: { debuggerHost?: string } } } })
@@ -68,6 +107,19 @@ function resolveApiBaseUrl(): string {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
+export function extractMeetingCode(input: string): string {
+  let cleaned = input.trim();
+  const match = cleaned.match(/\/meet\/([a-zA-Z0-9-]+)/i);
+  if (match?.[1]) {
+    cleaned = match[1];
+  }
+  const alnum = cleaned.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (alnum.length === 12) {
+    return `${alnum.slice(0, 4)}-${alnum.slice(4, 8)}-${alnum.slice(8, 12)}`;
+  }
+  return cleaned.toLowerCase();
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -76,6 +128,49 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function getFreshAccessToken(fallbackToken: string): Promise<string> {
+  if (!supabase) return fallbackToken;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token || fallbackToken;
+}
+
+async function authFetch<T>(
+  path: string,
+  accessToken: string,
+  init: RequestInit = {},
+): Promise<T> {
+  const sendRequest = async (token: string) =>
+    fetchWithTimeout(`${API_BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        Accept: 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        Authorization: `Bearer ${token}`,
+        ...(init.headers ?? {}),
+      },
+    });
+
+  const activeToken = await getFreshAccessToken(accessToken);
+  let response = await sendRequest(activeToken);
+
+  if (response.status === 401 && supabase) {
+    const { data, error } = await supabase.auth.refreshSession();
+    if (!error && data.session?.access_token) {
+      response = await sendRequest(data.session.access_token);
+    } else {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      throw new Error('Your session expired. Please sign in again.');
+    }
+  }
+
+  const payload = (await response.json().catch(() => ({}))) as T & { message?: string };
+  if (!response.ok) {
+    throw new Error(payload.message || `Request failed (HTTP ${response.status})`);
+  }
+
+  return payload;
 }
 
 export async function fetchBackendHealth(): Promise<HealthResponse> {
@@ -91,22 +186,7 @@ export async function fetchBackendHealth(): Promise<HealthResponse> {
 }
 
 export async function fetchProfile(accessToken: string): Promise<UserProfile> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/api/me`, {
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  const payload = (await response.json().catch(() => ({}))) as {
-    profile?: UserProfile;
-    message?: string;
-  };
-
-  if (!response.ok || !payload.profile) {
-    throw new Error(payload.message || `Failed to load profile (HTTP ${response.status})`);
-  }
-
+  const payload = await authFetch<{ profile: UserProfile }>('/api/me', accessToken);
   return payload.profile;
 }
 
@@ -114,24 +194,101 @@ export async function updateProfile(
   accessToken: string,
   updates: UpdateProfilePayload,
 ): Promise<UserProfile> {
-  const response = await fetchWithTimeout(`${API_BASE_URL}/api/me`, {
+  const payload = await authFetch<{ profile: UserProfile }>('/api/me', accessToken, {
     method: 'PATCH',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
     body: JSON.stringify(updates),
   });
-
-  const payload = (await response.json().catch(() => ({}))) as {
-    profile?: UserProfile;
-    message?: string;
-  };
-
-  if (!response.ok || !payload.profile) {
-    throw new Error(payload.message || `Failed to update profile (HTTP ${response.status})`);
-  }
-
   return payload.profile;
+}
+
+export async function createMeeting(
+  accessToken: string,
+  options: { title?: string; waiting_room_enabled?: boolean } = {},
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>('/api/meetings', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+  return payload.meeting;
+}
+
+export async function listMeetings(accessToken: string): Promise<MeetingSummary[]> {
+  const payload = await authFetch<{ meetings: MeetingSummary[] }>('/api/meetings', accessToken);
+  return payload.meetings;
+}
+
+export async function getMeeting(accessToken: string, code: string): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}`,
+    accessToken,
+  );
+  return payload.meeting;
+}
+
+export async function joinMeeting(accessToken: string, code: string): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/join`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.meeting;
+}
+
+export async function leaveMeeting(accessToken: string, code: string): Promise<void> {
+  await authFetch<{ ok: boolean }>(
+    `/api/meetings/${encodeURIComponent(code)}/leave`,
+    accessToken,
+    { method: 'POST' },
+  );
+}
+
+export async function updateMeetingSettings(
+  accessToken: string,
+  code: string,
+  updates: { title?: string; is_locked?: boolean; waiting_room_enabled?: boolean },
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/settings`,
+    accessToken,
+    {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    },
+  );
+  return payload.meeting;
+}
+
+export async function admitParticipant(
+  accessToken: string,
+  code: string,
+  userId: string,
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/participants/${encodeURIComponent(userId)}/admit`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.meeting;
+}
+
+export async function removeParticipant(
+  accessToken: string,
+  code: string,
+  userId: string,
+): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/participants/${encodeURIComponent(userId)}/remove`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.meeting;
+}
+
+export async function endMeeting(accessToken: string, code: string): Promise<MeetingDetail> {
+  const payload = await authFetch<{ meeting: MeetingDetail }>(
+    `/api/meetings/${encodeURIComponent(code)}/end`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.meeting;
 }

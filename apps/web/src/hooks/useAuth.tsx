@@ -135,11 +135,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      throw new Error(error.message);
+    try {
+      // Sign out only this device so other active devices (e.g. Android) stay signed in
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // Ignore storage/network errors on sign-out
+    } finally {
+      setSession(null);
+      setProfile(null);
     }
-    setProfile(null);
   }, []);
 
   const sendPasswordReset = useCallback(async (email: string) => {

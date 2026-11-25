@@ -7,6 +7,8 @@ import { MainLayout } from './layouts/MainLayout';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HomePage } from './pages/HomePage';
 import { LoginPage } from './pages/LoginPage';
+import { MeetingLobbyPage } from './pages/MeetingLobbyPage';
+import { MeetingRoomPage } from './pages/MeetingRoomPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SignUpPage } from './pages/SignUpPage';
@@ -42,6 +44,26 @@ function AppRoutes() {
           <ProtectedRoute>
             <MainLayout backendConnected={Boolean(data)} loading={loading}>
               <ProfilePage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/meet/:code"
+        element={
+          <ProtectedRoute>
+            <MainLayout backendConnected={Boolean(data)} loading={loading}>
+              <MeetingLobbyPage />
+            </MainLayout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/meet/:code/room"
+        element={
+          <ProtectedRoute>
+            <MainLayout backendConnected={Boolean(data)} loading={loading}>
+              <MeetingRoomPage />
             </MainLayout>
           </ProtectedRoute>
         }

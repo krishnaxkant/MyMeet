@@ -934,3 +934,461 @@ body {
     padding: 24px;
   }
 }
+
+/* ==========================================
+   Phase 3: Meeting Management, Lobby & Room
+   ========================================== */
+
+.btn-danger {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.btn-danger:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.badge-neutral {
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+}
+
+.create-meeting-panel {
+  margin-top: 16px;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.89rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+
+.empty-state {
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--surface-elevated);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.meeting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.meeting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border-radius: 12px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+}
+
+.meeting-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.meeting-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.94rem;
+}
+
+.meeting-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.inline-meta,
+.inline-icon-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+}
+
+.meeting-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Lobby */
+.lobby-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+
+.lobby-video-box {
+  position: relative;
+  border-radius: 14px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-video-element {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+}
+
+.lobby-avatar-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: #f8fafc;
+}
+
+.lobby-placeholder-name {
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.lobby-placeholder-sub {
+  font-size: 0.84rem;
+  color: #94a3b8;
+}
+
+.lobby-media-controls {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+}
+
+.media-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 0.1s ease, background-color 0.15s ease;
+}
+
+.media-btn:active {
+  transform: scale(0.95);
+}
+
+.media-btn-on {
+  background: rgba(15, 23, 42, 0.78);
+  color: #ffffff;
+  backdrop-filter: blur(8px);
+}
+
+.media-btn-off {
+  background: #dc2626;
+  color: #ffffff;
+  border-color: #ef4444;
+}
+
+.lobby-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin-bottom: 4px;
+}
+
+.lobby-host {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  margin-bottom: 16px;
+}
+
+.lobby-meta-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.meta-pill-danger {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.invite-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.invite-box-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.invite-code {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Meeting Room Shell */
+.room-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.room-header {
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.room-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.room-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.room-body {
+  display: grid;
+  grid-template-columns: 1fr 330px;
+  gap: 16px;
+  align-items: start;
+}
+
+.room-body-full {
+  grid-template-columns: 1fr;
+}
+
+.room-stage {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stage-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--accent-text);
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
+.participant-tiles-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  flex: 1;
+}
+
+.video-tile {
+  min-height: 200px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.video-tile-me {
+  border-color: var(--accent);
+}
+
+.video-tile-footer {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.video-tile-name {
+  color: #f8fafc;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: rgba(15, 23, 42, 0.7);
+  padding: 4px 9px;
+  border-radius: 8px;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-tile-badges {
+  display: flex;
+  gap: 6px;
+}
+
+.room-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.host-controls-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+}
+
+.roster-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.roster-name {
+  font-size: 0.86rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-sub {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.roster-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.room-controls-bar {
+  padding: 14px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.controls-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 920px) {
+  .lobby-grid,
+  .room-body {
+    grid-template-columns: 1fr;
+  }
+
+  .meeting-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

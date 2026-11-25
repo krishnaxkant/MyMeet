@@ -13,6 +13,151 @@ export function VideoIcon({ size = 18 }: { size?: number }) {
   );
 }
 
+export function VideoOffIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M16 10.25L20.6 7.3C21.1 6.98 21.75 7.34 21.75 7.93V16.07C21.75 16.66 21.1 17.02 20.6 16.7L16 13.75"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M10.5 5.5H13C14.66 5.5 16 6.84 16 8.5V11M14.5 18.5H5.5C3.84 18.5 2.5 17.16 2.5 15.5V8.5C2.5 7.45 3.04 6.53 3.85 6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path d="M3 3L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function MicIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="9" y="3" width="6" height="11" rx="3" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M5.5 11.5A6.5 6.5 0 0 0 18.5 11.5M12 18V21.5M9 21.5H15"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function MicOffIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 9.5V11A3 3 0 0 0 13.6 13.54M15 9.8V6A3 3 0 0 0 9.6 4.2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M5.5 11.5A6.5 6.5 0 0 0 16.2 16.4M18.5 11.5C18.5 12.4 18.31 13.26 17.98 14.03M12 18V21.5M9 21.5H15"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path d="M3 3L21 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function PhoneOffIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M2.8 14.2C5.2 11.8 8.4 10.5 12 10.5C15.6 10.5 18.8 11.8 21.2 14.2C21.8 14.8 21.9 15.7 21.4 16.4L19.8 18.2C19.2 18.8 18.3 18.9 17.6 18.5L15.1 17C14.7 16.7 14.5 16.2 14.5 15.7V13.8C13.7 13.6 12.9 13.5 12 13.5C11.1 13.5 10.3 13.6 9.5 13.8V15.7C9.5 16.2 9.3 16.7 8.9 17L6.4 18.5C5.7 18.9 4.8 18.8 4.2 18.2L2.6 16.4C2.1 15.7 2.2 14.8 2.8 14.2Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function CopyIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2.2" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5V4.5A1.5 1.5 0 0 1 4.5 3H13.5A1.5 1.5 0 0 1 15 4.5V5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function CheckIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M5 13L9.5 17.5L19 7.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function UsersIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="9" cy="8" r="3.5" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M2.5 19.5C2.5 16.4 5.2 14.5 9 14.5C12.8 14.5 15.5 16.4 15.5 19.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <circle cx="17" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M17.5 14.8C19.8 15.2 21.5 16.8 21.5 19.2"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function LockIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M8 10.5V7.5A4 4 0 0 1 16 7.5V10.5"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+export function UnlockIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="4.5" y="10.5" width="15" height="10" rx="2.5" stroke="currentColor" strokeWidth="2" />
+      <path
+        d="M8 10.5V7.5A4 4 0 0 1 15.6 5.8"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function SunIcon({ size = 15 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
