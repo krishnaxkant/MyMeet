@@ -14,6 +14,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import {
+  buildMeetingInviteUrl,
   createSchedule,
   deleteSchedule,
   listSchedules,
@@ -145,7 +146,7 @@ export function ScheduleScreen({ onBack, onOpenLobby }: ScheduleScreenProps) {
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.topBar}>
-        <BackButton label="Home" onPress={onBack} />
+        <BackButton label="Back" onPress={onBack} />
         <Pressable
           style={[
             styles.secondaryButton,
@@ -342,9 +343,13 @@ export function ScheduleScreen({ onBack, onOpenLobby }: ScheduleScreenProps) {
                     ]}
                     onPress={() =>
                       void Share.share({
-                        message: `Scheduled Meet: "${item.title}" at ${new Date(
+                        title: `MyMeet: ${item.title}`,
+                        message: `Scheduled MyMeet: "${item.title}"\nTime: ${new Date(
                           item.scheduled_start,
-                        ).toLocaleString()} — Code: ${item.meeting_code}`,
+                        ).toLocaleString()}\n\nJoin Link: ${buildMeetingInviteUrl(
+                          item.meeting_code!,
+                        )}\nMeeting Code: ${item.meeting_code}`,
+                        url: buildMeetingInviteUrl(item.meeting_code!),
                       })
                     }
                   >

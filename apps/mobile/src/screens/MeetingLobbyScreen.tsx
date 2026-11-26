@@ -14,7 +14,13 @@ import { CamSymbol, MicSymbol } from '../components/MediaIcons';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
-import { getMeeting, joinMeeting, type MeetingDetail } from '../services/api';
+import {
+  buildMeetingInviteUrl,
+  buildMeetingShareMessage,
+  getMeeting,
+  joinMeeting,
+  type MeetingDetail,
+} from '../services/api';
 
 interface MeetingLobbyScreenProps {
   code: string;
@@ -86,7 +92,9 @@ export function MeetingLobbyScreen({ code, onBack, onEnterRoom }: MeetingLobbySc
   const handleShare = async () => {
     if (!meeting) return;
     await Share.share({
-      message: `Join my MyMeet call "${meeting.title}" using code: ${meeting.code}`,
+      title: `Join ${meeting.title} on MyMeet`,
+      message: buildMeetingShareMessage(meeting.title, meeting.code),
+      url: buildMeetingInviteUrl(meeting.code),
     }).catch(() => {});
   };
 

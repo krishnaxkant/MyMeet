@@ -12,6 +12,7 @@ const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE
 const supabaseAnonKey =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
 const apiUrl = process.env.EXPO_PUBLIC_API_URL || '';
+const webUrl = process.env.EXPO_PUBLIC_WEB_URL || process.env.WEB_APP_URL || 'https://mymeet-live.vercel.app';
 
 module.exports = {
   ...appJson.expo,
@@ -20,5 +21,6 @@ module.exports = {
     supabaseUrl,
     supabaseAnonKey,
     apiUrl,
+    webUrl,
   },
 };

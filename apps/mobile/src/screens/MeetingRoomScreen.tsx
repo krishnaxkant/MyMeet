@@ -44,6 +44,8 @@ import { useTheme } from '../hooks/useTheme';
 import {
   admitAllParticipants,
   admitParticipant,
+  buildMeetingInviteUrl,
+  buildMeetingShareMessage,
   endMeeting,
   fetchMeetingToken,
   getMeeting,
@@ -524,7 +526,9 @@ export function MeetingRoomScreen({
   const handleShare = async () => {
     if (!meeting) return;
     await Share.share({
-      message: `Join my MyMeet call "${meeting.title}" using code: ${meeting.code}`,
+      title: `Join ${meeting.title} on MyMeet`,
+      message: buildMeetingShareMessage(meeting.title, meeting.code),
+      url: buildMeetingInviteUrl(meeting.code),
     }).catch(() => {});
   };
 

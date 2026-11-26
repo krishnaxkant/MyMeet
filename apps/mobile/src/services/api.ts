@@ -245,6 +245,21 @@ function resolveApiBaseUrl(): string {
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
+export const WEB_APP_URL = sanitizeUrl(
+  process.env.EXPO_PUBLIC_WEB_URL?.trim() ||
+    ((Constants.expoConfig?.extra ?? {}) as { webUrl?: string }).webUrl?.trim() ||
+    'https://mymeet-live.vercel.app',
+);
+
+export function buildMeetingInviteUrl(code: string): string {
+  return `${WEB_APP_URL}/meet/${encodeURIComponent(code)}`;
+}
+
+export function buildMeetingShareMessage(title: string, code: string): string {
+  const link = buildMeetingInviteUrl(code);
+  return `Join my MyMeet call "${title}"\n\nJoin Link: ${link}\nMeeting Code: ${code}`;
+}
+
 export function extractMeetingCode(input: string): string {
   let cleaned = input.trim();
   const match = cleaned.match(/\/meet\/([a-zA-Z0-9-]+)/i);
