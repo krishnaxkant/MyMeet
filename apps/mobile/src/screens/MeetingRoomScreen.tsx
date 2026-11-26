@@ -763,6 +763,17 @@ export function MeetingRoomScreen({
           <Text style={styles.floatingCornerTime}>· {elapsed}</Text>
         </View>
 
+        {/* Top-Right Floating Camera Flip Button (symmetrical with top-left pill) */}
+        {camEnabled && (
+          <Pressable
+            style={styles.floatingFlipBtn}
+            onPress={() => sendStageCommand({ type: 'flipCam' })}
+            accessibilityLabel="Switch front and back camera"
+          >
+            <FlipCamSymbol color="#FFFFFF" />
+          </Pressable>
+        )}
+
         {useNativeLiveKit && mediaToken && permissionsReady ? (
           <NativeLiveKitStage
             ref={nativeStageRef}
@@ -808,7 +819,7 @@ export function MeetingRoomScreen({
         )}
       </View>
 
-      {/* Ultra-Clean 5-Button Minimal Control Dock (Mic, Cam, Flip, 3-Dots, End) */}
+      {/* Ultra-Clean 4-Button Minimal Control Dock (Mic, Cam, 3-Dots, End) */}
       <View style={styles.controlDock}>
         <Pressable
           style={[styles.dockCircleBtn, !micEnabled && styles.dockBtnDanger]}
@@ -824,15 +835,6 @@ export function MeetingRoomScreen({
           accessibilityLabel={camEnabled ? 'Turn off camera' : 'Turn on camera'}
         >
           <CamSymbol color="#FFFFFF" muted={!camEnabled} />
-        </Pressable>
-
-        <Pressable
-          style={[styles.dockCircleBtn, !camEnabled && { opacity: 0.45 }]}
-          disabled={!camEnabled}
-          onPress={() => sendStageCommand({ type: 'flipCam' })}
-          accessibilityLabel="Switch front and back camera"
-        >
-          <FlipCamSymbol color="#FFFFFF" />
         </Pressable>
 
         <Pressable
@@ -1786,6 +1788,20 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 11,
     fontWeight: '600',
+  },
+  floatingFlipBtn: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15, 23, 42, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dockBtnAccent: {
     backgroundColor: '#2563EB',

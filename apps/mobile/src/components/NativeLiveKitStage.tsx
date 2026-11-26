@@ -571,7 +571,18 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
     ]);
 
     const VideoViewComponent = runtime.LiveKitRN?.VideoView;
-    const isTwoColumn = tiles.length >= 3;
+
+    // Build exact flex rows so participant blocks NEVER overflow outside the screen
+    const tileRows: TileSnapshot[][] = [];
+    if (tiles.length <= 2) {
+      for (const t of tiles) tileRows.push([t]);
+    } else if (tiles.length === 3) {
+      tileRows.push([tiles[0], tiles[1]], [tiles[2]]);
+    } else {
+      for (let i = 0; i < tiles.length; i += 2) {
+        tileRows.push(tiles.slice(i, i + 2));
+      }
+    }
 
     if (connecting && tiles.length === 0) {
       return (
@@ -618,65 +629,69 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
           </View>
         )}
 
-        <View style={[styles.grid, isTwoColumn && styles.gridTwoCol]}>
-          {tiles.map((tile) => {
-            const photoUrl = avatars[tile.identity] || null;
-            return (
-              <View
-                key={tile.identity}
-                style={[
-                  styles.tile,
-                  isTwoColumn ? styles.tileHalf : styles.tileFull,
-                  tile.isLocal && styles.tileLocal,
-                  tile.isSpeaking && styles.tileSpeaking,
-                  tile.isHandRaised && styles.tileHandRaised,
-                ]}
-              >
-                {tile.videoTrack && VideoViewComponent ? (
-                  <VideoViewComponent
-                    videoTrack={tile.videoTrack}
-                    style={styles.videoFill}
-                    objectFit="cover"
-                    mirror={tile.isLocal && isFrontCamera}
-                  />
-                ) : (
-                  <View style={styles.avatarCircle}>
-                    {photoUrl ? (
-                      <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
+        <View style={styles.grid}>
+          {tileRows.map((row, rowIdx) => (
+            <View key={`row-${rowIdx}`} style={styles.gridRow}>
+              {row.map((tile) => {
+                const photoUrl = avatars[tile.identity] || null;
+                return (
+                  <View
+                    key={tile.identity}
+                    style={[
+                      styles.tile,
+                      styles.tileFlex,
+                      tile.isLocal && styles.tileLocal,
+                      tile.isSpeaking && styles.tileSpeaking,
+                      tile.isHandRaised && styles.tileHandRaised,
+                    ]}
+                  >
+                    {tile.videoTrack && VideoViewComponent ? (
+                      <VideoViewComponent
+                        videoTrack={tile.videoTrack}
+                        style={styles.videoFill}
+                        objectFit="cover"
+                        mirror={tile.isLocal && isFrontCamera}
+                      />
                     ) : (
-                      <Text style={styles.avatarInitials}>{getInitials(tile.name)}</Text>
-                    )}
-                  </View>
-                )}
-
-                {tile.isHandRaised && (
-                  <View style={styles.handPill}>
-                    <Text style={styles.handPillText}>✋ Hand Raised</Text>
-                  </View>
-                )}
-
-                <View style={styles.tileFooter}>
-                  <View style={styles.namePill}>
-                    <Text style={styles.namePillText} numberOfLines={1}>
-                      {tile.isLocal ? `${tile.name} (You)` : tile.name}
-                    </Text>
-                  </View>
-                  <View style={styles.badges}>
-                    {tile.isHost && (
-                      <View style={styles.hostTag}>
-                        <Text style={styles.hostTagText}>Host</Text>
+                      <View style={styles.avatarCircle}>
+                        {photoUrl ? (
+                          <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
+                        ) : (
+                          <Text style={styles.avatarInitials}>{getInitials(tile.name)}</Text>
+                        )}
                       </View>
                     )}
-                    {!tile.micOn && (
-                      <View style={styles.mutedChip}>
-                        <MicSymbol color="#FFFFFF" muted />
+
+                    {tile.isHandRaised && (
+                      <View style={styles.handPill}>
+                        <Text style={styles.handPillText}>✋ Hand Raised</Text>
                       </View>
                     )}
+
+                    <View style={styles.tileFooter}>
+                      <View style={styles.namePill}>
+                        <Text style={styles.namePillText} numberOfLines={1}>
+                          {tile.isLocal ? `${tile.name} (You)` : tile.name}
+                        </Text>
+                      </View>
+                      <View style={styles.badges}>
+                        {tile.isHost && (
+                          <View style={styles.hostTag}>
+                            <Text style={styles.hostTagText}>Host</Text>
+                          </View>
+                        )}
+                        {!tile.micOn && (
+                          <View style={styles.mutedChip}>
+                            <MicSymbol color="#FFFFFF" muted />
+                          </View>
+                        )}
+                      </View>
+                    </View>
                   </View>
-                </View>
-              </View>
-            );
-          })}
+                );
+              })}
+            </View>
+          ))}
         </View>
 
         {caption && (
@@ -758,12 +773,13 @@ const styles = StyleSheet.create({
   grid: {
     flex: 1,
     gap: 8,
+    overflow: 'hidden',
   },
-  gridTwoCol: {
+  gridRow: {
+    flex: 1,
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    alignContent: 'stretch',
+    gap: 8,
+    minHeight: 0,
   },
   tile: {
     position: 'relative',
@@ -775,13 +791,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tileFull: {
+  tileFlex: {
     flex: 1,
-    width: '100%',
-  },
-  tileHalf: {
-    width: '48.5%',
-    height: '48.8%',
+    minWidth: 0,
+    minHeight: 0,
   },
   tileLocal: {
     borderColor: 'rgba(59, 130, 246, 0.6)',

@@ -262,14 +262,14 @@ export function MeetingRoomPage() {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
+  // Lock body scroll for the entire active meeting room so video blocks NEVER overflow outside viewport
   useEffect(() => {
-    if (!isFullscreen) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [isFullscreen]);
+  }, []);
 
   const handleToggleFullscreen = async () => {
     try {

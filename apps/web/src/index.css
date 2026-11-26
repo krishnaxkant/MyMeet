@@ -3475,3 +3475,29 @@ code {
     padding: 8px 12px;
   }
 }
+
+/* ─── Zero-Overflow Lock & Balanced 3-Tile Layout (Even Without Fullscreen) ─── */
+.layout-room-full,
+.room-shell-minimal,
+.room-shell-minimal .room-body,
+.room-shell-minimal .room-stage,
+.room-shell-minimal .participant-tiles-grid {
+  box-sizing: border-box;
+  overflow: hidden !important;
+  min-height: 0 !important;
+  min-width: 0 !important;
+}
+
+.room-shell-minimal .participant-tiles-grid[data-count='3'] > :nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.room-shell-minimal .video-tile {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.room-shell-minimal .participant-tiles-grid[data-count='many'] {
+  overflow-y: auto !important;
+  grid-auto-rows: minmax(160px, 1fr);
+}

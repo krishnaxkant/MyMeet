@@ -150,9 +150,14 @@ export function MoreDotsSymbol({ color = '#FFFFFF' }: { color?: string }) {
 export function FlipCamSymbol({ color = '#FFFFFF' }: { color?: string }) {
   return (
     <View style={styles.box}>
-      <View style={[styles.flipRing, { borderColor: color }]} />
-      <View style={[styles.flipArrowTop, { borderLeftColor: color }]} />
-      <View style={[styles.flipArrowBottom, { borderRightColor: color }]} />
+      {/* Sleek rounded camera frame with clean swap-arrows icon inside */}
+      <View style={[styles.flipCamTopTab, { borderColor: color }]} />
+      <View style={[styles.flipCamBody, { borderColor: color }]}>
+        <View style={[styles.flipArcTop, { borderColor: color }]} />
+        <View style={[styles.flipArcBottom, { borderColor: color }]} />
+        <View style={[styles.flipTipRight, { borderTopColor: color, borderRightColor: color }]} />
+        <View style={[styles.flipTipLeft, { borderBottomColor: color, borderLeftColor: color }]} />
+      </View>
     </View>
   );
 }
@@ -336,37 +341,63 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
-  // Flip camera
-  flipRing: {
-    width: 15,
-    height: 15,
-    borderRadius: 7.5,
-    borderWidth: 2,
+  // Flip camera (modern camera + circular swap arrows)
+  flipCamTopTab: {
+    width: 8,
+    height: 3.5,
+    borderTopLeftRadius: 2,
+    borderTopRightRadius: 2,
+    borderWidth: 1.6,
+    borderBottomWidth: 0,
+    marginBottom: -1,
+  },
+  flipCamBody: {
+    width: 19,
+    height: 14,
+    borderRadius: 4,
+    borderWidth: 1.7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  flipArcTop: {
+    position: 'absolute',
+    width: 8.5,
+    height: 8.5,
+    borderRadius: 4.5,
+    borderWidth: 1.5,
+    borderBottomColor: 'transparent',
     borderLeftColor: 'transparent',
+    transform: [{ rotate: '-35deg' }],
+  },
+  flipArcBottom: {
+    position: 'absolute',
+    width: 8.5,
+    height: 8.5,
+    borderRadius: 4.5,
+    borderWidth: 1.5,
+    borderTopColor: 'transparent',
     borderRightColor: 'transparent',
+    transform: [{ rotate: '-35deg' }],
   },
-  flipArrowTop: {
+  flipTipRight: {
     position: 'absolute',
-    top: 2,
     right: 3,
-    width: 0,
-    height: 0,
-    borderTopWidth: 3.5,
-    borderBottomWidth: 3.5,
-    borderLeftWidth: 4.5,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
+    top: 3,
+    width: 3.2,
+    height: 3.2,
+    borderTopWidth: 1.5,
+    borderRightWidth: 1.5,
+    transform: [{ rotate: '45deg' }],
   },
-  flipArrowBottom: {
+  flipTipLeft: {
     position: 'absolute',
-    bottom: 2,
     left: 3,
-    width: 0,
-    height: 0,
-    borderTopWidth: 3.5,
-    borderBottomWidth: 3.5,
-    borderRightWidth: 4.5,
-    borderTopColor: 'transparent',
-    borderBottomColor: 'transparent',
+    bottom: 3,
+    width: 3.2,
+    height: 3.2,
+    borderBottomWidth: 1.5,
+    borderLeftWidth: 1.5,
+    transform: [{ rotate: '45deg' }],
   },
 });
