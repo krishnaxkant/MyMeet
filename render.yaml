@@ -5,15 +5,14 @@ services:
     plan: free
     region: singapore
     branch: main
+    rootDir: server
     autoDeploy: true
-    buildCommand: npm install --legacy-peer-deps && npm run build:server
-    startCommand: node server/dist/index.js
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm run start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 4000
       - key: CORS_ORIGIN
         sync: false
       - key: WEB_APP_URL
