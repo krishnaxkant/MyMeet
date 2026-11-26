@@ -23,10 +23,10 @@ export function BrandLogo({ size = 'md', showTagline = false }: BrandLogoProps) 
     <View style={styles.row}>
       <Image
         source={MYMEET_MARK}
-        style={{ width: m.icon, height: m.icon, resizeMode: 'contain' }}
+        style={{ width: m.icon, height: m.icon, resizeMode: 'contain', flexShrink: 0 }}
         accessibilityLabel="MyMeet logo"
       />
-      <View>
+      <View style={styles.textWrap}>
         <View style={styles.wordmarkRow}>
           <Text
             style={[
@@ -52,7 +52,11 @@ export function BrandLogo({ size = 'md', showTagline = false }: BrandLogoProps) 
           </Text>
         </View>
         {showTagline && (
-          <Text style={[styles.tagline, { fontSize: m.tagline, color: colors.textMuted }]}>
+          <Text
+            style={[styles.tagline, { fontSize: m.tagline, color: colors.textMuted }]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
             Connect. Collaborate. Together.
           </Text>
         )}
@@ -66,6 +70,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  textWrap: {
+    flexShrink: 1,
+    minWidth: 0,
   },
   wordmarkRow: {
     flexDirection: 'row',

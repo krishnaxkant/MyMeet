@@ -55,6 +55,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     gap: 2,
+    flexShrink: 0,
   },
   button: {
     paddingHorizontal: 10,

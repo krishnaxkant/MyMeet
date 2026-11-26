@@ -79,9 +79,12 @@ export function AuthScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.topRow}>
-          <BrandLogo size="lg" showTagline />
+        <View style={styles.themeBar}>
           <ThemeToggle />
+        </View>
+
+        <View style={styles.brandHero}>
+          <BrandLogo size="lg" showTagline />
         </View>
 
         <View
@@ -284,9 +287,19 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    gap: 18,
+    gap: 16,
     flexGrow: 1,
     justifyContent: 'center',
+  },
+  themeBar: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  brandHero: {
+    width: '100%',
+    alignItems: 'flex-start',
   },
   topRow: {
     flexDirection: 'row',
