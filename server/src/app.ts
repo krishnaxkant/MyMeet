@@ -13,9 +13,20 @@ import scheduleRoutes from './routes/scheduleRoutes.js';
 export const createApp = () => {
   const app = express();
 
+  const allowedOrigins =
+    env.corsOrigin === '*'
+      ? true
+      : Array.from(
+          new Set(
+            [...env.corsOrigin.split(','), env.webAppUrl]
+              .map((o) => o.trim().replace(/\/$/, ''))
+              .filter(Boolean),
+          ),
+        );
+
   app.use(
     cors({
-      origin: env.corsOrigin === '*' ? true : env.corsOrigin.split(',').map((o) => o.trim()),
+      origin: allowedOrigins,
       credentials: true,
     }),
   );
@@ -23,7 +34,7 @@ export const createApp = () => {
 
   app.get('/', (_req, res) => {
     res.json({
-      name: 'Meet Backend API',
+      name: 'MyMeet Backend API',
       version: '1.0.0',
       health: '/api/health',
       me: '/api/me',

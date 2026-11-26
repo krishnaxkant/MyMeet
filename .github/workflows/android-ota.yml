@@ -1,0 +1,57 @@
+name: Android OTA Auto-Update (EAS Update)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/mobile/**'
+      - '!apps/mobile/eas.json'
+  workflow_dispatch:
+
+jobs:
+  publish-ota:
+    name: Publish Android OTA Update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check EXPO_TOKEN secret
+        id: check_token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Add EXPO_TOKEN in GitHub Repository Secrets to enable automatic Android OTA updates on push."
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.check_token.outputs.has_token == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        if: steps.check_token.outputs.has_token == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Expo & EAS CLI
+        if: steps.check_token.outputs.has_token == 'true'
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        if: steps.check_token.outputs.has_token == 'true'
+        run: npm install --legacy-peer-deps
+
+      - name: Publish OTA update to preview channel
+        if: steps.check_token.outputs.has_token == 'true'
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+          EXPO_PUBLIC_API_URL: ${{ secrets.EXPO_PUBLIC_API_URL }}
+        run: eas update --branch preview --auto --non-interactive

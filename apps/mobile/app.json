@@ -4,6 +4,14 @@
     "slug": "meet-mobile",
     "owner": "krishna2007s-team",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5a076ab0-31a0-47af-b94b-e267fc72fc9d",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "orientation": "portrait",
     "scheme": "mymeet",
     "userInterfaceStyle": "automatic",

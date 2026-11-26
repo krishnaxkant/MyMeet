@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { BottomTabBar, type MainTab } from '../src/components/BottomTabBar';
+import { useAutoUpdates } from '../src/hooks/useAutoUpdates';
 import { AuthProvider, useAuth } from '../src/hooks/useAuth';
 import { ThemeProvider, useTheme } from '../src/hooks/useTheme';
 import { AuthScreen } from '../src/screens/AuthScreen';
@@ -24,6 +25,7 @@ type ScreenState =
 function RootNavigator() {
   const { user, loading } = useAuth();
   const { theme, colors } = useTheme();
+  const { updateReady, reloading, applyUpdateNow } = useAutoUpdates();
   const [screen, setScreen] = useState<ScreenState>({ name: 'home' });
 
   const isMainTab =
@@ -35,6 +37,17 @@ function RootNavigator() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
+      {updateReady && screen.name !== 'room' && (
+        <Pressable
+          style={styles.updateBar}
+          onPress={() => void applyUpdateNow()}
+          disabled={reloading}
+        >
+          <Text style={styles.updateBarText}>
+            {reloading ? 'Applying MyMeet update...' : 'New MyMeet update ready · Tap to refresh'}
+          </Text>
+        </Pressable>
+      )}
       {loading ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" color={colors.accent} />
@@ -124,5 +137,17 @@ const styles = StyleSheet.create({
   },
   loaderText: {
     fontSize: 14,
+  },
+  updateBar: {
+    backgroundColor: '#2563EB',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  updateBarText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
   },
 });
