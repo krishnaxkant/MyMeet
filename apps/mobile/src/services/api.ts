@@ -207,12 +207,21 @@ function isEmulatorOrLoopbackUrl(url: string): boolean {
   );
 }
 
+function sanitizeUrl(raw: string): string {
+  const trimmed = raw.trim();
+  // Guard against accidental double-paste like "https://a.comhttps://a.com"
+  const secondHttp = trimmed.indexOf('http', 8);
+  const single = secondHttp > 0 ? trimmed.slice(0, secondHttp) : trimmed;
+  return single.replace(/\/+$/, '');
+}
+
 function resolveApiBaseUrl(): string {
   const extraApiUrl = ((Constants.expoConfig?.extra ?? {}) as { apiUrl?: string }).apiUrl?.trim();
-  const configured = process.env.EXPO_PUBLIC_API_URL?.trim() || extraApiUrl;
+  const rawConfigured = process.env.EXPO_PUBLIC_API_URL?.trim() || extraApiUrl;
+  const configured = rawConfigured ? sanitizeUrl(rawConfigured) : '';
 
   if (configured && !isEmulatorOrLoopbackUrl(configured)) {
-    return configured.replace(/\/$/, '');
+    return configured;
   }
 
   const hostUri =
