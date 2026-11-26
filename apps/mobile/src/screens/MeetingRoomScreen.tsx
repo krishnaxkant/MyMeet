@@ -36,6 +36,7 @@ import {
   MicSymbol,
   MoreDotsSymbol,
   PeopleSymbol,
+  ScreenShareSymbol,
   SpeakerSymbol,
 } from '../components/MediaIcons';
 import { StatusBadge } from '../components/StatusBadge';
@@ -164,6 +165,7 @@ export function MeetingRoomScreen({
 
   const [micEnabled, setMicEnabled] = useState(initialMicEnabled);
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
+  const [screenShareEnabled, setScreenShareEnabled] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Record<string, string>>({});
@@ -402,6 +404,8 @@ export function MeetingRoomScreen({
           stage.setMic(Boolean(payload.value));
         } else if (payload.type === 'setCam') {
           stage.setCam(Boolean(payload.value));
+        } else if (payload.type === 'setScreenShare') {
+          stage.setScreenShare(Boolean(payload.value));
         } else if (payload.type === 'flipCam') {
           stage.flipCam();
         } else if (payload.type === 'setSpeaker') {
@@ -450,6 +454,16 @@ export function MeetingRoomScreen({
     sendStageCommand({ type: 'setCam', value: next });
   };
 
+  const handleToggleScreenShare = () => {
+    if (!useNativeLiveKit) {
+      showTempNotice('Screen sharing requires the installed MyMeet Android app.');
+      return;
+    }
+    const next = !screenShareEnabled;
+    setScreenShareEnabled(next);
+    sendStageCommand({ type: 'setScreenShare', value: next });
+  };
+
   const handleToggleSpeaker = () => {
     const next = !speakerMuted;
     setSpeakerMuted(next);
@@ -471,6 +485,9 @@ export function MeetingRoomScreen({
     } else if (msg.type === 'mediaState') {
       if (typeof msg.micEnabled === 'boolean') setMicEnabled(msg.micEnabled);
       if (typeof msg.camEnabled === 'boolean') setCamEnabled(msg.camEnabled);
+      if (typeof msg.screenShareEnabled === 'boolean') {
+        setScreenShareEnabled(msg.screenShareEnabled);
+      }
       if (msg.warning) {
         setMediaNotice(msg.warning);
       } else {
@@ -845,7 +862,7 @@ export function MeetingRoomScreen({
         )}
       </View>
 
-      {/* Ultra-Clean 4-Button Minimal Control Dock (Mic, Cam, 3-Dots, End) */}
+      {/* Ultra-Clean 5-Button Minimal Control Dock (Mic, Cam, Screen Share, 3-Dots, End) */}
       <View style={styles.controlDock}>
         <Pressable
           style={[styles.dockCircleBtn, !micEnabled && styles.dockBtnDanger]}
@@ -861,6 +878,14 @@ export function MeetingRoomScreen({
           accessibilityLabel={camEnabled ? 'Turn off camera' : 'Turn on camera'}
         >
           <CamSymbol color="#FFFFFF" muted={!camEnabled} />
+        </Pressable>
+
+        <Pressable
+          style={[styles.dockCircleBtn, screenShareEnabled && styles.dockBtnAccent]}
+          onPress={handleToggleScreenShare}
+          accessibilityLabel={screenShareEnabled ? 'Stop screen sharing' : 'Share screen'}
+        >
+          <ScreenShareSymbol color="#FFFFFF" />
         </Pressable>
 
         <Pressable

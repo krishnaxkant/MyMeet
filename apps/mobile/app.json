@@ -34,7 +34,8 @@
         "@livekit/react-native-expo-plugin",
         {
           "android": {
-            "audioType": "communication"
+            "audioType": "communication",
+            "enableScreenShareService": true
           },
           "ios": {
             "enableMultitaskingCameraAccess": false
@@ -59,7 +60,10 @@
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.WAKE_LOCK"
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     }
   }

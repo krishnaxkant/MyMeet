@@ -162,6 +162,18 @@ export function FlipCamSymbol({ color = '#FFFFFF' }: { color?: string }) {
   );
 }
 
+export function ScreenShareSymbol({ color = '#FFFFFF' }: { color?: string }) {
+  return (
+    <View style={styles.box}>
+      <View style={[styles.screenFrame, { borderColor: color }]}>
+        <View style={[styles.screenArrowHead, { borderTopColor: color, borderLeftColor: color }]} />
+        <View style={[styles.screenArrowStem, { backgroundColor: color }]} />
+      </View>
+      <View style={[styles.screenStand, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   box: {
     width: 22,
@@ -399,5 +411,34 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1.5,
     borderLeftWidth: 1.5,
     transform: [{ rotate: '45deg' }],
+  },
+  // Screen Share (monitor + upward present arrow)
+  screenFrame: {
+    width: 19,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 1.8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenArrowHead: {
+    width: 5.5,
+    height: 5.5,
+    borderTopWidth: 1.8,
+    borderLeftWidth: 1.8,
+    transform: [{ rotate: '45deg' }],
+    marginBottom: -4,
+    marginTop: 1,
+  },
+  screenArrowStem: {
+    width: 1.8,
+    height: 6.5,
+    borderRadius: 1,
+  },
+  screenStand: {
+    width: 10,
+    height: 2,
+    borderRadius: 1,
+    marginTop: 2.2,
   },
 });

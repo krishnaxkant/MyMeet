@@ -14,6 +14,7 @@ import { initNativeLiveKitIfAvailable } from '../utils/nativeLiveKit';
 export interface NativeStageHandle {
   setMic: (enabled: boolean) => void;
   setCam: (enabled: boolean) => void;
+  setScreenShare: (enabled: boolean) => void;
   flipCam: () => void;
   setSpeakerMuted: (muted: boolean) => void;
   setHand: (raised: boolean) => void;
@@ -24,6 +25,7 @@ export interface NativeStageEvent {
   type: 'connected' | 'disconnected' | 'mediaState' | 'handEvent' | 'error';
   micEnabled?: boolean;
   camEnabled?: boolean;
+  screenShareEnabled?: boolean;
   identity?: string;
   name?: string;
   raised?: boolean;
@@ -270,6 +272,47 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
       [refreshTiles],
     );
 
+    const applyScreenShareInternal = useCallback(
+      async (enabled: boolean) => {
+        const room = roomRef.current;
+        if (!room || room.state !== 'connected') {
+          onStageEventRef.current({
+            type: 'mediaState',
+            screenShareEnabled: false,
+            warning: 'Wait for meeting connection before sharing your screen.',
+          });
+          return;
+        }
+        try {
+          if (enabled) {
+            setStageStatus('Starting screen share...');
+            await room.localParticipant.setScreenShareEnabled(true, { audio: false });
+          } else {
+            await room.localParticipant.setScreenShareEnabled(false);
+          }
+          setStageStatus(null);
+          refreshTiles();
+          onStageEventRef.current({
+            type: 'mediaState',
+            screenShareEnabled: room.localParticipant.isScreenShareEnabled,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unable to share screen.';
+          setStageStatus(null);
+          const cancelled =
+            msg.toLowerCase().includes('cancel') ||
+            msg.toLowerCase().includes('denied') ||
+            msg.toLowerCase().includes('permission');
+          onStageEventRef.current({
+            type: 'mediaState',
+            screenShareEnabled: room.localParticipant.isScreenShareEnabled,
+            ...(cancelled ? {} : { warning: `Screen Share: ${msg}` }),
+          });
+        }
+      },
+      [refreshTiles],
+    );
+
     const flipCamInternal = useCallback(async () => {
       const room = roomRef.current;
       const LK = runtime.LiveKitClient;
@@ -331,6 +374,9 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
         setCam: (enabled) => {
           void enqueueMedia(() => applyCamInternal(enabled));
         },
+        setScreenShare: (enabled) => {
+          void enqueueMedia(() => applyScreenShareInternal(enabled));
+        },
         flipCam: () => {
           void enqueueMedia(() => flipCamInternal());
         },
@@ -353,6 +399,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
         applyCamInternal,
         applyHandInternal,
         applyMicInternal,
+        applyScreenShareInternal,
         enqueueMedia,
         flipCamInternal,
         syncSpeakerVolume,
@@ -448,6 +495,11 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
               onStageEventRef.current({
                 type: 'mediaState',
                 camEnabled: room.localParticipant.isCameraEnabled,
+              });
+            } else if (pub.source === Track.Source.ScreenShare) {
+              onStageEventRef.current({
+                type: 'mediaState',
+                screenShareEnabled: room.localParticipant.isScreenShareEnabled,
               });
             }
             refreshTiles();
