@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -369,12 +371,29 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
 
   const isHost = selected?.my_role === 'host';
 
+  // Step-by-step Android Back inside History: Fullboard -> Detail -> History List -> Previous Screen
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (fullBoardOpen) {
+        setFullBoardOpen(false);
+        return true;
+      }
+      if (selected) {
+        setSelected(null);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [fullBoardOpen, selected]);
+
   return (
     <>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
           <BackButton
-            label={selected ? 'History List' : 'Home'}
+            label={selected ? 'History List' : 'Back'}
             onPress={selected ? () => setSelected(null) : onBack}
           />
           {!selected ? (

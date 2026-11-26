@@ -11,6 +11,7 @@ import {
 import {
   ActivityIndicator,
   AppState,
+  BackHandler,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -285,6 +286,27 @@ export function MeetingRoomScreen({
     }, 1000);
     return () => clearInterval(tick);
   }, [meeting?.started_at]);
+
+  // Step-by-step Android hardware/swipe Back inside active meeting:
+  // 1) If a sub-sheet (people/chat/invite) is open, go back to 'more' or close it
+  // 2) If 'more' or 'leave' sheet is open, close it
+  // 3) If on main stage, open Leave/End confirmation sheet (never abruptly kill the call!)
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (activeSheet === 'people' || activeSheet === 'chat' || activeSheet === 'invite') {
+        setActiveSheet('more');
+        return true;
+      }
+      if (activeSheet !== null) {
+        setActiveSheet(null);
+        return true;
+      }
+      setActiveSheet('leave');
+      return true;
+    });
+    return () => sub.remove();
+  }, [activeSheet]);
 
   useEffect(() => {
     if (activeSheet === 'chat') {
@@ -997,23 +1019,45 @@ export function MeetingRoomScreen({
               </View>
             ) : activeSheet === 'leave' ? (
               <View style={styles.leaveSheetBody}>
-                <Pressable
-                  style={styles.endAllBtn}
-                  disabled={busy}
-                  onPress={() => void handleEndForAll()}
-                >
-                  <Text style={styles.endAllBtnText}>End Meeting for Everyone</Text>
-                </Pressable>
+                {meeting.is_host && (
+                  <Pressable
+                    style={styles.endAllBtn}
+                    disabled={busy}
+                    onPress={() => void handleEndForAll()}
+                  >
+                    <Text style={styles.endAllBtnText}>End Meeting for Everyone</Text>
+                  </Pressable>
+                )}
                 <Pressable
                   style={[
-                    styles.justLeaveBtn,
-                    { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+                    meeting.is_host ? styles.justLeaveBtn : styles.endAllBtn,
+                    meeting.is_host && {
+                      backgroundColor: colors.surfaceElevated,
+                      borderColor: colors.borderStrong,
+                    },
                   ]}
                   disabled={busy}
                   onPress={() => void handleLeave()}
                 >
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: '700' }}>
-                    Just Leave Meeting
+                  <Text
+                    style={
+                      meeting.is_host
+                        ? { color: colors.text, fontSize: 14, fontWeight: '700' }
+                        : styles.endAllBtnText
+                    }
+                  >
+                    {meeting.is_host ? 'Just Leave Meeting' : 'Leave Meeting'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.justLeaveBtn,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                  onPress={() => setActiveSheet(null)}
+                >
+                  <Text style={{ color: colors.textMuted, fontSize: 13.5, fontWeight: '700' }}>
+                    Stay in Meeting
                   </Text>
                 </Pressable>
               </View>
