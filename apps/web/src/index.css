@@ -2967,3 +2967,85 @@ code {
   color: #090d16;
   border-color: #fbbf24;
 }
+
+/* ─── MyMeet Official Brand Wordmark & Emblem ─── */
+.mymeet-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  user-select: none;
+}
+
+.mymeet-brand-sm {
+  gap: 8px;
+}
+
+.mymeet-brand-lg {
+  gap: 12px;
+}
+
+.mymeet-brand-icon {
+  display: block;
+  object-fit: contain;
+  flex-shrink: 0;
+  filter: drop-shadow(0 4px 10px rgba(37, 99, 235, 0.24));
+}
+
+.mymeet-brand-copy {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+
+.mymeet-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.mymeet-brand-sm .mymeet-wordmark {
+  font-size: 1.15rem;
+}
+
+.mymeet-brand-md .mymeet-wordmark {
+  font-size: 1.45rem;
+}
+
+.mymeet-brand-lg .mymeet-wordmark {
+  font-size: 1.85rem;
+}
+
+.mymeet-wordmark-my {
+  color: #0b132b;
+}
+
+[data-theme='dark'] .mymeet-wordmark-my,
+.mymeet-brand-inverted .mymeet-wordmark-my {
+  color: #f8fafc;
+}
+
+.mymeet-wordmark-meet {
+  background: linear-gradient(92deg, #00a8ff 0%, #2563eb 52%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.mymeet-tagline {
+  margin-top: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-muted, #64748b);
+}
+
+.mymeet-brand-lg .mymeet-tagline {
+  font-size: 0.8rem;
+}
+
+.mymeet-brand-inverted .mymeet-tagline {
+  color: rgba(226, 232, 240, 0.78);
+}

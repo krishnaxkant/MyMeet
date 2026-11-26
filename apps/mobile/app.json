@@ -1,11 +1,26 @@
 {
   "expo": {
-    "name": "Meet",
+    "name": "MyMeet",
     "slug": "meet-mobile",
+    "owner": "krishna2007s-team",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "meet",
+    "scheme": "mymeet",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#070B14"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5a076ab0-31a0-47af-b94b-e267fc72fc9d"
+      }
+    },
     "plugins": [
       [
         "@livekit/react-native-expo-plugin",
@@ -23,8 +38,10 @@
     ],
     "android": {
       "package": "com.meet.app",
+      "icon": "./assets/icon.png",
       "adaptiveIcon": {
-        "backgroundColor": "#0b1020"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
       },
       "permissions": [
         "android.permission.INTERNET",

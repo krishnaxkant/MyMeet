@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthShell } from '../components/AuthShell';
-import { VideoIcon } from '../components/Icons';
+import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 export function ForgotPasswordPage() {
@@ -29,11 +29,8 @@ export function ForgotPasswordPage() {
   return (
     <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 20 }}>
-          <span className="brand-mark">
-            <VideoIcon size={18} />
-          </span>
-          <span>Meet</span>
+        <div style={{ marginBottom: 22 }}>
+          <BrandLogo size="md" />
         </div>
 
         <h1 className="auth-title">Reset your password</h1>

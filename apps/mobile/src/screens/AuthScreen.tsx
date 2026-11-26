@@ -9,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { BrandLogo } from '../components/BrandLogo';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -79,15 +80,7 @@ export function AuthScreen() {
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.topRow}>
-          <View style={styles.brandRow}>
-            <View style={[styles.logo, { backgroundColor: colors.accent }]}>
-              <Text style={styles.logoText}>M</Text>
-            </View>
-            <View>
-              <Text style={[styles.title, { color: colors.text }]}>Meet</Text>
-              <Text style={[styles.subtitle, { color: colors.textMuted }]}>Web & Android</Text>
-            </View>
-          </View>
+          <BrandLogo size="lg" showTagline />
           <ThemeToggle />
         </View>
 

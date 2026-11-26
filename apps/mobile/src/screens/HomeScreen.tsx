@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { BrandLogo } from '../components/BrandLogo';
 import { StatusBadge } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAuth } from '../hooks/useAuth';
@@ -168,6 +169,11 @@ export function HomeScreen({
 
   return (
     <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <View style={styles.brandHeaderRow}>
+        <BrandLogo size="sm" />
+        <ThemeToggle />
+      </View>
+
       <View style={styles.topBar}>
         <Pressable style={styles.brandRow} onPress={onOpenProfile}>
           <View style={[styles.avatar, { backgroundColor: colors.accent, overflow: 'hidden' }]}>
@@ -203,7 +209,6 @@ export function HomeScreen({
             </View>
           </View>
         </Pressable>
-        <ThemeToggle />
       </View>
 
       <View
@@ -217,10 +222,10 @@ export function HomeScreen({
         ]}
       >
         <Text style={[styles.heroTitle, { color: colors.text }]}>
-          Video calls made simple
+          Connect. Collaborate. Together.
         </Text>
         <Text style={[styles.heroSub, { color: colors.textMuted }]}>
-          Start an instant room, plan ahead with your team, or enter a meeting code.
+          Start an instant MyMeet room, plan ahead with your team, or enter a meeting code.
         </Text>
 
         <View style={styles.primaryActionsRow}>
@@ -515,6 +520,13 @@ const styles = StyleSheet.create({
     padding: 18,
     paddingBottom: 28,
     gap: 16,
+  },
+  brandHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 2,
   },
   topBar: {
     flexDirection: 'row',

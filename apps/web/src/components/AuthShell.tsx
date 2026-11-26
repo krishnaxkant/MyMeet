@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { ShieldIcon, VideoIcon } from './Icons';
+import { BrandLogo } from './BrandLogo';
+import { ShieldIcon } from './Icons';
 import { ThemeToggle } from './ThemeToggle';
 
 export function AuthShell({ children }: { children: ReactNode }) {
@@ -11,10 +12,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
       <aside className="auth-showcase" aria-hidden="true">
         <div className="auth-showcase-brand">
-          <span className="brand-mark">
-            <VideoIcon size={18} />
-          </span>
-          <span>Meet</span>
+          <BrandLogo size="lg" showTagline inverted />
         </div>
 
         <div className="auth-showcase-body">

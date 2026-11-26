@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthShell } from '../components/AuthShell';
-import { VideoIcon } from '../components/Icons';
+import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 export function LoginPage() {
@@ -37,11 +37,8 @@ export function LoginPage() {
   return (
     <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 20 }}>
-          <span className="brand-mark">
-            <VideoIcon size={18} />
-          </span>
-          <span>Meet</span>
+        <div style={{ marginBottom: 22 }}>
+          <BrandLogo size="md" showTagline />
         </div>
 
         <h1 className="auth-title">Welcome back</h1>
@@ -95,7 +92,7 @@ export function LoginPage() {
         </form>
 
         <p className="auth-footer">
-          New to Meet?{' '}
+          New to MyMeet?{' '}
           <Link to="/signup" className="text-link">
             Create an account
           </Link>

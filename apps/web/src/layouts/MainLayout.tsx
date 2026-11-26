@@ -11,8 +11,8 @@ import {
   MoonIcon,
   SunIcon,
   UserIcon,
-  VideoIcon,
 } from '../components/Icons';
+import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 
@@ -123,10 +123,7 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
           {/* Left Zone: Brand Signature */}
           <div className="nav-zone-left">
             <Link to="/" className="brand">
-              <span className="brand-mark">
-                <VideoIcon size={17} />
-              </span>
-              <span className="brand-wordmark">Meet</span>
+              <BrandLogo size="sm" />
               <span
                 className={`brand-status-dot dot-${statusTone}`}
                 title={statusLabel}

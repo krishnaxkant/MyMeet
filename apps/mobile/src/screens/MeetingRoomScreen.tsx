@@ -515,7 +515,7 @@ export function MeetingRoomScreen({
   const handleShare = async () => {
     if (!meeting) return;
     await Share.share({
-      message: `Join my Meet call "${meeting.title}" using code: ${meeting.code}`,
+      message: `Join my MyMeet call "${meeting.title}" using code: ${meeting.code}`,
     }).catch(() => {});
   };
 

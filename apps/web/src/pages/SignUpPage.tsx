@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { AuthShell } from '../components/AuthShell';
-import { VideoIcon } from '../components/Icons';
+import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 export function SignUpPage() {
@@ -49,15 +49,12 @@ export function SignUpPage() {
   return (
     <AuthShell>
       <div className="card auth-card">
-        <div className="brand" style={{ marginBottom: 20 }}>
-          <span className="brand-mark">
-            <VideoIcon size={18} />
-          </span>
-          <span>Meet</span>
+        <div style={{ marginBottom: 22 }}>
+          <BrandLogo size="md" showTagline />
         </div>
 
         <h1 className="auth-title">Create your account</h1>
-        <p className="auth-subtitle">One account for Meet Web and Meet Android.</p>
+        <p className="auth-subtitle">One account for MyMeet Web and MyMeet Android.</p>
 
         {!isConfigured && (
           <div className="alert alert-warning">

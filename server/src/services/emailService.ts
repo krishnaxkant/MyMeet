@@ -57,7 +57,7 @@ export async function sendMeetingInviteEmail(params: {
   }
 
   const joinUrl = `${env.webAppUrl}/meet/${params.meetingCode}`;
-  const fromAddress = env.smtpFrom || `Meet <${env.smtpUser}>`;
+  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
 
   const safeInviter = escapeHtml(params.inviterName);
   const safeTitle = escapeHtml(params.meetingTitle);
@@ -66,7 +66,10 @@ export async function sendMeetingInviteEmail(params: {
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #f6f8fc; border-radius: 14px;">
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
-        <div style="font-size: 18px; font-weight: 800; color: #2563eb; margin-bottom: 12px;">Meet</div>
+        <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
+          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-bottom: 14px;">Connect. Collaborate. Together.</div>
         <h2 style="margin: 0 0 8px; color: #0f172a; font-size: 20px;">You're invited to a meeting</h2>
         <p style="margin: 0 0 18px; color: #475569; font-size: 15px;">
           <strong>${safeInviter}</strong> invited you to join <strong>${safeTitle}</strong>.
@@ -75,8 +78,8 @@ export async function sendMeetingInviteEmail(params: {
           <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Meeting Code</div>
           <div style="font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 4px; font-family: monospace;">${safeCode}</div>
         </div>
-        <a href="${joinUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 22px; border-radius: 10px; font-size: 15px;">
-          Join Meeting
+        <a href="${joinUrl}" style="display: inline-block; background: linear-gradient(90deg, #00a8ff, #2563eb, #7c3aed); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 22px; border-radius: 10px; font-size: 15px;">
+          Join MyMeet
         </a>
         <p style="margin: 18px 0 0; color: #64748b; font-size: 12px;">
           Or open this link in your browser: <a href="${joinUrl}" style="color: #2563eb;">${joinUrl}</a>
@@ -86,7 +89,7 @@ export async function sendMeetingInviteEmail(params: {
   `;
 
   const text = [
-    `${params.inviterName} invited you to join "${params.meetingTitle}" on Meet.`,
+    `${params.inviterName} invited you to join "${params.meetingTitle}" on MyMeet.`,
     '',
     `Meeting Code: ${params.meetingCode}`,
     `Join Link: ${joinUrl}`,
@@ -96,7 +99,7 @@ export async function sendMeetingInviteEmail(params: {
     await mailer.sendMail({
       from: fromAddress,
       to: params.to,
-      subject: `Meet Invitation: ${params.meetingTitle}`,
+      subject: `MyMeet Invitation: ${params.meetingTitle}`,
       text,
       html,
     });
