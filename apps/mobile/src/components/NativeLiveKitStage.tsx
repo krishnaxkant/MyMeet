@@ -757,11 +757,12 @@ const styles = StyleSheet.create({
   },
   grid: {
     flex: 1,
-    gap: 10,
+    gap: 8,
   },
   gridTwoCol: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
     alignContent: 'stretch',
   },
   tile: {
@@ -779,9 +780,8 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tileHalf: {
-    width: '48%',
-    minHeight: 170,
-    flexGrow: 1,
+    width: '48.5%',
+    height: '48.8%',
   },
   tileLocal: {
     borderColor: 'rgba(59, 130, 246, 0.6)',

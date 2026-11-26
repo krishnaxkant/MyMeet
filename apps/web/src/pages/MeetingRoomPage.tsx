@@ -14,6 +14,7 @@ import {
   MicIcon,
   MicOffIcon,
   MinimizeIcon,
+  MoreVerticalIcon,
   PhoneOffIcon,
   RecordIcon,
   RefreshIcon,
@@ -79,8 +80,10 @@ export function MeetingRoomPage() {
   const [statusNotice, setStatusNotice] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
 
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('people');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showLeaveMenu, setShowLeaveMenu] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const [elapsed, setElapsed] = useState('00:00');
@@ -89,7 +92,9 @@ export function MeetingRoomPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [myHandRaised, setMyHandRaised] = useState(false);
   const roomShellRef = useRef<HTMLDivElement | null>(null);
-  const lastSpokenHandIdRef = useRef<string | null>(null);
+  const lastHandEventIdRef = useRef<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const leaveMenuRef = useRef<HTMLDivElement | null>(null);
 
   const myDisplayName =
     profile?.full_name ||
@@ -291,62 +296,29 @@ export function MeetingRoomPage() {
     await livekit.broadcastHandRaise(next, myDisplayName, user?.id);
   };
 
-  // Voice announcement + toast whenever someone raises their hand
+  // Close 3-dots / leave popovers on outside click
+  useEffect(() => {
+    if (!showMoreMenu && !showLeaveMenu) return;
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (showMoreMenu && moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setShowMoreMenu(false);
+      }
+      if (showLeaveMenu && leaveMenuRef.current && !leaveMenuRef.current.contains(target)) {
+        setShowLeaveMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [showMoreMenu, showLeaveMenu]);
+
+  // Quiet visual toast ONLY when someone raises their hand (no voice announcement)
   useEffect(() => {
     const evt = livekit.lastHandEvent;
-    if (!evt || !evt.raised || lastSpokenHandIdRef.current === evt.id) return;
-    lastSpokenHandIdRef.current = evt.id;
-
-    const spokenText = `${evt.name} raised their hand`;
-    showTempNotice(`✋ ${spokenText}`);
-
-    if (speakerMuted) return;
-
-    // Gentle pleasant 2-tone chime + voice announcement
-    try {
-      const AudioCtxCtor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (AudioCtxCtor) {
-        const ctx = new AudioCtxCtor();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
-        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.11);
-        gain.gain.setValueAtTime(0.08, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.34);
-        setTimeout(() => void ctx.close().catch(() => {}), 500);
-      }
-    } catch {
-      // Ignore audio chime errors
-    }
-
-    try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.resume();
-        setTimeout(() => {
-          try {
-            const utterance = new SpeechSynthesisUtterance(spokenText);
-            utterance.lang = 'en-US';
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
-            utterance.volume = 1.0;
-            window.speechSynthesis.speak(utterance);
-          } catch {
-            // Ignore speech synthesis errors
-          }
-        }, 60);
-      }
-    } catch {
-      // Ignore speech synthesis errors
-    }
-  }, [livekit.lastHandEvent, speakerMuted]);
+    if (!evt || !evt.raised || lastHandEventIdRef.current === evt.id) return;
+    lastHandEventIdRef.current = evt.id;
+    showTempNotice(`✋ ${evt.name} raised their hand`);
+  }, [livekit.lastHandEvent]);
 
   const openSidebarTab = (tab: SidebarTab) => {
     if (showSidebar && sidebarTab === tab) {
@@ -582,14 +554,20 @@ export function MeetingRoomPage() {
     showSidebar && sidebarTab === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
   const isLiveKitConnected = livekit.connectionState === ConnectionState.Connected;
   const screenShares = livekit.participants.filter((p) => Boolean(p.screenShareTrack));
-
-  const liveBadge = isLiveKitConnected
-    ? { label: 'Live Video Connected', className: 'badge badge-success' }
-    : livekit.connectionState === ConnectionState.Connecting
-      ? { label: 'Connecting Media...', className: 'badge badge-warning' }
-      : livekit.isUnconfigured
-        ? { label: 'LiveKit Setup Needed', className: 'badge badge-warning' }
-        : { label: 'Media Disconnected', className: 'badge badge-danger' };
+  const tileParticipantsCount =
+    isLiveKitConnected && livekit.participants.length > 0
+      ? livekit.participants.length
+      : Math.max(1, joinedParticipants.length);
+  const gridCountAttr =
+    tileParticipantsCount <= 1
+      ? '1'
+      : tileParticipantsCount === 2
+        ? '2'
+        : tileParticipantsCount === 3
+          ? '3'
+          : tileParticipantsCount === 4
+            ? '4'
+            : 'many';
 
   const avatarMap = new Map<string, string | null>();
   for (const part of meeting.participants) {
@@ -599,183 +577,82 @@ export function MeetingRoomPage() {
     avatarMap.set(user.id, profile.avatar_url);
   }
 
+  const moreBadgeCount = unreadChatCount + (meeting.can_manage ? waitingParticipants.length : 0);
+
   return (
     <div
       ref={roomShellRef}
-      className={`room-shell ${isFullscreen ? 'room-shell-fullscreen' : ''}`}
+      className={`room-shell room-shell-minimal ${isFullscreen ? 'room-shell-fullscreen' : ''}`}
     >
-      <div className="room-header card">
-        <div className="room-header-left">
-          <h1 className="room-title">{meeting.title}</h1>
-          <div className="room-meta-row">
-            <code>{meeting.code}</code>
-            <span>·</span>
-            <span>{elapsed}</span>
-            <span className={liveBadge.className}>{liveBadge.label}</span>
-            {meeting.is_locked && (
-              <span className="badge badge-danger">
-                <LockIcon size={11} /> Locked
-              </span>
-            )}
-            {meeting.waiting_room_enabled && (
-              <span className="badge badge-warning">Waiting Room</span>
-            )}
-            <button
-              type="button"
-              className={`ai-agent-pill ${aiAgent.aiAgentActive ? 'active' : ''}`}
-              onClick={() => {
-                const next = !aiAgent.aiAgentActive;
-                aiAgent.setAiAgentActive(next);
-                if (next && !captions.captionsEnabled) {
-                  captions.startCaptions();
-                }
-              }}
-              title="Internal AI Agent analyzes voice + shared screen to prepare downloadable notes in History"
-            >
-              <SparklesIcon size={13} />
-              <span>
-                {aiAgent.aiAgentActive
-                  ? `AI Notes Active (${aiAgent.voiceCount} voice · ${aiAgent.screenCount} screen)`
-                  : 'AI Notes Paused'}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div className="actions-row">
-          {activeScreenSharer && aiAgent.aiAgentActive && (
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              disabled={aiAgent.capturingScreen}
-              onClick={() => void aiAgent.captureScreenNow()}
-              title="Analyze current shared screen / whiteboard slide right now"
-            >
-              <SparklesIcon size={14} />
-              <span>{aiAgent.capturingScreen ? 'Analyzing...' : 'Snap Screen Notes'}</span>
-            </button>
-          )}
+      {/* Floating lightweight notifications overlay (takes 0px of stage height) */}
+      <div className="room-floating-alerts">
+        {meeting.can_manage && waitingParticipants.length > 0 && (
           <button
             type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => void handleCopyLink()}
-          >
-            {copiedLink ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
-            <span>{copiedLink ? 'Invite Copied' : 'Copy Link'}</span>
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
+            className="room-floating-pill room-floating-pill-warn"
             onClick={() => openSidebarTab('people')}
           >
-            <UsersIcon size={14} />
             <span>
-              People ({joinedParticipants.length}
-              {waitingParticipants.length > 0 ? ` + ${waitingParticipants.length}` : ''})
+              {waitingParticipants.length}{' '}
+              {waitingParticipants.length === 1 ? 'person' : 'people'} waiting
             </span>
+            <strong>Review</strong>
           </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => openSidebarTab('chat')}
-          >
-            <ChatIcon size={14} />
-            <span>Chat</span>
-            {unreadChatCount > 0 && <span className="unread-pill">{unreadChatCount}</span>}
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => void handleToggleFullscreen()}
-            title={isFullscreen ? 'Exit full screen' : 'Enter full screen focus mode'}
-          >
-            {isFullscreen ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
-            <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
-          </button>
-        </div>
-      </div>
-
-      {error && <div className="alert alert-danger">{error}</div>}
-      {statusNotice && <div className="alert alert-success">{statusNotice}</div>}
-      {aiAgent.lastCaptureNotice && (
-        <div className="alert alert-success">{aiAgent.lastCaptureNotice}</div>
-      )}
-      {recorder.recorderError && <div className="alert alert-warning">{recorder.recorderError}</div>}
-      {captions.captionError && <div className="alert alert-warning">{captions.captionError}</div>}
-
-      {(recorder.isRecording || livekit.remoteRecording.active) && (
-        <div className="recording-banner" role="alert">
-          <div className="recording-banner-left">
-            <span className="rec-dot" />
-            <strong>REC</strong>
-            <span>
-              This meeting is being recorded by{' '}
-              <strong>
-                {recorder.isRecording ? `${myDisplayName} (You)` : livekit.remoteRecording.by || 'Host'}
-              </strong>
-              {recorder.isRecording
-                ? ` · ${String(Math.floor(recorder.recordingSeconds / 60)).padStart(2, '0')}:${String(
-                    recorder.recordingSeconds % 60,
-                  ).padStart(2, '0')}`
-                : ''}
-            </span>
-          </div>
-          {recorder.isRecording && (
+        )}
+        {error && <div className="room-floating-pill room-floating-pill-danger">{error}</div>}
+        {statusNotice && (
+          <div className="room-floating-pill room-floating-pill-info">{statusNotice}</div>
+        )}
+        {recorder.recorderError && (
+          <div className="room-floating-pill room-floating-pill-warn">{recorder.recorderError}</div>
+        )}
+        {livekit.mediaError && (
+          <div className="room-floating-pill room-floating-pill-warn">
+            <span>{livekit.mediaError}</span>
             <button
               type="button"
-              className="btn btn-danger btn-sm"
-              onClick={() => void handleToggleRecording()}
+              className="room-pill-action"
+              onClick={() => void livekit.reconnect()}
             >
-              Stop Recording
+              <RefreshIcon size={12} /> Retry
             </button>
-          )}
-        </div>
-      )}
-
-      {!recorder.isRecording && recorder.downloadUrl && (
-        <div
-          className="alert alert-success"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>Your local meeting recording is ready to download.</span>
+          </div>
+        )}
+        {(recorder.isRecording || livekit.remoteRecording.active) && (
+          <div className="room-floating-pill room-floating-pill-danger" role="alert">
+            <span className="rec-dot" />
+            <span>
+              REC ·{' '}
+              {recorder.isRecording
+                ? `${String(Math.floor(recorder.recordingSeconds / 60)).padStart(2, '0')}:${String(
+                    recorder.recordingSeconds % 60,
+                  ).padStart(2, '0')}`
+                : livekit.remoteRecording.by || 'Host'}
+            </span>
+          </div>
+        )}
+        {!recorder.isRecording && recorder.downloadUrl && (
           <button
             type="button"
-            className="btn btn-primary btn-sm"
+            className="room-floating-pill room-floating-pill-info"
             onClick={recorder.downloadRecording}
           >
-            <DownloadIcon size={14} />
+            <DownloadIcon size={13} />
             <span>Download Recording (.webm)</span>
           </button>
-        </div>
-      )}
-
-      {livekit.mediaError && (
-        <div
-          className="alert alert-warning"
-          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-        >
-          <span>{livekit.mediaError}</span>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => void livekit.reconnect()}
-          >
-            <RefreshIcon size={13} />
-            <span>Retry</span>
-          </button>
-        </div>
-      )}
-
-      {livekit.isUnconfigured && (
-        <div className="alert alert-warning">
-          <strong>LiveKit keys not configured yet:</strong> Add <code>LIVEKIT_URL</code>,{' '}
-          <code>LIVEKIT_API_KEY</code>, and <code>LIVEKIT_API_SECRET</code> into your root{' '}
-          <code>.env</code> and restart the backend to activate live video.
-        </div>
-      )}
+        )}
+      </div>
 
       <div className={`room-body ${showSidebar ? '' : 'room-body-full'}`}>
-        <section className="room-stage card">
+        <section className="room-stage">
+          {/* Tiny unobtrusive corner badge inside stage — zero top card clutter */}
+          <div className="stage-corner-info">
+            <span className={`stage-conn-dot ${isLiveKitConnected ? 'live' : ''}`} />
+            <span className="stage-corner-title">{meeting.title}</span>
+            <span className="stage-corner-sep">·</span>
+            <span className="stage-corner-time">{elapsed}</span>
+          </div>
+
           {screenShares.length > 0 && (
             <div className="screen-share-spotlight">
               {screenShares.map((sharer) => (
@@ -790,7 +667,10 @@ export function MeetingRoomPage() {
             </div>
           )}
 
-          <div className="participant-tiles-grid">
+          <div
+            className={`participant-tiles-grid ${screenShares.length > 0 ? 'has-screen-share' : ''}`}
+            data-count={gridCountAttr}
+          >
             {isLiveKitConnected && livekit.participants.length > 0
               ? livekit.participants.map((p) => (
                   <VideoTile
@@ -908,6 +788,16 @@ export function MeetingRoomPage() {
                   <span>Invite</span>
                 </button>
               )}
+              <button
+                type="button"
+                className="sidebar-tab"
+                style={{ flex: '0 0 auto', padding: '8px 10px' }}
+                onClick={() => setShowSidebar(false)}
+                title="Close panel"
+                aria-label="Close panel"
+              >
+                ×
+              </button>
             </div>
 
             {sidebarTab === 'people' && (
@@ -1167,123 +1057,249 @@ export function MeetingRoomPage() {
         )}
       </div>
 
-      <footer className="room-controls-bar card">
-        <div className="controls-group">
+      <footer className="room-dock-minimal">
+        <button
+          type="button"
+          className={`dock-btn ${livekit.micEnabled ? 'dock-btn-neutral' : 'dock-btn-off'}`}
+          onClick={() => void livekit.toggleMic()}
+          title={livekit.micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+          aria-label={livekit.micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+        >
+          {livekit.micEnabled ? <MicIcon size={20} /> : <MicOffIcon size={20} />}
+        </button>
+
+        <button
+          type="button"
+          className={`dock-btn ${livekit.camEnabled ? 'dock-btn-neutral' : 'dock-btn-off'}`}
+          onClick={() => void livekit.toggleCamera()}
+          title={livekit.camEnabled ? 'Turn camera off' : 'Turn camera on'}
+          aria-label={livekit.camEnabled ? 'Turn camera off' : 'Turn camera on'}
+        >
+          {livekit.camEnabled ? <VideoIcon size={20} /> : <VideoOffIcon size={20} />}
+        </button>
+
+        <button
+          type="button"
+          className={`dock-btn ${livekit.screenShareEnabled ? 'dock-btn-accent' : 'dock-btn-neutral'}`}
+          onClick={() => void livekit.toggleScreenShare()}
+          title={livekit.screenShareEnabled ? 'Stop screen share' : 'Share screen'}
+          aria-label={livekit.screenShareEnabled ? 'Stop screen share' : 'Share screen'}
+        >
+          <ScreenShareIcon size={20} />
+        </button>
+
+        {/* 3-Dots More Options Popover */}
+        <div className="dock-popover-anchor" ref={moreMenuRef}>
           <button
             type="button"
-            className={`media-btn ${livekit.micEnabled ? 'media-btn-on' : 'media-btn-off'}`}
-            onClick={() => void livekit.toggleMic()}
-            title={livekit.micEnabled ? 'Mute microphone' : 'Unmute microphone'}
+            className={`dock-btn media-btn-badge-wrap ${showMoreMenu ? 'dock-btn-accent' : 'dock-btn-neutral'}`}
+            onClick={() => {
+              setShowLeaveMenu(false);
+              setShowMoreMenu((prev) => !prev);
+            }}
+            title="More options"
+            aria-label="More options"
+            aria-expanded={showMoreMenu}
           >
-            {livekit.micEnabled ? <MicIcon size={18} /> : <MicOffIcon size={18} />}
+            <MoreVerticalIcon size={20} />
+            {moreBadgeCount > 0 && <span className="media-btn-dot">{moreBadgeCount}</span>}
           </button>
 
-          <button
-            type="button"
-            className={`media-btn ${livekit.camEnabled ? 'media-btn-on' : 'media-btn-off'}`}
-            onClick={() => void livekit.toggleCamera()}
-            title={livekit.camEnabled ? 'Turn camera off' : 'Turn camera on'}
-          >
-            {livekit.camEnabled ? <VideoIcon size={18} /> : <VideoOffIcon size={18} />}
-          </button>
+          {showMoreMenu && (
+            <div className="more-menu-popover" role="menu">
+              <div className="more-menu-head">
+                <span className="more-menu-code">{meeting.code}</span>
+                <button
+                  type="button"
+                  className="more-menu-copy"
+                  onClick={() => void handleCopyLink()}
+                >
+                  {copiedLink ? <CheckIcon size={13} /> : <CopyIcon size={13} />}
+                  <span>{copiedLink ? 'Copied' : 'Copy link'}</span>
+                </button>
+              </div>
 
-          <button
-            type="button"
-            className={`media-btn ${livekit.screenShareEnabled ? 'media-btn-accent' : 'media-btn-on'}`}
-            onClick={() => void livekit.toggleScreenShare()}
-            title={livekit.screenShareEnabled ? 'Stop screen share' : 'Share screen'}
-          >
-            <ScreenShareIcon size={18} />
-          </button>
+              <button
+                type="button"
+                className="more-menu-item"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  openSidebarTab('people');
+                }}
+              >
+                <UsersIcon size={16} />
+                <span>
+                  People ({joinedParticipants.length}
+                  {waitingParticipants.length > 0 ? ` + ${waitingParticipants.length} waiting` : ''})
+                </span>
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn ${speakerMuted ? 'media-btn-off' : 'media-btn-on'}`}
-            onClick={() => setSpeakerMuted((prev) => !prev)}
-            title={speakerMuted ? 'Unmute meeting audio' : 'Mute meeting audio'}
-          >
-            {speakerMuted ? <VolumeOffIcon size={18} /> : <VolumeIcon size={18} />}
-          </button>
+              <button
+                type="button"
+                className="more-menu-item"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  openSidebarTab('chat');
+                }}
+              >
+                <ChatIcon size={16} />
+                <span>In-Meeting Chat</span>
+                {unreadChatCount > 0 && <span className="unread-pill">{unreadChatCount}</span>}
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn ${myHandRaised ? 'media-btn-hand' : 'media-btn-on'}`}
-            onClick={() => void handleToggleHandRaise()}
-            title={myHandRaised ? 'Lower hand' : 'Raise hand (announces by voice)'}
-          >
-            <HandIcon size={18} />
-          </button>
+              <button
+                type="button"
+                className={`more-menu-item ${myHandRaised ? 'active' : ''}`}
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  void handleToggleHandRaise();
+                }}
+              >
+                <HandIcon size={16} />
+                <span>{myHandRaised ? 'Lower Hand' : 'Raise Hand'}</span>
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn ${captions.captionsEnabled ? 'media-btn-accent' : 'media-btn-on'}`}
-            onClick={captions.toggleCaptions}
-            title={captions.captionsEnabled ? 'Turn off live captions' : 'Turn on live captions'}
-          >
-            <CaptionsIcon size={18} />
-          </button>
+              <button
+                type="button"
+                className={`more-menu-item ${speakerMuted ? 'active' : ''}`}
+                onClick={() => {
+                  setSpeakerMuted((prev) => !prev);
+                  setShowMoreMenu(false);
+                }}
+              >
+                {speakerMuted ? <VolumeOffIcon size={16} /> : <VolumeIcon size={16} />}
+                <span>{speakerMuted ? 'Unmute Speaker' : 'Mute Speaker'}</span>
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn ${showEffectsBar || videoEffect !== 'none' ? 'media-btn-accent' : 'media-btn-on'}`}
-            onClick={() => setShowEffectsBar((prev) => !prev)}
-            title="Camera & background effects"
-          >
-            <SparklesIcon size={18} />
-          </button>
+              <button
+                type="button"
+                className={`more-menu-item ${captions.captionsEnabled ? 'active' : ''}`}
+                onClick={() => {
+                  captions.toggleCaptions();
+                  setShowMoreMenu(false);
+                }}
+              >
+                <CaptionsIcon size={16} />
+                <span>{captions.captionsEnabled ? 'Live Captions: ON' : 'Live Captions: OFF'}</span>
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn ${recorder.isRecording ? 'media-btn-off' : 'media-btn-on'}`}
-            onClick={() => void handleToggleRecording()}
-            title={recorder.isRecording ? 'Stop recording' : 'Record meeting (visible to all)'}
-          >
-            <RecordIcon size={18} />
-          </button>
+              <button
+                type="button"
+                className={`more-menu-item ${aiAgent.aiAgentActive ? 'active' : ''}`}
+                onClick={() => {
+                  const next = !aiAgent.aiAgentActive;
+                  aiAgent.setAiAgentActive(next);
+                  if (next && !captions.captionsEnabled) {
+                    captions.startCaptions();
+                  }
+                  setShowMoreMenu(false);
+                }}
+              >
+                <SparklesIcon size={16} />
+                <span>{aiAgent.aiAgentActive ? 'AI Notes: Active' : 'AI Notes: Paused'}</span>
+              </button>
 
-          <button
-            type="button"
-            className={`media-btn media-btn-badge-wrap ${
-              showSidebar && sidebarTab === 'chat' ? 'media-btn-accent' : 'media-btn-on'
-            }`}
-            onClick={() => openSidebarTab('chat')}
-            title="Toggle in-meeting chat"
-          >
-            <ChatIcon size={18} />
-            {unreadChatCount > 0 && <span className="media-btn-dot">{unreadChatCount}</span>}
-          </button>
+              {activeScreenSharer && aiAgent.aiAgentActive && (
+                <button
+                  type="button"
+                  className="more-menu-item"
+                  disabled={aiAgent.capturingScreen}
+                  onClick={() => {
+                    setShowMoreMenu(false);
+                    void aiAgent.captureScreenNow();
+                  }}
+                >
+                  <SparklesIcon size={16} />
+                  <span>{aiAgent.capturingScreen ? 'Analyzing Screen...' : 'Snap Screen Notes'}</span>
+                </button>
+              )}
 
-          <button
-            type="button"
-            className={`media-btn ${isFullscreen ? 'media-btn-accent' : 'media-btn-on'}`}
-            onClick={() => void handleToggleFullscreen()}
-            title={isFullscreen ? 'Exit full screen' : 'Full screen focus mode'}
-          >
-            {isFullscreen ? <MinimizeIcon size={17} /> : <MaximizeIcon size={17} />}
-          </button>
+              <button
+                type="button"
+                className={`more-menu-item ${showEffectsBar || videoEffect !== 'none' ? 'active' : ''}`}
+                onClick={() => {
+                  setShowEffectsBar((prev) => !prev);
+                  setShowMoreMenu(false);
+                }}
+              >
+                <SparklesIcon size={16} />
+                <span>Camera Effects</span>
+              </button>
+
+              <button
+                type="button"
+                className={`more-menu-item ${recorder.isRecording ? 'danger' : ''}`}
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  void handleToggleRecording();
+                }}
+              >
+                <RecordIcon size={16} />
+                <span>{recorder.isRecording ? 'Stop Recording' : 'Record Meeting'}</span>
+              </button>
+
+              <button
+                type="button"
+                className="more-menu-item"
+                onClick={() => {
+                  setShowMoreMenu(false);
+                  void handleToggleFullscreen();
+                }}
+              >
+                {isFullscreen ? <MinimizeIcon size={16} /> : <MaximizeIcon size={16} />}
+                <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        <div className="controls-group">
+        {/* Red End / Leave Call Button */}
+        <div className="dock-popover-anchor" ref={leaveMenuRef}>
           <button
             type="button"
-            className="btn btn-secondary"
+            className="dock-btn dock-btn-end"
             disabled={actionBusy}
-            onClick={() => void handleLeave()}
+            onClick={() => {
+              if (meeting.is_host) {
+                setShowMoreMenu(false);
+                setShowLeaveMenu((prev) => !prev);
+              } else {
+                void handleLeave();
+              }
+            }}
+            title={meeting.is_host ? 'Leave or end meeting' : 'Leave meeting'}
+            aria-label="Leave or end meeting"
           >
-            <PhoneOffIcon size={16} />
-            <span>Leave</span>
+            <PhoneOffIcon size={20} />
           </button>
 
-          {meeting.is_host && (
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={actionBusy}
-              onClick={() => void handleEndForAll()}
-            >
-              <PhoneOffIcon size={16} />
-              <span>End for All</span>
-            </button>
+          {showLeaveMenu && meeting.is_host && (
+            <div className="more-menu-popover more-menu-leave" role="menu">
+              <button
+                type="button"
+                className="more-menu-item danger"
+                disabled={actionBusy}
+                onClick={() => {
+                  setShowLeaveMenu(false);
+                  void handleEndForAll();
+                }}
+              >
+                <PhoneOffIcon size={16} />
+                <span>End Meeting for Everyone</span>
+              </button>
+              <button
+                type="button"
+                className="more-menu-item"
+                disabled={actionBusy}
+                onClick={() => {
+                  setShowLeaveMenu(false);
+                  void handleLeave();
+                }}
+              >
+                <PhoneOffIcon size={16} />
+                <span>Just Leave Call</span>
+              </button>
+            </div>
           )}
         </div>
       </footer>

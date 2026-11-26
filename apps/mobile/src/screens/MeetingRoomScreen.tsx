@@ -1,4 +1,3 @@
-import * as Speech from 'expo-speech';
 import {
   memo,
   useCallback,
@@ -31,9 +30,10 @@ import {
   CamSymbol,
   ChatSymbol,
   EndCallSymbol,
-  FullscreenSymbol,
+  FlipCamSymbol,
   InviteSymbol,
   MicSymbol,
+  MoreDotsSymbol,
   PeopleSymbol,
   SpeakerSymbol,
 } from '../components/MediaIcons';
@@ -68,7 +68,7 @@ import {
 } from '../components/NativeLiveKitStage';
 import { isNativeLiveKitAvailable } from '../utils/nativeLiveKit';
 
-type SheetTab = 'people' | 'chat' | 'invite' | 'leave' | null;
+type SheetTab = 'more' | 'people' | 'chat' | 'invite' | 'leave' | null;
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
@@ -464,20 +464,7 @@ export function MeetingRoomScreen({
         return next;
       });
       if (msg.raised) {
-        const announcement = `${who} raised their hand`;
-        showTempNotice(`✋ ${announcement}`);
-        if (!speakerMutedRef.current) {
-          try {
-            Speech.stop();
-            Speech.speak(announcement, {
-              language: 'en-US',
-              rate: 0.98,
-              pitch: 1.0,
-            });
-          } catch {
-            // Ignore native TTS errors
-          }
-        }
+        showTempNotice(`✋ ${who} raised their hand`);
       }
     } else if (msg.type === 'error' && msg.message) {
       setMediaNotice(msg.message);
@@ -727,51 +714,10 @@ export function MeetingRoomScreen({
   const joined = meeting.participants.filter((p) => p.status === 'joined');
   const waiting = meeting.participants.filter((p) => p.status === 'waiting');
   const unreadChat = activeSheet === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
+  const moreBadgeCount = unreadChat + (meeting.can_manage ? waiting.length : 0);
 
   return (
     <View style={styles.roomShell}>
-      {/* Compact Top Bar (hidden when in Full-Screen Focus Mode) */}
-      {!focusFullscreen && (
-        <View style={styles.roomTopBar}>
-          <View style={styles.flex1}>
-            <View style={styles.roomTitleLine}>
-              <Text style={styles.roomTitle} numberOfLines={1}>
-                {meeting.title}
-              </Text>
-              <View style={[styles.liveChip, !mediaConnected && styles.liveChipConnecting]}>
-                <View style={[styles.liveDot, !mediaConnected && styles.liveDotWarn]} />
-                <Text style={styles.liveChipText}>{mediaConnected ? 'LIVE' : 'CONNECTING'}</Text>
-              </View>
-            </View>
-            <Text style={styles.roomSub}>
-              {meeting.code} · {elapsed} · {joined.length} in call
-            </Text>
-          </View>
-
-          <View style={styles.topRightBtns}>
-            {camEnabled && (
-              <Pressable
-                style={styles.topIconBtn}
-                onPress={() => sendStageCommand({ type: 'flipCam' })}
-                accessibilityLabel="Switch front and back camera"
-              >
-                <Text style={{ color: '#F8FAFC', fontSize: 15, fontWeight: '800' }}>↻</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={styles.topIconBtn}
-              onPress={() => setFocusFullscreen(true)}
-              accessibilityLabel="Full screen focus mode"
-            >
-              <FullscreenSymbol color="#F8FAFC" active={false} />
-            </Pressable>
-            <Pressable style={styles.topShareBtn} onPress={() => void handleShare()}>
-              <Text style={styles.topShareText}>Share</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
       {/* Waiting Room Quick Banner for Host/Co-Host */}
       {meeting.can_manage && waiting.length > 0 && (
         <Pressable style={styles.waitingAlertBar} onPress={() => setActiveSheet('people')}>
@@ -806,17 +752,16 @@ export function MeetingRoomScreen({
         </View>
       )}
 
-      {/* Main Full-Screen Google-Meet Video Blocks Stage */}
+      {/* Full-Height Video Stage (Zero Top Card Clutter) */}
       <View style={styles.stageContainer}>
-        {focusFullscreen && (
-          <Pressable
-            style={styles.exitFocusPill}
-            onPress={() => setFocusFullscreen(false)}
-            accessibilityLabel="Exit full screen focus mode"
-          >
-            <FullscreenSymbol color="#F8FAFC" active />
-          </Pressable>
-        )}
+        {/* Tiny unobtrusive corner pill floating inside top-left (takes 0px of stage height) */}
+        <View style={styles.floatingCornerPill} pointerEvents="none">
+          <View style={[styles.liveDot, !mediaConnected && styles.liveDotWarn]} />
+          <Text style={styles.floatingCornerTitle} numberOfLines={1}>
+            {meeting.title}
+          </Text>
+          <Text style={styles.floatingCornerTime}>· {elapsed}</Text>
+        </View>
 
         {useNativeLiveKit && mediaToken && permissionsReady ? (
           <NativeLiveKitStage
@@ -863,7 +808,7 @@ export function MeetingRoomScreen({
         )}
       </View>
 
-      {/* Clean Symbol-Only Circular Control Dock (Zero Clunky Text Labels) */}
+      {/* Ultra-Clean 5-Button Minimal Control Dock (Mic, Cam, Flip, 3-Dots, End) */}
       <View style={styles.controlDock}>
         <Pressable
           style={[styles.dockCircleBtn, !micEnabled && styles.dockBtnDanger]}
@@ -882,58 +827,26 @@ export function MeetingRoomScreen({
         </Pressable>
 
         <Pressable
-          style={[styles.dockCircleBtn, speakerMuted && styles.dockBtnWarn]}
-          onPress={handleToggleSpeaker}
-          accessibilityLabel={speakerMuted ? 'Unmute speaker' : 'Mute speaker'}
+          style={[styles.dockCircleBtn, !camEnabled && { opacity: 0.45 }]}
+          disabled={!camEnabled}
+          onPress={() => sendStageCommand({ type: 'flipCam' })}
+          accessibilityLabel="Switch front and back camera"
         >
-          <SpeakerSymbol color="#FFFFFF" muted={speakerMuted} />
+          <FlipCamSymbol color="#FFFFFF" />
         </Pressable>
 
         <Pressable
-          style={[styles.dockCircleBtn, handRaised && styles.dockBtnHand]}
-          onPress={handleToggleHand}
-          accessibilityLabel={handRaised ? 'Lower hand' : 'Raise hand'}
+          style={[styles.dockCircleBtn, activeSheet === 'more' && styles.dockBtnAccent]}
+          onPress={() => setActiveSheet('more')}
+          accessibilityLabel="More meeting options"
         >
-          <Text style={styles.handEmoji}>✋</Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.dockCircleBtn}
-          onPress={() => setActiveSheet('people')}
-          accessibilityLabel="Participants and host controls"
-        >
-          <PeopleSymbol color="#FFFFFF" />
-          {(joined.length > 0 || waiting.length > 0) && (
-            <View style={[styles.dockBadge, waiting.length > 0 && styles.dockBadgeAlert]}>
-              <Text style={styles.dockBadgeText}>
-                {waiting.length > 0 ? `+${waiting.length}` : joined.length}
-              </Text>
-            </View>
-          )}
-        </Pressable>
-
-        <Pressable
-          style={styles.dockCircleBtn}
-          onPress={() => setActiveSheet('chat')}
-          accessibilityLabel="In-meeting chat"
-        >
-          <ChatSymbol color="#FFFFFF" />
-          {unreadChat > 0 && (
+          <MoreDotsSymbol color="#FFFFFF" />
+          {moreBadgeCount > 0 && (
             <View style={[styles.dockBadge, styles.dockBadgeAlert]}>
-              <Text style={styles.dockBadgeText}>{unreadChat}</Text>
+              <Text style={styles.dockBadgeText}>{moreBadgeCount}</Text>
             </View>
           )}
         </Pressable>
-
-        {meeting.can_manage && (
-          <Pressable
-            style={styles.dockCircleBtn}
-            onPress={() => setActiveSheet('invite')}
-            accessibilityLabel="Invite participants"
-          >
-            <InviteSymbol color="#FFFFFF" />
-          </Pressable>
-        )}
 
         <Pressable
           style={styles.dockEndCircle}
@@ -965,13 +878,15 @@ export function MeetingRoomScreen({
           >
             <View style={styles.sheetHeader}>
               <Text style={[styles.sheetTitle, { color: colors.text }]}>
-                {activeSheet === 'people'
-                  ? `People (${joined.length})`
-                  : activeSheet === 'chat'
-                    ? 'In-Meeting Chat'
-                    : activeSheet === 'invite'
-                      ? 'Invite by Email'
-                      : 'Leave or End Meeting'}
+                {activeSheet === 'more'
+                  ? `Options · ${meeting.code}`
+                  : activeSheet === 'people'
+                    ? `People (${joined.length})`
+                    : activeSheet === 'chat'
+                      ? 'In-Meeting Chat'
+                      : activeSheet === 'invite'
+                        ? 'Invite by Email'
+                        : 'Leave or End Meeting'}
               </Text>
               <Pressable
                 style={[
@@ -984,7 +899,101 @@ export function MeetingRoomScreen({
               </Pressable>
             </View>
 
-            {activeSheet === 'leave' ? (
+            {activeSheet === 'more' ? (
+              <View style={styles.moreGrid}>
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                  onPress={() => setActiveSheet('people')}
+                >
+                  <PeopleSymbol color={colors.text} />
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>
+                    People ({joined.length}
+                    {waiting.length > 0 ? `+${waiting.length}` : ''})
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                  onPress={() => setActiveSheet('chat')}
+                >
+                  <ChatSymbol color={colors.text} />
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>
+                    Chat{unreadChat > 0 ? ` (${unreadChat})` : ''}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    {
+                      backgroundColor: handRaised ? 'rgba(245, 158, 11, 0.2)' : colors.surfaceElevated,
+                      borderColor: handRaised ? '#F59E0B' : colors.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    handleToggleHand();
+                    setActiveSheet(null);
+                  }}
+                >
+                  <Text style={styles.handEmoji}>✋</Text>
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>
+                    {handRaised ? 'Lower Hand' : 'Raise Hand'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    {
+                      backgroundColor: speakerMuted ? 'rgba(245, 158, 11, 0.2)' : colors.surfaceElevated,
+                      borderColor: speakerMuted ? '#F59E0B' : colors.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    handleToggleSpeaker();
+                    setActiveSheet(null);
+                  }}
+                >
+                  <SpeakerSymbol color={colors.text} muted={speakerMuted} />
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>
+                    {speakerMuted ? 'Speaker Off' : 'Speaker On'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                  onPress={() => {
+                    setActiveSheet(null);
+                    void handleShare();
+                  }}
+                >
+                  <InviteSymbol color={colors.text} />
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>Share Link</Text>
+                </Pressable>
+
+                {meeting.can_manage && (
+                  <Pressable
+                    style={[
+                      styles.moreTile,
+                      { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                    ]}
+                    onPress={() => setActiveSheet('invite')}
+                  >
+                    <InviteSymbol color={colors.accent} />
+                    <Text style={[styles.moreTileLabel, { color: colors.text }]}>Invite Email</Text>
+                  </Pressable>
+                )}
+              </View>
+            ) : activeSheet === 'leave' ? (
               <View style={styles.leaveSheetBody}>
                 <Pressable
                   style={styles.endAllBtn}
@@ -1750,5 +1759,57 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     alignItems: 'center',
+  },
+  floatingCornerPill: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    zIndex: 15,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(7, 11, 20, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+    maxWidth: '72%',
+  },
+  floatingCornerTitle: {
+    color: '#F1F5F9',
+    fontSize: 11.5,
+    fontWeight: '700',
+    flexShrink: 1,
+  },
+  floatingCornerTime: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  dockBtnAccent: {
+    backgroundColor: '#2563EB',
+    borderColor: '#3B82F6',
+  },
+  moreGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    paddingBottom: 14,
+  },
+  moreTile: {
+    width: '47.5%',
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  moreTileLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    textAlign: 'center',
   },
 });

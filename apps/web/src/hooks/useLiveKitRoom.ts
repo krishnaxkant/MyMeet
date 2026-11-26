@@ -359,17 +359,51 @@ export function useLiveKitRoom({
   const toggleScreenShare = useCallback(async () => {
     const room = roomRef.current;
     if (!room || room.state !== ConnectionState.Connected) {
-      setMediaError('Connect LiveKit SFU first to share your screen.');
+      setMediaError('Still connecting to meeting room. Please wait a moment and try again.');
       return;
     }
+
+    const next = !room.localParticipant.isScreenShareEnabled;
+    if (
+      next &&
+      (typeof navigator === 'undefined' ||
+        !navigator.mediaDevices ||
+        typeof navigator.mediaDevices.getDisplayMedia !== 'function')
+    ) {
+      setMediaError('Screen sharing is supported on desktop browsers (Chrome, Edge, Safari).');
+      return;
+    }
+
     setMediaError(null);
     try {
-      const next = !room.localParticipant.isScreenShareEnabled;
-      await room.localParticipant.setScreenShareEnabled(next, { audio: true });
+      if (next) {
+        try {
+          await room.localParticipant.setScreenShareEnabled(true, { audio: false });
+        } catch (firstErr) {
+          const firstMsg = firstErr instanceof Error ? firstErr.message : '';
+          if (
+            firstMsg.toLowerCase().includes('permission') ||
+            firstMsg.toLowerCase().includes('cancel') ||
+            firstMsg.toLowerCase().includes('denied') ||
+            firstMsg.toLowerCase().includes('abort')
+          ) {
+            syncParticipants(room);
+            return;
+          }
+          throw firstErr;
+        }
+      } else {
+        await room.localParticipant.setScreenShareEnabled(false);
+      }
       syncParticipants(room);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unable to share screen.';
-      if (!msg.toLowerCase().includes('permission') && !msg.toLowerCase().includes('cancel')) {
+      if (
+        !msg.toLowerCase().includes('permission') &&
+        !msg.toLowerCase().includes('cancel') &&
+        !msg.toLowerCase().includes('denied') &&
+        !msg.toLowerCase().includes('abort')
+      ) {
         setMediaError(msg);
       }
       syncParticipants(room);

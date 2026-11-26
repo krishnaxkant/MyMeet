@@ -984,7 +984,6 @@ export function buildLiveKitStageHtml(config: LiveKitStageConfig): string {
         const name = room.localParticipant.name || CONFIG.localName || 'You';
         if (raised) {
           raisedHands[id] = name;
-          playHandChime();
         } else {
           delete raisedHands[id];
         }
@@ -1158,7 +1157,6 @@ export function buildLiveKitStageHtml(config: LiveKitStageConfig): string {
                 if (idKey) {
                   if (decoded.raised) {
                     raisedHands[idKey] = name;
-                    playHandChime();
                   } else {
                     delete raisedHands[idKey];
                   }

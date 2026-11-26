@@ -115,6 +115,12 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
   ];
 
   const isInMeeting = location.pathname.startsWith('/meet/');
+  const isActiveRoom = /^\/meet\/[^/]+\/room\/?$/i.test(location.pathname);
+
+  // Full-bleed studio mode during an active meeting room (zero top navbar clutter)
+  if (isActiveRoom) {
+    return <div className="layout-room-full">{children}</div>;
+  }
 
   return (
     <div className="layout">

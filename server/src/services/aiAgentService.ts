@@ -59,16 +59,39 @@ interface MessageRow {
 const VALID_KINDS: VisualNoteKind[] = ['concept', 'formula', 'step', 'example', 'takeaway'];
 
 const NON_IMPORTANT_CHATTER_PATTERNS: RegExp[] = [
+  // Attendance / roll call
   /\b(roll\s*number|roll\s*no\.?|present\s*(sir|ma'?am|madam)|absent|attendance|mark\s+attendance|haziri)\b/i,
+  // Audio / screen / connection / app UI testing checks (English + Hinglish)
   /\b(am\s+i\s+audible|can\s+you\s+hear\s+me|can\s+you\s+see\s+my\s+screen|is\s+my\s+screen\s+visible|screen\s+dikh\s+rahi|awaz\s+aa\s+rahi|voice\s+is\s+breaking|network\s+issue|internet\s+issue)\b/i,
   /\b(mute\s+your\s+mic|unmute\s+yourself|turn\s+off\s+your\s+mic|keep\s+quiet|be\s+quiet|wait\s+a\s+(sec|second|minute)|one\s+minute|join\s+again)\b/i,
-  /^(hi|hello|hey|good\s+(morning|afternoon|evening|night)|ok|okay|yes|no|yeah|haan|ji|hm+|thank\s+you|thanks|bye|bye\s+everyone|welcome)[\s.!?,]*$/i,
+  /\b(unable\s+to\s+open|meeting\s+not\s+found|check\s+the\s+code|full\s*screen|ful\s*screen|click\s+karke|button\s+(daba|click)|control[su]*\s+bahut|website\s+mein|phone\s+ke|screen\s+ko)\b/i,
+  /\b(light\s+band\s+kar|pankha\s+band|fan\s+band|gate\s+band|pata\s+nahi|kuchh?\s+nahi(n)?\s+(hamen\s+)?karna|kuch\s+nahi|chhod\s+de|rehne\s+de|ruko\s+ek|ek\s+second|ek\s+minute|sun\s+bhai|sun\s+na|haan\s+bhai|kya\s+hua|kya\s+bol\s+raha)\b/i,
+  // Repeated greetings / filler
+  /^(hi|hello|hey|good\s+(morning|afternoon|evening|night)|ok|okay|yes|no|yeah|haan|ji|hm+|thank\s+you|thanks|bye|bye\s+everyone|welcome|bro|bhai|yaar|arey|acha|accha|theek\s+hai|sahi\s+hai)([\s.!?,]+(hi|hello|hey|ok|okay|haan|ji|bhai|bro|yaar))*[\s.!?,]*$/i,
+];
+
+const SUBSTANTIVE_CONTENT_PATTERNS: RegExp[] = [
+  /[=^∫√∑±÷×]|=>/,
+  /\b(formula|equation|theorem|proof|derivative|integral|matrix|vector|algorithm|complexity|function|variable|database|architecture|protocol|molecule|reaction|voltage|current|velocity|acceleration|momentum|gravity|energy|theorem|definition|concept|principle|chapter|syllabus|exam|homework|assignment|deadline|milestone|roadmap|budget|revenue|decision|action\s+item|strategy|design|implementation|deploy|release|server|client|authentication|encryption|react|python|javascript|typescript|java|sql|physics|chemistry|biology|calculus|algebra|geometry|trigonometry|probability|statistics)\b/i,
 ];
 
 export function isNonImportantChatter(text: string): boolean {
-  const cleaned = text.trim();
-  if (cleaned.length < 6) return true;
+  const cleaned = text.replace(/\s+/g, ' ').trim();
+  if (cleaned.length < 10) return true;
+  // Drop transcripts that are mostly repeated greetings like "hello hello hello"
+  const words = cleaned.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length <= 3) return true;
+  const uniqueRatio = new Set(words).size / words.length;
+  if (words.length >= 4 && uniqueRatio < 0.45) return true;
   return NON_IMPORTANT_CHATTER_PATTERNS.some((pattern) => pattern.test(cleaned));
+}
+
+function hasRealSubstantiveContent(text: string): boolean {
+  if (isNonImportantChatter(text)) return false;
+  if (SUBSTANTIVE_CONTENT_PATTERNS.some((p) => p.test(text))) return true;
+  // Otherwise require a genuinely meaningful multi-word explanation (>= 12 words)
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  return words.length >= 12;
 }
 
 const isPlaceholder = (value: string): boolean => {
@@ -466,11 +489,11 @@ function buildFallbackSummary(params: {
 
   const usableTranscripts = params.transcripts
     .map((t) => t.content.trim())
-    .filter((txt) => txt.length > 0 && !isNonImportantChatter(txt));
+    .filter((txt) => hasRealSubstantiveContent(txt));
 
   const usableChats = params.chatContents
     .map((c) => c.trim())
-    .filter((c) => c.length > 0 && !c.startsWith('[Recording') && !isNonImportantChatter(c));
+    .filter((c) => !c.startsWith('[Recording') && hasRealSubstantiveContent(c));
 
   const corpus = [...usableScreenNotes, ...usableTranscripts, ...usableChats].join(' ');
   const envDetected = detectEnvironmentHeuristic(params.title, corpus);
@@ -562,21 +585,17 @@ function buildFallbackSummary(params: {
       };
     });
   } else {
-    visualFlow = [
-      {
-        title: params.title || 'Session Topic',
-        kind: 'concept',
-        body: 'No spoken voice discussion or shared-screen board content was captured during this meeting yet.',
-        show_arrow: true,
-        arrow_label: 'How It Works',
-      },
-      {
-        title: 'Voice + Shared Screen Capture',
-        kind: 'step',
-        body: 'Speak with your microphone unmuted in Chrome/Edge (AI Voice Notes auto-starts) and share your screen/whiteboard to build full multi-page study notes automatically.',
-        show_arrow: false,
-      },
-    ];
+    // Zero genuinely important study/work content — NEVER fabricate fake notes from casual talk!
+    return {
+      environment_type: 'no_important_content',
+      environment_label: 'Casual Session · No Study Notes',
+      overview:
+        'No important educational, technical, or business content was detected in this session. Casual conversation, greetings, and audio/UI checks were automatically filtered out.',
+      detailed_notes_markdown: `# ${params.title}\n\nNo important study or meeting notes were detected in this session (casual conversation was automatically filtered out).`,
+      key_points: [],
+      action_items: [],
+      visual_flow: [],
+    };
   }
 
   const overview =
@@ -695,15 +714,17 @@ export async function generateMeetingAiSummaryById(
       'Your job is to combine EVERYTHING the host/speaker explained by voice AND EVERYTHING shown on the shared screen into thorough, crystal-clear, multi-page notes that anyone can study from and understand completely.',
       '',
       'STRICT QUALITY RULES:',
-      '1. CONTENT ONLY & ZERO NOISE: Include ONLY genuinely important subject matter, concepts, explanations, formulas, derivations, worked examples, code, decisions, and conclusions discussed. STRICTLY FILTER OUT and NEVER include attendance/roll call ("present sir", "roll no."), greetings ("good morning"), mic/screen checks ("am I audible?", "screen visible?"), classroom discipline ("mute your mic"), small talk, participant counts, attendee lists, meeting codes, or call duration.',
-      '2. DEEP & COMPLETE (MULTI-PAGE READY): Do NOT compress a rich class or long discussion into 3 tiny bullets. Create as many clear sections in `visual_flow` as needed (typically 4 to 14 sections) so EVERY important topic, formula, and explanation is covered properly — our renderer automatically paginates across multiple crisp dark-board pages!',
-      '3. FORMULAS + EXPLANATIONS + EXAMPLES: For classes (Math, Physics, Chemistry, Coding, etc.), whenever a formula, theorem, rule, or algorithm is discussed, put the formula in `formula`, explain clearly in `body` what it means and how the teacher explained it, and add step-by-step sub-points or worked examples in `bullets` (plus dedicated `kind: "example"` blocks with step-by-step solved examples!).',
-      '4. SELECTIVE ARROWS ONLY: Set `"show_arrow": true` (with a short `arrow_label` like "Apply Formula", "Worked Example", "Therefore", "Next Step") ONLY when a block directly flows into or derives the very next block. Set `"show_arrow": false` between independent topics so the notes stay clean and uncluttered — NEVER spam arrows everywhere!',
-      '5. Only include `action_items` if actual homework, practice problems, or concrete next steps were discussed (otherwise return []).',
+      '1. RUTHLESS NOISE & CASUAL CHAT FILTER (MOST IMPORTANT): Include ONLY genuinely important subject matter — concepts taught, formulas/equations, derivations, worked examples, code/architecture, project decisions, deadlines, or action items. STRICTLY IGNORE and NEVER include: casual friend banter, Hinglish/Hindi small talk ("pata nahi", "light band kar le", "kuch nahi karna", "hello hello"), app/UI/button testing ("full screen pe click karo", "check the code", "meeting not found"), attendance/roll call ("present sir", "roll no."), greetings, mic/screen checks, or participant counts.',
+      '2. EMPTY-SESSION GATEKEEPER: If the transcripts/chat contain ONLY casual talk, greetings, jokes, UI/app testing, or non-substantive chatter with NO real educational, technical, or work topic discussed, you MUST set "has_important_content": false, "environment_type": "no_important_content", "environment_label": "Casual Session · No Study Notes", "overview": "No important educational, technical, or business content was detected in this session. Casual conversation was automatically filtered out.", "visual_flow": [], "key_points": [], "action_items": [], and "detailed_notes_markdown": "No important notes detected." NEVER fabricate study notes or formulas out of casual chatter!',
+      '3. DEEP & COMPLETE WHEN SUBSTANTIVE (MULTI-PAGE READY): When real teaching or work discussion occurred, create clear sections in `visual_flow` (4 to 14 sections) covering every important topic, formula, and explanation thoroughly.',
+      '4. FORMULAS + EXPLANATIONS + EXAMPLES: Only use `kind: "formula"` when an actual mathematical/scientific formula, theorem, rule, or code snippet was taught. Never put casual sentences under "Formula & Explanation".',
+      '5. SELECTIVE ARROWS ONLY: Set `"show_arrow": true` ONLY when a block directly flows into or derives the very next block.',
+      '6. Only include `action_items` if actual homework, practice problems, or concrete next steps were discussed (otherwise return []).',
       '',
       'Return ONLY a valid JSON object matching this exact schema:',
       '{',
-      '  "environment_type": "math_class | class_lecture | coding_session | team_meeting | interview | general",',
+      '  "has_important_content": true,',
+      '  "environment_type": "math_class | class_lecture | coding_session | team_meeting | interview | general | no_important_content",',
       '  "environment_label": "Short topic label e.g. Math Class · Quadratic Equations or System Design · Caching",',
       '  "overview": "2-4 clear sentences summarizing the core subject matter and main conclusions covered",',
       '  "visual_flow": [',
@@ -741,6 +762,7 @@ export async function generateMeetingAiSummaryById(
       try {
         const cleaned = rawJson.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
         const parsed = JSON.parse(cleaned) as Partial<{
+          has_important_content: boolean;
           environment_type: string;
           environment_label: string;
           overview: string;
@@ -750,7 +772,23 @@ export async function generateMeetingAiSummaryById(
           visual_flow: unknown;
         }>;
 
-        if (parsed.overview) {
+        if (
+          parsed.has_important_content === false ||
+          parsed.environment_type === 'no_important_content'
+        ) {
+          generated = {
+            environment_type: 'no_important_content',
+            environment_label: 'Casual Session · No Study Notes',
+            overview:
+              parsed.overview ||
+              'No important educational, technical, or business content was detected in this session. Casual conversation was automatically filtered out.',
+            detailed_notes_markdown: `# ${meeting.title}\n\nNo important study or meeting notes were detected in this session.`,
+            key_points: [],
+            action_items: [],
+            visual_flow: [],
+          };
+          modelUsed = env.geminiModel;
+        } else if (parsed.overview) {
           const parsedFlow = sanitizeVisualFlow(parsed.visual_flow);
           const keyPoints = Array.isArray(parsed.key_points)
             ? parsed.key_points.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)

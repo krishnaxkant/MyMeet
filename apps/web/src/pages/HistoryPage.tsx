@@ -112,14 +112,21 @@ export function HistoryPage() {
     }
   };
 
+  const hasImportantNotes = Boolean(
+    selected?.ai_summary &&
+      selected.ai_summary.environment_type !== 'no_important_content' &&
+      ((selected.ai_summary.sources_summary?.visual_flow?.length ?? 0) > 0 ||
+        (selected.ai_summary.key_points?.length ?? 0) > 0),
+  );
+
   const renderedPages = useMemo(() => {
-    if (!selected?.ai_summary) return [];
+    if (!selected?.ai_summary || !hasImportantNotes) return [];
     try {
       return renderVisualNotesPages(selected.title, selected.ai_summary);
     } catch {
       return [];
     }
-  }, [selected?.title, selected?.ai_summary]);
+  }, [selected?.title, selected?.ai_summary, hasImportantNotes]);
 
   const currentPage = renderedPages[activePageIdx] ?? renderedPages[0] ?? null;
 
@@ -392,6 +399,27 @@ export function HistoryPage() {
                     </span>
                   </button>
                 </div>
+              </div>
+            ) : selected.ai_summary && !hasImportantNotes ? (
+              <div className="empty-state">
+                <div style={{ marginBottom: 10 }}>
+                  <span className="badge badge-neutral">
+                    <SparklesIcon size={12} /> {selected.ai_summary.environment_label || 'Casual Session · No Study Notes'}
+                  </span>
+                </div>
+                <p style={{ marginBottom: 14 }}>
+                  {selected.ai_summary.overview ||
+                    'No important study or meeting notes were detected in this session. Casual conversation and greetings were automatically filtered out.'}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={generatingAi}
+                  onClick={() => void handleGenerateAiNotes()}
+                >
+                  <SparklesIcon size={14} />
+                  <span>{generatingAi ? 'Re-checking...' : 'Re-analyze Session'}</span>
+                </button>
               </div>
             ) : (
               <div className="empty-state">

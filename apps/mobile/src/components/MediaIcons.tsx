@@ -137,6 +137,26 @@ export function EndCallSymbol({ color = '#FFFFFF' }: { color?: string }) {
   );
 }
 
+export function MoreDotsSymbol({ color = '#FFFFFF' }: { color?: string }) {
+  return (
+    <View style={[styles.box, { gap: 3.5 }]}>
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      <View style={[styles.dot, { backgroundColor: color }]} />
+      <View style={[styles.dot, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+export function FlipCamSymbol({ color = '#FFFFFF' }: { color?: string }) {
+  return (
+    <View style={styles.box}>
+      <View style={[styles.flipRing, { borderColor: color }]} />
+      <View style={[styles.flipArrowTop, { borderLeftColor: color }]} />
+      <View style={[styles.flipArrowBottom, { borderRightColor: color }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   box: {
     width: 22,
@@ -309,5 +329,44 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderBottomWidth: 0,
     marginTop: 4,
+  },
+  // More 3 dots
+  dot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  // Flip camera
+  flipRing: {
+    width: 15,
+    height: 15,
+    borderRadius: 7.5,
+    borderWidth: 2,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  flipArrowTop: {
+    position: 'absolute',
+    top: 2,
+    right: 3,
+    width: 0,
+    height: 0,
+    borderTopWidth: 3.5,
+    borderBottomWidth: 3.5,
+    borderLeftWidth: 4.5,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+  },
+  flipArrowBottom: {
+    position: 'absolute',
+    bottom: 2,
+    left: 3,
+    width: 0,
+    height: 0,
+    borderTopWidth: 3.5,
+    borderBottomWidth: 3.5,
+    borderRightWidth: 4.5,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
   },
 });

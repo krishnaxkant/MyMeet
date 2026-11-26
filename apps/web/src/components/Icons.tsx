@@ -628,3 +628,13 @@ export function MinimizeIcon({ size = 17 }: { size?: number }) {
     </svg>
   );
 }
+
+export function MoreVerticalIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <circle cx="12" cy="5.5" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="12" cy="18.5" r="1.8" />
+    </svg>
+  );
+}
