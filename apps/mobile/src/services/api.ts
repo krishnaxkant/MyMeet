@@ -680,6 +680,27 @@ export async function deleteDevice(accessToken: string, deviceId: string): Promi
   );
 }
 
+export async function transcribeAudioChunk(
+  accessToken: string,
+  code: string,
+  audioBase64: string,
+  mimeType: string,
+  speakerName?: string,
+): Promise<{ saved: boolean; skipped: boolean; usedAi: boolean; text?: string }> {
+  return authFetch<{ saved: boolean; skipped: boolean; usedAi: boolean; text?: string }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/audio-chunk`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        audio_base64: audioBase64,
+        mime_type: mimeType,
+        speaker_name: speakerName,
+      }),
+    },
+  );
+}
+
 export async function generateAiSummary(
   accessToken: string,
   code: string,

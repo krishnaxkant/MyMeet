@@ -9,6 +9,7 @@ import {
 import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
 import type { Participant, RemoteAudioTrack, Room, VideoTrack } from 'livekit-client';
 import { MicSymbol } from './MediaIcons';
+import { startNativeAiAudioCapture } from '../utils/nativeAiAudioCapture';
 import { initNativeLiveKitIfAvailable } from '../utils/nativeLiveKit';
 
 export interface NativeStageHandle {
@@ -40,6 +41,8 @@ interface NativeLiveKitStageProps {
   initialCam: boolean;
   localName: string;
   avatars: Record<string, string>;
+  aiNotesEnabled?: boolean;
+  onAiAudioChunk?: (wavBase64: string, mimeType: 'audio/wav') => void;
   onStageEvent: (event: NativeStageEvent) => void;
 }
 
@@ -93,13 +96,29 @@ function isNetworkRelayError(msg: string): boolean {
 
 export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitStageProps>(
   function NativeLiveKitStage(
-    { url, token, initialMic, initialCam, localName, avatars, onStageEvent },
+    {
+      url,
+      token,
+      initialMic,
+      initialCam,
+      localName,
+      avatars,
+      aiNotesEnabled = true,
+      onAiAudioChunk,
+      onStageEvent,
+    },
     ref,
   ) {
     const runtime = initNativeLiveKitIfAvailable();
     const roomRef = useRef<Room | null>(null);
     const onStageEventRef = useRef(onStageEvent);
     onStageEventRef.current = onStageEvent;
+    const onAiAudioChunkRef = useRef(onAiAudioChunk);
+    onAiAudioChunkRef.current = onAiAudioChunk;
+    const aiNotesEnabledRef = useRef(aiNotesEnabled);
+    aiNotesEnabledRef.current = aiNotesEnabled;
+    const stopAiCaptureRef = useRef<(() => void) | null>(null);
+    const activeAiTrackIdRef = useRef<string | null>(null);
 
     const desiredMicRef = useRef(initialMic);
     const desiredCamRef = useRef(initialCam);
@@ -150,6 +169,62 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
       [runtime.LiveKitRN],
     );
 
+    const stopAiCapture = useCallback(() => {
+      if (stopAiCaptureRef.current) {
+        const stop = stopAiCaptureRef.current;
+        stopAiCaptureRef.current = null;
+        activeAiTrackIdRef.current = null;
+        stop();
+      }
+    }, []);
+
+    const syncAiAudioCapture = useCallback(() => {
+      const room = roomRef.current;
+      const LK = runtime.LiveKitClient;
+      if (
+        unmountedRef.current ||
+        !aiNotesEnabledRef.current ||
+        !onAiAudioChunkRef.current ||
+        !room ||
+        room.state !== 'connected' ||
+        !LK
+      ) {
+        stopAiCapture();
+        return;
+      }
+
+      const micPub = room.localParticipant.getTrackPublication(LK.Track.Source.Microphone);
+      const rawTrack = micPub?.track?.mediaStreamTrack as
+        | { id?: string; _peerConnectionId?: number; readyState?: string }
+        | undefined;
+      const isLiveMic = Boolean(
+        micPub && !micPub.isMuted && rawTrack?.id && rawTrack.readyState !== 'ended',
+      );
+
+      if (!isLiveMic || !rawTrack?.id) {
+        stopAiCapture();
+        return;
+      }
+
+      if (activeAiTrackIdRef.current === rawTrack.id && stopAiCaptureRef.current) {
+        return;
+      }
+
+      stopAiCapture();
+      activeAiTrackIdRef.current = rawTrack.id;
+      stopAiCaptureRef.current = startNativeAiAudioCapture({
+        mediaStreamTrack: rawTrack,
+        segmentMs: 20_000,
+        onWavChunk: (wavBase64, mimeType) => {
+          onAiAudioChunkRef.current?.(wavBase64, mimeType);
+        },
+      });
+    }, [runtime.LiveKitClient, stopAiCapture]);
+
+    useEffect(() => {
+      syncAiAudioCapture();
+    }, [aiNotesEnabled, syncAiAudioCapture]);
+
     const refreshTiles = useCallback(() => {
       const room = roomRef.current;
       const LK = runtime.LiveKitClient;
@@ -192,7 +267,8 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
 
       setTiles(snapshots);
       syncSpeakerVolume(speakerMutedRef.current);
-    }, [localName, runtime.LiveKitClient, syncSpeakerVolume]);
+      syncAiAudioCapture();
+    }, [localName, runtime.LiveKitClient, syncAiAudioCapture, syncSpeakerVolume]);
 
     const applyMicInternal = useCallback(
       async (enabled: boolean) => {
@@ -388,6 +464,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
           void applyHandInternal(raised);
         },
         disconnect: () => {
+          stopAiCapture();
           const room = roomRef.current;
           roomRef.current = null;
           if (room) {
@@ -402,6 +479,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
         applyScreenShareInternal,
         enqueueMedia,
         flipCamInternal,
+        stopAiCapture,
         syncSpeakerVolume,
       ],
     );
@@ -599,6 +677,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
 
       return () => {
         unmountedRef.current = true;
+        stopAiCapture();
         if (captionTimerRef.current) {
           clearTimeout(captionTimerRef.current);
           captionTimerRef.current = null;
@@ -617,6 +696,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
       refreshTiles,
       runtime.LiveKitClient,
       runtime.LiveKitRN,
+      stopAiCapture,
       syncSpeakerVolume,
       token,
       url,

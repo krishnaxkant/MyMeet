@@ -57,6 +57,7 @@ import {
   removeParticipant,
   sendInvitation,
   sendMessage,
+  transcribeAudioChunk,
   updateMeetingSettings,
   updateParticipantRole,
   type MeetingDetail,
@@ -170,6 +171,9 @@ export function MeetingRoomScreen({
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Record<string, string>>({});
   const [focusFullscreen, setFocusFullscreen] = useState(false);
+  const [aiNotesEnabled, setAiNotesEnabled] = useState(true);
+  const [aiVoiceCount, setAiVoiceCount] = useState(0);
+  const aiUnavailableRef = useRef(false);
 
   const [permissionsReady, setPermissionsReady] = useState(Platform.OS !== 'android');
   const [permissionsDenied, setPermissionsDenied] = useState(false);
@@ -540,6 +544,33 @@ export function MeetingRoomScreen({
     nativeStageEventHandlerRef.current(event);
   }, []);
 
+  const handleAiAudioChunk = useCallback(
+    (wavBase64: string, mimeType: 'audio/wav') => {
+      if (!aiNotesEnabled || aiUnavailableRef.current) return;
+      if (!session?.access_token || !meeting?.code) return;
+      void transcribeAudioChunk(
+        session.access_token,
+        meeting.code,
+        wavBase64,
+        mimeType,
+        myDisplayName,
+      )
+        .then((res) => {
+          if (!res.usedAi) {
+            aiUnavailableRef.current = true;
+            return;
+          }
+          if (res.saved) {
+            setAiVoiceCount((prev) => prev + 1);
+          }
+        })
+        .catch(() => {
+          // Best-effort live AI note capture — never interrupt active meeting
+        });
+    },
+    [aiNotesEnabled, session?.access_token, meeting?.code, myDisplayName],
+  );
+
   const handleShare = async () => {
     if (!meeting) return;
     await Share.share({
@@ -826,6 +857,8 @@ export function MeetingRoomScreen({
             initialCam={initialConfigRef.current.cam}
             localName={initialConfigRef.current.name}
             avatars={avatarsRecord}
+            aiNotesEnabled={aiNotesEnabled}
+            onAiAudioChunk={handleAiAudioChunk}
             onStageEvent={stableOnNativeStageEvent}
           />
         ) : !useNativeLiveKit && stageSource && permissionsReady ? (
@@ -1016,6 +1049,35 @@ export function MeetingRoomScreen({
                   <SpeakerSymbol color={colors.text} muted={speakerMuted} />
                   <Text style={[styles.moreTileLabel, { color: colors.text }]}>
                     {speakerMuted ? 'Speaker Off' : 'Speaker On'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={[
+                    styles.moreTile,
+                    {
+                      backgroundColor: aiNotesEnabled
+                        ? 'rgba(59, 130, 246, 0.16)'
+                        : colors.surfaceElevated,
+                      borderColor: aiNotesEnabled ? '#3B82F6' : colors.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    const next = !aiNotesEnabled;
+                    setAiNotesEnabled(next);
+                    if (next) aiUnavailableRef.current = false;
+                    showTempNotice(
+                      next
+                        ? '✨ AI Notes listening for important points'
+                        : 'AI Notes paused for your mic',
+                    );
+                  }}
+                >
+                  <Text style={styles.handEmoji}>✨</Text>
+                  <Text style={[styles.moreTileLabel, { color: colors.text }]}>
+                    {aiNotesEnabled
+                      ? `AI Notes: ON${aiVoiceCount > 0 ? ` (${aiVoiceCount})` : ''}`
+                      : 'AI Notes: OFF'}
                   </Text>
                 </Pressable>
 

@@ -110,6 +110,10 @@ function requireSupabase() {
   return supabase;
 }
 
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function callGeminiApi(
   parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>,
   expectJson = false,
@@ -128,36 +132,58 @@ async function callGeminiApi(
     },
   };
 
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(35000),
-    });
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(40_000),
+      });
 
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      console.warn('[ai-agent] Gemini API returned HTTP', response.status, errText.slice(0, 200));
+      if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        const retryable =
+          response.status === 429 ||
+          response.status === 500 ||
+          response.status === 502 ||
+          response.status === 503 ||
+          response.status === 504;
+        console.warn(
+          `[ai-agent] Gemini API HTTP ${response.status} (attempt ${attempt}/${maxAttempts}):`,
+          errText.slice(0, 240),
+        );
+        if (retryable && attempt < maxAttempts) {
+          await sleepMs(attempt === 1 ? 1200 : 2800);
+          continue;
+        }
+        return null;
+      }
+
+      const json = (await response.json()) as {
+        candidates?: Array<{
+          content?: { parts?: Array<{ text?: string }> };
+        }>;
+      };
+
+      const text = json.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text ?? '')
+        .join('')
+        .trim();
+
+      return text || null;
+    } catch (err) {
+      console.warn(`[ai-agent] Gemini request failed (attempt ${attempt}/${maxAttempts}):`, err);
+      if (attempt < maxAttempts) {
+        await sleepMs(attempt === 1 ? 1200 : 2800);
+        continue;
+      }
       return null;
     }
-
-    const json = (await response.json()) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-    };
-
-    const text = json.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? '')
-      .join('')
-      .trim();
-
-    return text || null;
-  } catch (err) {
-    console.warn('[ai-agent] Gemini request failed:', err);
-    return null;
   }
+
+  return null;
 }
 
 export async function recordMeetingTranscript(
