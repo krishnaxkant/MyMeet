@@ -586,3 +586,45 @@ export function ArrowRightIcon({ size = 15 }: { size?: number }) {
     </svg>
   );
 }
+
+export function HandIcon({ size = 18 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M18 11V6.5A1.5 1.5 0 0 0 15 6.5V11M15 10V4.5A1.5 1.5 0 0 0 12 4.5V10M12 10V5.5A1.5 1.5 0 0 0 9 5.5V12.5M9 12.5L7.1 10.6A1.5 1.5 0 0 0 5 12.7L8.8 17.5C10 19.1 11.7 20 13.7 20H14.5C17.5 20 19.5 17.8 19.5 14.5V9.5A1.5 1.5 0 0 0 16.5 9.5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function MaximizeIcon({ size = 17 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M8 3.5H4.5C3.95 3.5 3.5 3.95 3.5 4.5V8M16 3.5H19.5C20.05 3.5 20.5 3.95 20.5 4.5V8M8 20.5H4.5C3.95 20.5 3.5 20.05 3.5 19.5V16M16 20.5H19.5C20.05 20.5 20.5 20.05 20.5 19.5V16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function MinimizeIcon({ size = 17 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 9H9V4M20 9H15V4M4 15H9V20M20 15H15V20"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   Share,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { BackButton } from '../components/BackButton';
+import { CamSymbol, MicSymbol } from '../components/MediaIcons';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -20,8 +22,15 @@ interface MeetingLobbyScreenProps {
   onEnterRoom: (params: { code: string; micEnabled: boolean; camEnabled: boolean }) => void;
 }
 
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'M';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
 export function MeetingLobbyScreen({ code, onBack, onEnterRoom }: MeetingLobbyScreenProps) {
-  const { session } = useAuth();
+  const { session, user, profile } = useAuth();
   const { colors } = useTheme();
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
@@ -31,6 +40,12 @@ export function MeetingLobbyScreen({ code, onBack, onEnterRoom }: MeetingLobbySc
 
   const [micEnabled, setMicEnabled] = useState(true);
   const [camEnabled, setCamEnabled] = useState(false);
+
+  const displayName =
+    profile?.full_name ||
+    (user?.user_metadata?.full_name as string | undefined) ||
+    user?.email ||
+    'You';
 
   const loadMeeting = useCallback(async () => {
     if (!session?.access_token) return;
@@ -126,21 +141,34 @@ export function MeetingLobbyScreen({ code, onBack, onEnterRoom }: MeetingLobbySc
       ) : (
         <>
           <View style={styles.previewBox}>
-            <Text style={styles.previewBadge}>
-              {camEnabled ? 'Camera Ready (Phase 4 LiveKit)' : 'Camera Off'}
-            </Text>
+            <View style={styles.previewAvatarWrap}>
+              <View style={[styles.previewAvatar, { backgroundColor: colors.accent }]}>
+                {profile?.avatar_url ? (
+                  <Image source={{ uri: profile.avatar_url }} style={styles.previewAvatarImg} />
+                ) : (
+                  <Text style={styles.previewAvatarText}>{getInitials(displayName)}</Text>
+                )}
+              </View>
+              <Text style={styles.previewBadge}>
+                {camEnabled ? 'Camera ready on join' : 'Camera is off'}
+              </Text>
+            </View>
+
+            {/* Clean circular symbol-only Mic & Camera toggles */}
             <View style={styles.mediaRow}>
               <Pressable
-                style={[styles.mediaToggle, micEnabled ? styles.mediaOn : styles.mediaOff]}
+                style={[styles.mediaCircleBtn, micEnabled ? styles.mediaOn : styles.mediaOff]}
                 onPress={() => setMicEnabled((prev) => !prev)}
+                accessibilityLabel={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
               >
-                <Text style={styles.mediaText}>{micEnabled ? 'Mic On' : 'Mic Off'}</Text>
+                <MicSymbol color="#FFFFFF" muted={!micEnabled} />
               </Pressable>
               <Pressable
-                style={[styles.mediaToggle, camEnabled ? styles.mediaOn : styles.mediaOff]}
+                style={[styles.mediaCircleBtn, camEnabled ? styles.mediaOn : styles.mediaOff]}
                 onPress={() => setCamEnabled((prev) => !prev)}
+                accessibilityLabel={camEnabled ? 'Turn camera off' : 'Turn camera on'}
               >
-                <Text style={styles.mediaText}>{camEnabled ? 'Cam On' : 'Cam Off'}</Text>
+                <CamSymbol color="#FFFFFF" muted={!camEnabled} />
               </Pressable>
             </View>
           </View>
@@ -301,7 +329,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 10,
+    borderRadius: 999,
     borderWidth: 1,
   },
   secondaryButtonText: {
@@ -309,38 +337,63 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   previewBox: {
-    backgroundColor: '#0f172a',
-    borderRadius: 16,
-    height: 190,
-    padding: 16,
+    backgroundColor: '#0b1120',
+    borderRadius: 20,
+    height: 230,
+    padding: 18,
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  previewAvatarWrap: {
+    alignItems: 'center',
+    marginTop: 18,
+    gap: 10,
+  },
+  previewAvatar: {
+    width: 82,
+    height: 82,
+    borderRadius: 41,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  previewAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  previewAvatarText: {
+    color: '#ffffff',
+    fontSize: 28,
+    fontWeight: '800',
   },
   previewBadge: {
     color: '#cbd5e1',
     fontSize: 13,
     fontWeight: '600',
-    marginTop: 42,
   },
   mediaRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 18,
   },
-  mediaToggle: {
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 999,
+  mediaCircleBtn: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
   mediaOn: {
-    backgroundColor: 'rgba(255, 255, 255, 0.18)',
+    backgroundColor: 'rgba(255, 255, 255, 0.16)',
+    borderColor: 'rgba(255, 255, 255, 0.24)',
   },
   mediaOff: {
     backgroundColor: '#dc2626',
-  },
-  mediaText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '700',
+    borderColor: '#ef4444',
   },
   card: {
     borderRadius: 16,

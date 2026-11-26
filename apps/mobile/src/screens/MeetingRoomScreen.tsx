@@ -1,7 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import * as Speech from 'expo-speech';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type RefObject,
+} from 'react';
 import {
   ActivityIndicator,
+  AppState,
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -14,6 +27,16 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import {
+  CamSymbol,
+  ChatSymbol,
+  EndCallSymbol,
+  FullscreenSymbol,
+  InviteSymbol,
+  MicSymbol,
+  PeopleSymbol,
+  SpeakerSymbol,
+} from '../components/MediaIcons';
 import { StatusBadge } from '../components/StatusBadge';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
@@ -38,14 +61,57 @@ import {
   type MeetingMessage,
 } from '../services/api';
 import { buildLiveKitStageHtml } from '../utils/livekitStageHtml';
+import {
+  NativeLiveKitStage,
+  type NativeStageEvent,
+  type NativeStageHandle,
+} from '../components/NativeLiveKitStage';
+import { isNativeLiveKitAvailable } from '../utils/nativeLiveKit';
 
 type SheetTab = 'people' | 'chat' | 'invite' | 'leave' | null;
 
 interface WebViewHandle {
   injectJavaScript: (script: string) => void;
+  postMessage?: (data: string) => void;
 }
 
 const StageWebView = WebView as unknown as ComponentType<Record<string, unknown>>;
+const ORIGIN_WHITELIST = ['*'];
+
+interface MemoizedStageWebViewProps {
+  webViewRef: RefObject<WebViewHandle | null>;
+  source: { html: string; baseUrl: string };
+  onMessage: (event: { nativeEvent?: { data?: string } }) => void;
+}
+
+/**
+ * Memoized so 1-second elapsed timer ticks and 2.5-second room polls NEVER re-render
+ * react-native-webview (which otherwise rebuilds `newSource` and calls `loadDataWithBaseURL`,
+ * reloading the entire WebView and killing active Android mic/camera tracks every few seconds).
+ */
+const MemoizedStageWebView = memo(function MemoizedStageWebView({
+  webViewRef,
+  source,
+  onMessage,
+}: MemoizedStageWebViewProps) {
+  return (
+    <StageWebView
+      ref={webViewRef}
+      source={source}
+      style={styles.stageWebView}
+      originWhitelist={ORIGIN_WHITELIST}
+      androidLayerType="hardware"
+      javaScriptEnabled
+      domStorageEnabled
+      allowsInlineMediaPlayback
+      mediaPlaybackRequiresUserAction={false}
+      mediaCapturePermissionGrantType="grant"
+      mixedContentMode="compatibility"
+      onMessage={onMessage}
+      scrollEnabled={false}
+    />
+  );
+});
 
 interface MeetingRoomScreenProps {
   code: string;
@@ -83,7 +149,9 @@ export function MeetingRoomScreen({
 }: MeetingRoomScreenProps) {
   const { session, user, profile } = useAuth();
   const { colors } = useTheme();
+  const useNativeLiveKit = useMemo(() => isNativeLiveKitAvailable(), []);
   const webViewRef = useRef<WebViewHandle | null>(null);
+  const nativeStageRef = useRef<NativeStageHandle | null>(null);
 
   const [meeting, setMeeting] = useState<MeetingDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,11 +162,19 @@ export function MeetingRoomScreen({
   const [micEnabled, setMicEnabled] = useState(initialMicEnabled);
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
   const [speakerMuted, setSpeakerMuted] = useState(false);
+  const [handRaised, setHandRaised] = useState(false);
+  const [raisedHands, setRaisedHands] = useState<Record<string, string>>({});
+  const [focusFullscreen, setFocusFullscreen] = useState(false);
+
   const [permissionsReady, setPermissionsReady] = useState(Platform.OS !== 'android');
+  const [permissionsDenied, setPermissionsDenied] = useState(false);
+  const [permDetail, setPermDetail] = useState<string>('');
   const [mediaToken, setMediaToken] = useState<MeetingMediaToken | null>(null);
   const [mediaConnected, setMediaConnected] = useState(false);
   const [mediaNotice, setMediaNotice] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState('00:00');
+  const speakerMutedRef = useRef(false);
+  speakerMutedRef.current = speakerMuted;
 
   const [activeSheet, setActiveSheet] = useState<SheetTab>(null);
   const [messages, setMessages] = useState<MeetingMessage[]>([]);
@@ -121,25 +197,52 @@ export function MeetingRoomScreen({
     setTimeout(() => setNotice((prev) => (prev === msg ? null : prev)), 3500);
   };
 
-  // Request Android runtime mic & camera permissions BEFORE mounting live WebView stage
-  useEffect(() => {
+  const requestAndroidMediaPermissions = useCallback(async (openSettingsIfDenied = false) => {
     if (Platform.OS !== 'android') {
       setPermissionsReady(true);
+      setPermissionsDenied(false);
       return;
     }
-    let cancelled = false;
-    void PermissionsAndroid.requestMultiple([
-      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-    ])
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setPermissionsReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const results = await PermissionsAndroid.requestMultiple([
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+      ]);
+      const micGranted =
+        results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] ===
+          PermissionsAndroid.RESULTS.GRANTED ||
+        (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO));
+      const camGranted =
+        results[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED ||
+        (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.CAMERA));
+
+      setPermDetail(`OS Mic: ${micGranted ? 'OK' : 'DENIED'} · Cam: ${camGranted ? 'OK' : 'DENIED'}`);
+      const denied = !micGranted || !camGranted;
+      setPermissionsDenied(denied);
+      if (denied && openSettingsIfDenied) {
+        await Linking.openSettings().catch(() => {});
+      }
+    } catch {
+      setPermissionsDenied(true);
+      if (openSettingsIfDenied) {
+        await Linking.openSettings().catch(() => {});
+      }
+    } finally {
+      setPermissionsReady(true);
+    }
   }, []);
+
+  // Request Android runtime mic & camera permissions BEFORE mounting live WebView stage
+  useEffect(() => {
+    void requestAndroidMediaPermissions(false);
+    if (Platform.OS !== 'android') return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void requestAndroidMediaPermissions(false);
+      }
+    });
+    return () => sub.remove();
+  }, [requestAndroidMediaPermissions]);
 
   const loadRoom = useCallback(async () => {
     if (!session?.access_token) return;
@@ -218,68 +321,196 @@ export function MeetingRoomScreen({
     }
   }, [meeting, onBackToLobby]);
 
+  // Build avatar map from meeting participants + local profile
+  const avatarsRecord = useMemo(() => {
+    const map: Record<string, string> = {};
+    if (meeting?.participants) {
+      for (const p of meeting.participants) {
+        if (p.avatar_url) {
+          map[p.user_id] = p.avatar_url;
+        }
+      }
+    }
+    if (user?.id && profile?.avatar_url) {
+      map[user.id] = profile.avatar_url;
+    }
+    return map;
+  }, [meeting?.participants, user?.id, profile?.avatar_url]);
+
+  const initialConfigRef = useRef({
+    mic: initialMicEnabled,
+    cam: initialCamEnabled,
+    name: myDisplayName,
+    avatars: {} as Record<string, string>,
+  });
+  if (
+    Object.keys(initialConfigRef.current.avatars).length === 0 &&
+    Object.keys(avatarsRecord).length > 0
+  ) {
+    initialConfigRef.current.avatars = avatarsRecord;
+  }
+
+  // Build HTML strictly ONCE per mediaToken so WebView NEVER reloads mid-meeting (Expo Go fallback)
   const stageHtml = useMemo(() => {
-    if (!mediaToken) return null;
+    if (useNativeLiveKit || !mediaToken) return null;
     return buildLiveKitStageHtml({
       url: mediaToken.url,
       token: mediaToken.token,
-      initialMic: initialMicEnabled,
-      initialCam: initialCamEnabled,
-      localName: myDisplayName,
+      initialMic: initialConfigRef.current.mic,
+      initialCam: initialConfigRef.current.cam,
+      localName: initialConfigRef.current.name,
+      avatars: initialConfigRef.current.avatars,
     });
-  }, [mediaToken, initialMicEnabled, initialCamEnabled, myDisplayName]);
+  }, [mediaToken, useNativeLiveKit]);
 
-  const sendStageCommand = (type: string, value?: boolean) => {
-    const js = `window.handleNativeCommand && window.handleNativeCommand(${JSON.stringify({
-      type,
-      value,
-    })}); true;`;
-    webViewRef.current?.injectJavaScript(js);
-  };
+  const stageSource = useMemo(
+    () => (stageHtml ? { html: stageHtml, baseUrl: 'https://localhost' } : null),
+    [stageHtml],
+  );
+
+  const cmdSeqRef = useRef(0);
+  const sendStageCommand = useCallback(
+    (payload: Record<string, unknown>) => {
+      if (useNativeLiveKit) {
+        const stage = nativeStageRef.current;
+        if (!stage) return;
+        if (payload.type === 'setMic') {
+          stage.setMic(Boolean(payload.value));
+        } else if (payload.type === 'setCam') {
+          stage.setCam(Boolean(payload.value));
+        } else if (payload.type === 'flipCam') {
+          stage.flipCam();
+        } else if (payload.type === 'setSpeaker') {
+          stage.setSpeakerMuted(Boolean(payload.value));
+        } else if (payload.type === 'setHand') {
+          stage.setHand(Boolean(payload.value));
+        } else if (payload.type === 'disconnect') {
+          stage.disconnect();
+        }
+        return;
+      }
+
+      cmdSeqRef.current += 1;
+      const envelope = { ...payload, cmdId: `c-${cmdSeqRef.current}` };
+      const serialized = JSON.stringify(envelope);
+      try {
+        webViewRef.current?.postMessage?.(serialized);
+      } catch {
+        // Fall back to injectJavaScript below
+      }
+      const js = `window.handleNativeCommand && window.handleNativeCommand(${serialized}); true;`;
+      webViewRef.current?.injectJavaScript(js);
+    },
+    [useNativeLiveKit],
+  );
+
+  // Push updated participant profile photos ONLY when the avatar map actually changes (WebView fallback)
+  const lastSentAvatarsJsonRef = useRef<string>('');
+  useEffect(() => {
+    if (useNativeLiveKit || !mediaConnected || Object.keys(avatarsRecord).length === 0) return;
+    const serialized = JSON.stringify(avatarsRecord);
+    if (serialized === lastSentAvatarsJsonRef.current) return;
+    lastSentAvatarsJsonRef.current = serialized;
+    sendStageCommand({ type: 'updateAvatars', avatars: avatarsRecord });
+  }, [useNativeLiveKit, mediaConnected, avatarsRecord, sendStageCommand]);
 
   const handleToggleMic = () => {
     const next = !micEnabled;
     setMicEnabled(next);
-    sendStageCommand('setMic', next);
+    sendStageCommand({ type: 'setMic', value: next });
   };
 
   const handleToggleCam = () => {
     const next = !camEnabled;
     setCamEnabled(next);
-    sendStageCommand('setCam', next);
+    sendStageCommand({ type: 'setCam', value: next });
   };
 
   const handleToggleSpeaker = () => {
     const next = !speakerMuted;
     setSpeakerMuted(next);
-    sendStageCommand('setSpeaker', next);
+    sendStageCommand({ type: 'setSpeaker', value: next });
+  };
+
+  const handleToggleHand = () => {
+    const next = !handRaised;
+    setHandRaised(next);
+    sendStageCommand({ type: 'setHand', value: next });
+  };
+
+  const processStageEvent = (msg: NativeStageEvent) => {
+    if (msg.type === 'connected') {
+      setMediaConnected(true);
+      setMediaNotice(null);
+    } else if (msg.type === 'disconnected') {
+      setMediaConnected(false);
+    } else if (msg.type === 'mediaState') {
+      if (typeof msg.micEnabled === 'boolean') setMicEnabled(msg.micEnabled);
+      if (typeof msg.camEnabled === 'boolean') setCamEnabled(msg.camEnabled);
+      if (msg.warning) {
+        setMediaNotice(msg.warning);
+      } else {
+        setMediaNotice(null);
+      }
+    } else if (msg.type === 'handEvent' && msg.identity) {
+      const who = msg.name || 'A participant';
+      setRaisedHands((prev) => {
+        const next = { ...prev };
+        if (msg.raised) {
+          next[msg.identity!] = who;
+        } else {
+          delete next[msg.identity!];
+        }
+        return next;
+      });
+      if (msg.raised) {
+        const announcement = `${who} raised their hand`;
+        showTempNotice(`✋ ${announcement}`);
+        if (!speakerMutedRef.current) {
+          try {
+            Speech.stop();
+            Speech.speak(announcement, {
+              language: 'en-US',
+              rate: 0.98,
+              pitch: 1.0,
+            });
+          } catch {
+            // Ignore native TTS errors
+          }
+        }
+      }
+    } else if (msg.type === 'error' && msg.message) {
+      setMediaNotice(msg.message);
+    }
   };
 
   const handleStageMessage = (event: { nativeEvent?: { data?: string } }) => {
     try {
       const raw = event.nativeEvent?.data;
       if (!raw) return;
-      const msg = JSON.parse(raw) as {
-        type?: string;
-        micEnabled?: boolean;
-        camEnabled?: boolean;
-        message?: string;
-      };
-      if (msg.type === 'connected') {
-        setMediaConnected(true);
-        setMediaNotice(null);
-      } else if (msg.type === 'disconnected') {
-        setMediaConnected(false);
-      } else if (msg.type === 'mediaState') {
-        if (typeof msg.micEnabled === 'boolean') setMicEnabled(msg.micEnabled);
-        if (typeof msg.camEnabled === 'boolean') setCamEnabled(msg.camEnabled);
-      } else if (msg.type === 'error' && msg.message) {
-        setMediaNotice(msg.message);
+      const msg = JSON.parse(raw) as NativeStageEvent;
+      if (msg && msg.type) {
+        processStageEvent(msg);
       }
     } catch {
       // Ignore malformed stage messages
     }
   };
+
+  const stageMessageHandlerRef = useRef(handleStageMessage);
+  stageMessageHandlerRef.current = handleStageMessage;
+  const stableOnStageMessage = useCallback(
+    (event: { nativeEvent?: { data?: string } }) => {
+      stageMessageHandlerRef.current(event);
+    },
+    [],
+  );
+
+  const nativeStageEventHandlerRef = useRef(processStageEvent);
+  nativeStageEventHandlerRef.current = processStageEvent;
+  const stableOnNativeStageEvent = useCallback((event: NativeStageEvent) => {
+    nativeStageEventHandlerRef.current(event);
+  }, []);
 
   const handleShare = async () => {
     if (!meeting) return;
@@ -290,7 +521,7 @@ export function MeetingRoomScreen({
 
   const handleLeave = async () => {
     setActiveSheet(null);
-    sendStageCommand('disconnect');
+    sendStageCommand({ type: 'disconnect' });
     if (session?.access_token && meeting) {
       setBusy(true);
       await leaveMeeting(session.access_token, meeting.code).catch(() => {});
@@ -301,7 +532,7 @@ export function MeetingRoomScreen({
   const handleEndForAll = async () => {
     if (!session?.access_token || !meeting) return;
     setActiveSheet(null);
-    sendStageCommand('disconnect');
+    sendStageCommand({ type: 'disconnect' });
     setBusy(true);
     try {
       const updated = await endMeeting(session.access_token, meeting.code);
@@ -499,27 +730,47 @@ export function MeetingRoomScreen({
 
   return (
     <View style={styles.roomShell}>
-      {/* Compact Google-Meet-Style Top Bar */}
-      <View style={styles.roomTopBar}>
-        <View style={styles.flex1}>
-          <View style={styles.roomTitleLine}>
-            <Text style={styles.roomTitle} numberOfLines={1}>
-              {meeting.title}
-            </Text>
-            <View style={[styles.liveChip, !mediaConnected && styles.liveChipConnecting]}>
-              <View style={[styles.liveDot, !mediaConnected && styles.liveDotWarn]} />
-              <Text style={styles.liveChipText}>{mediaConnected ? 'LIVE' : 'CONNECTING'}</Text>
+      {/* Compact Top Bar (hidden when in Full-Screen Focus Mode) */}
+      {!focusFullscreen && (
+        <View style={styles.roomTopBar}>
+          <View style={styles.flex1}>
+            <View style={styles.roomTitleLine}>
+              <Text style={styles.roomTitle} numberOfLines={1}>
+                {meeting.title}
+              </Text>
+              <View style={[styles.liveChip, !mediaConnected && styles.liveChipConnecting]}>
+                <View style={[styles.liveDot, !mediaConnected && styles.liveDotWarn]} />
+                <Text style={styles.liveChipText}>{mediaConnected ? 'LIVE' : 'CONNECTING'}</Text>
+              </View>
             </View>
+            <Text style={styles.roomSub}>
+              {meeting.code} · {elapsed} · {joined.length} in call
+            </Text>
           </View>
-          <Text style={styles.roomSub}>
-            {meeting.code} · {elapsed} · {joined.length} in call
-          </Text>
-        </View>
 
-        <Pressable style={styles.topShareBtn} onPress={() => void handleShare()}>
-          <Text style={styles.topShareText}>Share</Text>
-        </Pressable>
-      </View>
+          <View style={styles.topRightBtns}>
+            {camEnabled && (
+              <Pressable
+                style={styles.topIconBtn}
+                onPress={() => sendStageCommand({ type: 'flipCam' })}
+                accessibilityLabel="Switch front and back camera"
+              >
+                <Text style={{ color: '#F8FAFC', fontSize: 15, fontWeight: '800' }}>↻</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={styles.topIconBtn}
+              onPress={() => setFocusFullscreen(true)}
+              accessibilityLabel="Full screen focus mode"
+            >
+              <FullscreenSymbol color="#F8FAFC" active={false} />
+            </Pressable>
+            <Pressable style={styles.topShareBtn} onPress={() => void handleShare()}>
+              <Text style={styles.topShareText}>Share</Text>
+            </Pressable>
+          </View>
+        </View>
+      )}
 
       {/* Waiting Room Quick Banner for Host/Co-Host */}
       {meeting.can_manage && waiting.length > 0 && (
@@ -527,7 +778,19 @@ export function MeetingRoomScreen({
           <Text style={styles.waitingAlertText}>
             {waiting.length} {waiting.length === 1 ? 'person is' : 'people are'} waiting to join
           </Text>
-          <Text style={styles.waitingAlertAction}>Review →</Text>
+          <Text style={styles.waitingAlertAction}>Review</Text>
+        </Pressable>
+      )}
+
+      {permissionsDenied && (
+        <Pressable
+          style={styles.waitingAlertBar}
+          onPress={() => void requestAndroidMediaPermissions(true)}
+        >
+          <Text style={styles.waitingAlertText}>
+            Allow Camera & Mic in Android Settings ({permDetail || 'denied'})
+          </Text>
+          <Text style={styles.waitingAlertAction}>Open Settings</Text>
         </Pressable>
       )}
 
@@ -545,31 +808,48 @@ export function MeetingRoomScreen({
 
       {/* Main Full-Screen Google-Meet Video Blocks Stage */}
       <View style={styles.stageContainer}>
-        {stageHtml && permissionsReady ? (
-          <StageWebView
-            ref={webViewRef}
-            source={{ html: stageHtml, baseUrl: 'https://localhost' }}
-            style={styles.stageWebView}
-            originWhitelist={['*']}
-            javaScriptEnabled
-            domStorageEnabled
-            allowsInlineMediaPlayback
-            mediaPlaybackRequiresUserAction={false}
-            mediaCapturePermissionGrantType="grant"
-            mixedContentMode="compatibility"
-            onMessage={handleStageMessage}
-            scrollEnabled={false}
+        {focusFullscreen && (
+          <Pressable
+            style={styles.exitFocusPill}
+            onPress={() => setFocusFullscreen(false)}
+            accessibilityLabel="Exit full screen focus mode"
+          >
+            <FullscreenSymbol color="#F8FAFC" active />
+          </Pressable>
+        )}
+
+        {useNativeLiveKit && mediaToken && permissionsReady ? (
+          <NativeLiveKitStage
+            ref={nativeStageRef}
+            url={mediaToken.url}
+            token={mediaToken.token}
+            initialMic={initialConfigRef.current.mic}
+            initialCam={initialConfigRef.current.cam}
+            localName={initialConfigRef.current.name}
+            avatars={avatarsRecord}
+            onStageEvent={stableOnNativeStageEvent}
+          />
+        ) : !useNativeLiveKit && stageSource && permissionsReady ? (
+          <MemoizedStageWebView
+            webViewRef={webViewRef}
+            source={stageSource}
+            onMessage={stableOnStageMessage}
           />
         ) : (
-          /* Fallback native participant blocks grid while connecting LiveKit token */
+          /* Fallback native participant blocks grid with Profile Photos while connecting */
           <ScrollView contentContainerStyle={styles.fallbackBlocksGrid}>
             {joined.map((p) => {
               const isMe = p.user_id === user?.id;
               const name = p.full_name || p.email;
+              const photo = p.avatar_url || (isMe ? profile?.avatar_url : null);
               return (
                 <View key={p.id} style={[styles.fallbackTile, isMe && styles.fallbackTileMe]}>
                   <View style={styles.fallbackAvatar}>
-                    <Text style={styles.fallbackAvatarText}>{getInitials(name)}</Text>
+                    {photo ? (
+                      <Image source={{ uri: photo }} style={styles.fallbackAvatarImg} />
+                    ) : (
+                      <Text style={styles.fallbackAvatarText}>{getInitials(name)}</Text>
+                    )}
                   </View>
                   <View style={styles.fallbackFooter}>
                     <Text style={styles.fallbackName} numberOfLines={1}>
@@ -583,42 +863,46 @@ export function MeetingRoomScreen({
         )}
       </View>
 
-      {/* Bottom Google-Meet Floating Control Dock */}
+      {/* Clean Symbol-Only Circular Control Dock (Zero Clunky Text Labels) */}
       <View style={styles.controlDock}>
         <Pressable
-          style={[styles.dockBtn, !micEnabled && styles.dockBtnDanger]}
+          style={[styles.dockCircleBtn, !micEnabled && styles.dockBtnDanger]}
           onPress={handleToggleMic}
           accessibilityLabel={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
         >
-          <Text style={styles.dockIcon}>{micEnabled ? '🎙' : '🔇'}</Text>
-          <Text style={styles.dockLabel}>{micEnabled ? 'Mic' : 'Muted'}</Text>
+          <MicSymbol color="#FFFFFF" muted={!micEnabled} />
         </Pressable>
 
         <Pressable
-          style={[styles.dockBtn, !camEnabled && styles.dockBtnDanger]}
+          style={[styles.dockCircleBtn, !camEnabled && styles.dockBtnDanger]}
           onPress={handleToggleCam}
           accessibilityLabel={camEnabled ? 'Turn off camera' : 'Turn on camera'}
         >
-          <Text style={styles.dockIcon}>{camEnabled ? '📹' : '📷'}</Text>
-          <Text style={styles.dockLabel}>{camEnabled ? 'Cam' : 'Off'}</Text>
+          <CamSymbol color="#FFFFFF" muted={!camEnabled} />
         </Pressable>
 
         <Pressable
-          style={[styles.dockBtn, speakerMuted && styles.dockBtnWarn]}
+          style={[styles.dockCircleBtn, speakerMuted && styles.dockBtnWarn]}
           onPress={handleToggleSpeaker}
           accessibilityLabel={speakerMuted ? 'Unmute speaker' : 'Mute speaker'}
         >
-          <Text style={styles.dockIcon}>{speakerMuted ? '🔈' : '🔊'}</Text>
-          <Text style={styles.dockLabel}>{speakerMuted ? 'Quiet' : 'Audio'}</Text>
+          <SpeakerSymbol color="#FFFFFF" muted={speakerMuted} />
         </Pressable>
 
         <Pressable
-          style={styles.dockBtn}
+          style={[styles.dockCircleBtn, handRaised && styles.dockBtnHand]}
+          onPress={handleToggleHand}
+          accessibilityLabel={handRaised ? 'Lower hand' : 'Raise hand'}
+        >
+          <Text style={styles.handEmoji}>✋</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.dockCircleBtn}
           onPress={() => setActiveSheet('people')}
           accessibilityLabel="Participants and host controls"
         >
-          <Text style={styles.dockIcon}>👥</Text>
-          <Text style={styles.dockLabel}>People</Text>
+          <PeopleSymbol color="#FFFFFF" />
           {(joined.length > 0 || waiting.length > 0) && (
             <View style={[styles.dockBadge, waiting.length > 0 && styles.dockBadgeAlert]}>
               <Text style={styles.dockBadgeText}>
@@ -629,12 +913,11 @@ export function MeetingRoomScreen({
         </Pressable>
 
         <Pressable
-          style={styles.dockBtn}
+          style={styles.dockCircleBtn}
           onPress={() => setActiveSheet('chat')}
           accessibilityLabel="In-meeting chat"
         >
-          <Text style={styles.dockIcon}>💬</Text>
-          <Text style={styles.dockLabel}>Chat</Text>
+          <ChatSymbol color="#FFFFFF" />
           {unreadChat > 0 && (
             <View style={[styles.dockBadge, styles.dockBadgeAlert]}>
               <Text style={styles.dockBadgeText}>{unreadChat}</Text>
@@ -644,23 +927,21 @@ export function MeetingRoomScreen({
 
         {meeting.can_manage && (
           <Pressable
-            style={styles.dockBtn}
+            style={styles.dockCircleBtn}
             onPress={() => setActiveSheet('invite')}
             accessibilityLabel="Invite participants"
           >
-            <Text style={styles.dockIcon}>✉</Text>
-            <Text style={styles.dockLabel}>Invite</Text>
+            <InviteSymbol color="#FFFFFF" />
           </Pressable>
         )}
 
         <Pressable
-          style={styles.dockEndBtn}
+          style={styles.dockEndCircle}
           disabled={busy}
           onPress={() => (meeting.is_host ? setActiveSheet('leave') : void handleLeave())}
           accessibilityLabel="Leave or end meeting"
         >
-          <Text style={styles.dockIcon}>📞</Text>
-          <Text style={styles.dockLabel}>{meeting.is_host ? 'End' : 'Leave'}</Text>
+          <EndCallSymbol color="#FFFFFF" />
         </Pressable>
       </View>
 
@@ -833,6 +1114,7 @@ export function MeetingRoomScreen({
                         const isMe = p.user_id === user?.id;
                         const label = p.full_name || p.email;
                         const isPrimaryHost = p.user_id === meeting.host_id;
+                        const isHandUp = Boolean(raisedHands[p.user_id] || (isMe && handRaised));
                         return (
                           <View
                             key={p.id}
@@ -847,7 +1129,7 @@ export function MeetingRoomScreen({
                             <View style={styles.headerRow}>
                               <View style={styles.flex1}>
                                 <Text style={[styles.rosterName, { color: colors.text }]}>
-                                  {label} {isMe ? '(You)' : ''}
+                                  {label} {isMe ? '(You)' : ''} {isHandUp ? '✋' : ''}
                                 </Text>
                                 <Text style={[styles.subText, { color: colors.textMuted }]}>
                                   {isPrimaryHost
@@ -1104,6 +1386,21 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.08)',
     gap: 10,
   },
+  topRightBtns: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  topIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   roomTitleLine: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1184,11 +1481,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(34, 197, 94, 0.18)',
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
     borderWidth: 1,
-    borderColor: 'rgba(34, 197, 94, 0.4)',
+    borderColor: 'rgba(245, 158, 11, 0.48)',
   },
-  toastText: { color: '#86EFAC', fontSize: 12, fontWeight: '600' },
+  toastText: { color: '#FDE68A', fontSize: 12.5, fontWeight: '700' },
   errorBar: {
     marginHorizontal: 12,
     marginTop: 8,
@@ -1205,6 +1502,21 @@ const styles = StyleSheet.create({
   stageContainer: {
     flex: 1,
     backgroundColor: '#070B14',
+    position: 'relative',
+  },
+  exitFocusPill: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(15, 23, 42, 0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stageWebView: {
     flex: 1,
@@ -1231,12 +1543,17 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(59, 130, 246, 0.55)',
   },
   fallbackAvatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
     backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  fallbackAvatarImg: {
+    width: '100%',
+    height: '100%',
   },
   fallbackAvatarText: { color: '#FFFFFF', fontSize: 22, fontWeight: '800' },
   fallbackFooter: {
@@ -1251,47 +1568,51 @@ const styles = StyleSheet.create({
   },
   fallbackName: { color: '#F8FAFC', fontSize: 11.5, fontWeight: '700' },
 
-  // Google-Meet Bottom Floating Control Dock
+  // Symbol-Only Circular Control Dock
   controlDock: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
+    justifyContent: 'space-evenly',
+    paddingVertical: 12,
     paddingHorizontal: 8,
     backgroundColor: '#0F172A',
     borderTopWidth: 1,
     borderTopColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 4,
   },
-  dockBtn: {
+  dockCircleBtn: {
     position: 'relative',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 48,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255, 255, 255, 0.08)',
-    gap: 2,
+    backgroundColor: 'rgba(255, 255, 255, 0.11)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.12)',
   },
   dockBtnDanger: {
     backgroundColor: '#DC2626',
+    borderColor: '#EF4444',
   },
   dockBtnWarn: {
     backgroundColor: '#B45309',
+    borderColor: '#D97706',
   },
-  dockEndBtn: {
+  dockBtnHand: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#FBBF24',
+  },
+  dockEndCircle: {
+    width: 48,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 52,
-    paddingVertical: 8,
-    paddingHorizontal: 8,
-    borderRadius: 14,
     backgroundColor: '#DC2626',
-    gap: 2,
+    borderWidth: 1,
+    borderColor: '#EF4444',
   },
-  dockIcon: { fontSize: 16 },
-  dockLabel: { color: '#F8FAFC', fontSize: 10, fontWeight: '700' },
+  handEmoji: { fontSize: 18 },
   dockBadge: {
     position: 'absolute',
     top: -4,

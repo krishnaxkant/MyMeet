@@ -7,10 +7,13 @@ import {
   CheckIcon,
   CopyIcon,
   DownloadIcon,
+  HandIcon,
   LockIcon,
   MailIcon,
+  MaximizeIcon,
   MicIcon,
   MicOffIcon,
+  MinimizeIcon,
   PhoneOffIcon,
   RecordIcon,
   RefreshIcon,
@@ -83,6 +86,10 @@ export function MeetingRoomPage() {
   const [elapsed, setElapsed] = useState('00:00');
   const [videoEffect, setVideoEffect] = useState<VideoEffectMode>('none');
   const [showEffectsBar, setShowEffectsBar] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [myHandRaised, setMyHandRaised] = useState(false);
+  const roomShellRef = useRef<HTMLDivElement | null>(null);
+  const lastSpokenHandIdRef = useRef<string | null>(null);
 
   const myDisplayName =
     profile?.full_name ||
@@ -238,8 +245,108 @@ export function MeetingRoomPage() {
 
   const showTempNotice = (msg: string) => {
     setStatusNotice(msg);
-    setTimeout(() => setStatusNotice((prev) => (prev === msg ? null : prev)), 3000);
+    setTimeout(() => setStatusNotice((prev) => (prev === msg ? null : prev)), 3500);
   };
+
+  // Sync browser Fullscreen state & lock body scroll in Fullscreen Focus Mode
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isFullscreen]);
+
+  const handleToggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        const target = roomShellRef.current ?? document.documentElement;
+        await target.requestFullscreen();
+        setShowSidebar(false);
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Fallback for browsers without Fullscreen API
+      setIsFullscreen((prev) => {
+        const next = !prev;
+        if (next) setShowSidebar(false);
+        return next;
+      });
+    }
+  };
+
+  const handleToggleHandRaise = async () => {
+    const next = !myHandRaised;
+    setMyHandRaised(next);
+    await livekit.broadcastHandRaise(next, myDisplayName, user?.id);
+  };
+
+  // Voice announcement + toast whenever someone raises their hand
+  useEffect(() => {
+    const evt = livekit.lastHandEvent;
+    if (!evt || !evt.raised || lastSpokenHandIdRef.current === evt.id) return;
+    lastSpokenHandIdRef.current = evt.id;
+
+    const spokenText = `${evt.name} raised their hand`;
+    showTempNotice(`✋ ${spokenText}`);
+
+    if (speakerMuted) return;
+
+    // Gentle pleasant 2-tone chime + voice announcement
+    try {
+      const AudioCtxCtor =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (AudioCtxCtor) {
+        const ctx = new AudioCtxCtor();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+        osc.frequency.setValueAtTime(880, ctx.currentTime + 0.11);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.34);
+        setTimeout(() => void ctx.close().catch(() => {}), 500);
+      }
+    } catch {
+      // Ignore audio chime errors
+    }
+
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+        setTimeout(() => {
+          try {
+            const utterance = new SpeechSynthesisUtterance(spokenText);
+            utterance.lang = 'en-US';
+            utterance.rate = 1.0;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            window.speechSynthesis.speak(utterance);
+          } catch {
+            // Ignore speech synthesis errors
+          }
+        }, 60);
+      }
+    } catch {
+      // Ignore speech synthesis errors
+    }
+  }, [livekit.lastHandEvent, speakerMuted]);
 
   const openSidebarTab = (tab: SidebarTab) => {
     if (showSidebar && sidebarTab === tab) {
@@ -484,8 +591,19 @@ export function MeetingRoomPage() {
         ? { label: 'LiveKit Setup Needed', className: 'badge badge-warning' }
         : { label: 'Media Disconnected', className: 'badge badge-danger' };
 
+  const avatarMap = new Map<string, string | null>();
+  for (const part of meeting.participants) {
+    avatarMap.set(part.user_id, part.avatar_url ?? null);
+  }
+  if (user?.id && profile?.avatar_url) {
+    avatarMap.set(user.id, profile.avatar_url);
+  }
+
   return (
-    <div className="room-shell">
+    <div
+      ref={roomShellRef}
+      className={`room-shell ${isFullscreen ? 'room-shell-fullscreen' : ''}`}
+    >
       <div className="room-header card">
         <div className="room-header-left">
           <h1 className="room-title">{meeting.title}</h1>
@@ -564,6 +682,15 @@ export function MeetingRoomPage() {
             <ChatIcon size={14} />
             <span>Chat</span>
             {unreadChatCount > 0 && <span className="unread-pill">{unreadChatCount}</span>}
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => void handleToggleFullscreen()}
+            title={isFullscreen ? 'Exit full screen' : 'Enter full screen focus mode'}
+          >
+            {isFullscreen ? <MinimizeIcon size={14} /> : <MaximizeIcon size={14} />}
+            <span>{isFullscreen ? 'Exit Full Screen' : 'Full Screen'}</span>
           </button>
         </div>
       </div>
@@ -669,10 +796,17 @@ export function MeetingRoomPage() {
                   <VideoTile
                     key={p.identity}
                     name={p.name}
+                    avatarUrl={
+                      avatarMap.get(p.identity) ??
+                      (p.isLocal ? profile?.avatar_url ?? null : null)
+                    }
                     isLocal={p.isLocal}
                     isHost={p.isHost || p.identity === meeting.host_id}
                     isSpeaking={p.isSpeaking}
                     micEnabled={p.micEnabled}
+                    handRaised={Boolean(
+                      livekit.raisedHands[p.identity] || (p.isLocal && myHandRaised),
+                    )}
                     videoTrack={p.videoTrack}
                     audioTrack={p.audioTrack}
                     speakerMuted={speakerMuted}
@@ -686,9 +820,16 @@ export function MeetingRoomPage() {
                     <VideoTile
                       key={participant.id}
                       name={name}
+                      avatarUrl={
+                        participant.avatar_url ??
+                        (isMe ? profile?.avatar_url ?? null : null)
+                      }
                       isLocal={isMe}
                       isHost={participant.role === 'host'}
                       micEnabled={isMe ? livekit.micEnabled : true}
+                      handRaised={Boolean(
+                        livekit.raisedHands[participant.user_id] || (isMe && myHandRaised),
+                      )}
                     />
                   );
                 })}
@@ -860,6 +1001,8 @@ export function MeetingRoomPage() {
                             <div className="roster-info">
                               <div className="roster-name">
                                 {label} {isMe ? '(You)' : ''}
+                                {Boolean(livekit.raisedHands[p.user_id] || (isMe && myHandRaised)) &&
+                                  ' ✋'}
                               </div>
                               <div className="roster-sub">
                                 {isPrimaryHost
@@ -1064,6 +1207,15 @@ export function MeetingRoomPage() {
 
           <button
             type="button"
+            className={`media-btn ${myHandRaised ? 'media-btn-hand' : 'media-btn-on'}`}
+            onClick={() => void handleToggleHandRaise()}
+            title={myHandRaised ? 'Lower hand' : 'Raise hand (announces by voice)'}
+          >
+            <HandIcon size={18} />
+          </button>
+
+          <button
+            type="button"
             className={`media-btn ${captions.captionsEnabled ? 'media-btn-accent' : 'media-btn-on'}`}
             onClick={captions.toggleCaptions}
             title={captions.captionsEnabled ? 'Turn off live captions' : 'Turn on live captions'}
@@ -1099,6 +1251,15 @@ export function MeetingRoomPage() {
           >
             <ChatIcon size={18} />
             {unreadChatCount > 0 && <span className="media-btn-dot">{unreadChatCount}</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`media-btn ${isFullscreen ? 'media-btn-accent' : 'media-btn-on'}`}
+            onClick={() => void handleToggleFullscreen()}
+            title={isFullscreen ? 'Exit full screen' : 'Full screen focus mode'}
+          >
+            {isFullscreen ? <MinimizeIcon size={17} /> : <MaximizeIcon size={17} />}
           </button>
         </div>
 

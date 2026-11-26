@@ -6,10 +6,12 @@ export type VideoEffectMode = 'none' | 'blur' | 'warm' | 'studio' | 'dim';
 
 interface VideoTileProps {
   name: string;
+  avatarUrl?: string | null;
   isLocal?: boolean;
   isHost?: boolean;
   isSpeaking?: boolean;
   micEnabled?: boolean;
+  handRaised?: boolean;
   videoTrack?: LocalTrack | RemoteTrack | null;
   audioTrack?: LocalTrack | RemoteTrack | null;
   speakerMuted?: boolean;
@@ -26,10 +28,12 @@ function getInitials(name: string): string {
 
 export function VideoTile({
   name,
+  avatarUrl = null,
   isLocal = false,
   isHost = false,
   isSpeaking = false,
   micEnabled = true,
+  handRaised = false,
   videoTrack = null,
   audioTrack = null,
   speakerMuted = false,
@@ -70,11 +74,19 @@ export function VideoTile({
         'video-tile',
         isLocal ? 'video-tile-me' : '',
         isSpeaking ? 'video-tile-speaking' : '',
+        handRaised && !isScreenShare ? 'video-tile-hand' : '',
         isScreenShare ? 'video-tile-screen' : '',
       ]
         .filter(Boolean)
         .join(' ')}
     >
+      {handRaised && !isScreenShare && (
+        <div className="hand-raised-pill" role="status">
+          <span aria-hidden="true">✋</span>
+          <span>Hand Raised</span>
+        </div>
+      )}
+
       {videoTrack ? (
         <video
           ref={videoRef}
@@ -91,7 +103,13 @@ export function VideoTile({
             .join(' ')}
         />
       ) : (
-        <div className="avatar-circle avatar-circle-lg">{getInitials(name)}</div>
+        <div className="avatar-circle avatar-circle-lg">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} className="avatar-img" />
+          ) : (
+            getInitials(name)
+          )}
+        </div>
       )}
 
       {!isLocal && audioTrack && <audio ref={audioRef} autoPlay />}

@@ -35,6 +35,13 @@ export interface RecordingBroadcastState {
   by: string | null;
 }
 
+export interface HandRaiseEvent {
+  id: string;
+  identity: string;
+  name: string;
+  raised: boolean;
+}
+
 interface UseLiveKitRoomOptions {
   meetingCode: string;
   accessToken: string | null;
@@ -103,6 +110,8 @@ export function useLiveKitRoom({
     active: false,
     by: null,
   });
+  const [raisedHands, setRaisedHands] = useState<Record<string, string>>({});
+  const [lastHandEvent, setLastHandEvent] = useState<HandRaiseEvent | null>(null);
 
   const publishDataPayload = useCallback(async (payload: Record<string, unknown>) => {
     const room = roomRef.current;
@@ -132,6 +141,29 @@ export function useLiveKitRoom({
     async (active: boolean, by: string) => {
       setRemoteRecording({ active, by: active ? by : null });
       await publishDataPayload({ type: 'recording', active, by });
+    },
+    [publishDataPayload],
+  );
+
+  const broadcastHandRaise = useCallback(
+    async (raised: boolean, name: string, fallbackIdentity?: string) => {
+      const identity = roomRef.current?.localParticipant?.identity || fallbackIdentity || 'local';
+      setRaisedHands((prev) => {
+        const next = { ...prev };
+        if (raised) {
+          next[identity] = name;
+        } else {
+          delete next[identity];
+        }
+        return next;
+      });
+      setLastHandEvent({
+        id: `${Date.now()}-${Math.random()}`,
+        identity,
+        name,
+        raised,
+      });
+      await publishDataPayload({ type: 'hand', identity, name, raised });
     },
     [publishDataPayload],
   );
@@ -184,7 +216,15 @@ export function useLiveKitRoom({
           }
         })
         .on(RoomEvent.ParticipantConnected, handleUpdate)
-        .on(RoomEvent.ParticipantDisconnected, handleUpdate)
+        .on(RoomEvent.ParticipantDisconnected, (participant) => {
+          setRaisedHands((prev) => {
+            if (!prev[participant.identity]) return prev;
+            const next = { ...prev };
+            delete next[participant.identity];
+            return next;
+          });
+          handleUpdate();
+        })
         .on(RoomEvent.TrackSubscribed, handleUpdate)
         .on(RoomEvent.TrackUnsubscribed, handleUpdate)
         .on(RoomEvent.TrackPublished, handleUpdate)
@@ -202,6 +242,9 @@ export function useLiveKitRoom({
               text?: string;
               active?: boolean;
               by?: string;
+              identity?: string;
+              name?: string;
+              raised?: boolean;
             };
             if (parsed.type === 'caption' && parsed.text) {
               setLatestCaption({
@@ -215,6 +258,26 @@ export function useLiveKitRoom({
                 active: Boolean(parsed.active),
                 by: parsed.active ? parsed.by || participant?.name || 'Host' : null,
               });
+            } else if (parsed.type === 'hand') {
+              const idKey = parsed.identity || participant?.identity || '';
+              const displayName = parsed.name || participant?.name || 'A participant';
+              if (idKey) {
+                setRaisedHands((prev) => {
+                  const next = { ...prev };
+                  if (parsed.raised) {
+                    next[idKey] = displayName;
+                  } else {
+                    delete next[idKey];
+                  }
+                  return next;
+                });
+                setLastHandEvent({
+                  id: `${Date.now()}-${Math.random()}`,
+                  identity: idKey,
+                  name: displayName,
+                  raised: Boolean(parsed.raised),
+                });
+              }
             }
           } catch {
             // Ignore malformed data packets
@@ -323,11 +386,14 @@ export function useLiveKitRoom({
     isUnconfigured,
     latestCaption,
     remoteRecording,
+    raisedHands,
+    lastHandEvent,
     toggleMic,
     toggleCamera,
     toggleScreenShare,
     broadcastCaption,
     broadcastRecordingState,
+    broadcastHandRaise,
     disconnect,
     reconnect: connect,
   };

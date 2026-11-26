@@ -208,7 +208,8 @@ function isEmulatorOrLoopbackUrl(url: string): boolean {
 }
 
 function resolveApiBaseUrl(): string {
-  const configured = process.env.EXPO_PUBLIC_API_URL?.trim();
+  const extraApiUrl = ((Constants.expoConfig?.extra ?? {}) as { apiUrl?: string }).apiUrl?.trim();
+  const configured = process.env.EXPO_PUBLIC_API_URL?.trim() || extraApiUrl;
 
   if (configured && !isEmulatorOrLoopbackUrl(configured)) {
     return configured.replace(/\/$/, '');
