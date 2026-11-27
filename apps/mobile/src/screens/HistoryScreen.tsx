@@ -683,44 +683,54 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
               </View>
             )}
 
-            {/* Try Pro Notes CTA Banner right below Free Notes */}
+            {/* Get Pro Notes at ₹9 Only CTA Banner at the end of Free Notes */}
             {hasImportantNotes && !selected.pro_notes && (
               <View style={styles.proBanner}>
                 <View style={styles.proPill}>
-                  <Text style={styles.proPillText}>✦ TRY PRO NOTES</Text>
+                  <Text style={styles.proPillText}>✦ MYMEET PRO NOTES</Text>
                 </View>
                 <Text style={styles.proBannerTitle}>
-                  Upgrade to Deep Pro Master Notes
+                  Get Pro Notes at ₹9 Only
                 </Text>
                 <Text style={styles.proBannerSub}>
-                  Code snippets / derivations, comparison table, exam traps, 1-min cheat sheet &amp;
-                  shareable report.
+                  Code snippets / derivations, comparison table, exam traps, 1-min cheat sheet, PDF
+                  &amp; 20-MCQ session practice tests.
                 </Text>
-                <Pressable
-                  style={[styles.proGoldBtn, upgradingPro && { opacity: 0.65 }]}
-                  disabled={upgradingPro}
-                  onPress={() => void handleUpgradeToPro()}
-                >
-                  <Text style={styles.proGoldBtnText}>
-                    {upgradingPro
-                      ? 'Building Pro Notes...'
-                      : subscription?.is_unlimited
-                        ? 'Generate Pro Notes (Unlimited)'
-                        : subscription?.is_pro && subscription.credits_remaining > 0
-                          ? `Upgrade with 1 Credit (${subscription.credits_remaining} left)`
-                          : 'Try Pro Notes · ₹9'}
-                  </Text>
-                </Pressable>
-                {!subscription?.is_unlimited && (
+                {subscription?.is_pro && subscription.credits_remaining > 0 ? (
+                  <>
+                    <Pressable
+                      style={[styles.proGoldBtn, upgradingPro && { opacity: 0.65 }]}
+                      disabled={upgradingPro}
+                      onPress={() => void handleUpgradeToPro()}
+                    >
+                      <Text style={styles.proGoldBtnText}>
+                        {upgradingPro
+                          ? 'Building Pro Notes...'
+                          : `Upgrade with 1 Credit (${subscription.credits_remaining} left)`}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.proPlansLink}
+                      onPress={() => {
+                        setUpgradeForMcq(false);
+                        setUpgradeOpen(true);
+                      }}
+                    >
+                      <Text style={styles.proPlansLinkText}>
+                        See All Offers (₹9 · ₹49 · ₹349 · ₹899)
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : (
                   <Pressable
-                    style={styles.proPlansLink}
+                    style={styles.proGoldBtn}
                     onPress={() => {
                       setUpgradeForMcq(false);
                       setUpgradeOpen(true);
                     }}
                   >
-                    <Text style={styles.proPlansLinkText}>
-                      View All Plans (₹9 · ₹49 · ₹349 · ₹899)
+                    <Text style={styles.proGoldBtnText}>
+                      Get Pro Notes at ₹9 Only · See All Offers
                     </Text>
                   </Pressable>
                 )}

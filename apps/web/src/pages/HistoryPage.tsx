@@ -332,6 +332,28 @@ export function HistoryPage() {
     downloadAllVisualNotesPngs(selected.title, renderedPages);
   };
 
+  const handleDownloadVisualPdf = () => {
+    if (!selected || renderedPages.length === 0) return;
+    const win = window.open('', '_blank', 'width=960,height=900');
+    if (!win) return;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const pagesHtml = renderedPages
+      .map(
+        (pg) =>
+          `<div class="pdf-page"><img src="${pg.dataUrl}" alt="${esc(selected.title)} Page ${pg.pageNumber}" /></div>`,
+      )
+      .join('');
+    win.document.write(`<!doctype html><html><head><title>${esc(selected.title)} — MyMeet AI Notes</title><style>
+      @page { margin: 0; }
+      body { margin: 0; padding: 0; background: #000000; }
+      .pdf-page { page-break-after: always; display: flex; justify-content: center; align-items: flex-start; background: #000000; }
+      .pdf-page:last-child { page-break-after: auto; }
+      img { width: 100%; max-width: 100%; height: auto; display: block; }
+    </style></head><body>${pagesHtml}<script>window.onload=function(){setTimeout(function(){window.print();},250);}</script></body></html>`);
+    win.document.close();
+  };
+
   const isHost = selected?.my_role === 'host';
   const hideBasicNotes = Boolean(
     selected &&
@@ -373,139 +395,169 @@ export function HistoryPage() {
 
   return (
     <div className="settings-page">
-      <div className="settings-page-head">
-        <div>
-          <h1 className="settings-page-title">Meeting History & Visual AI Notes</h1>
-          <p className="settings-page-sub">
-            Review multi-page black-background study & summary notes from every session. Hosts also
-            see full participant attendance history.
-          </p>
-        </div>
-      </div>
-
-      <div className="history-grid">
-        <section className="card">
-          <div className="card-header">
-            <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ClockIcon size={18} />
-              <span>Your Meetings</span>
-            </h2>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => void loadHistory()}
-              disabled={loading}
-            >
-              <RefreshIcon size={14} />
-              <span>{loading ? 'Loading...' : 'Refresh'}</span>
-            </button>
+      {!selected && !detailLoading ? (
+        <>
+          <div className="settings-page-head">
+            <div>
+              <h1 className="settings-page-title">Meeting History &amp; AI Notes</h1>
+              <p className="settings-page-sub">
+                Select any past session to open its full-screen visual notes, PDF export, and
+                session MCQs.
+              </p>
+            </div>
           </div>
 
-          {error && <div className="alert alert-danger">{error}</div>}
-
-          {items.length === 0 ? (
-            <div className="empty-state">
-              {loading
-                ? 'Loading your past meetings...'
-                : 'No meeting history yet. Meetings you host or join will appear here.'}
+          <section className="card history-list-only-card">
+            <div className="card-header">
+              <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <ClockIcon size={18} />
+                <span>Your Meetings ({items.length})</span>
+              </h2>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void loadHistory()}
+                disabled={loading}
+              >
+                <RefreshIcon size={14} />
+                <span>{loading ? 'Loading...' : 'Refresh'}</span>
+              </button>
             </div>
-          ) : (
-            <div className="meeting-list">
-              {items.map((item) => (
-                <div
-                  key={item.id}
-                  className={`meeting-row ${selected?.code === item.code ? 'meeting-row-selected' : ''}`}
-                >
-                  <div className="meeting-row-main">
-                    <div className="meeting-row-title">
-                      <span>{item.title}</span>
-                      <span
-                        className={`badge ${
-                          item.status === 'active' ? 'badge-success' : 'badge-warning'
-                        }`}
-                      >
-                        {item.status}
-                      </span>
-                      {item.my_role === 'host' && <span className="badge badge-neutral">Host</span>}
-                    </div>
-                    <div className="meeting-row-meta">
-                      <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                      <span>·</span>
-                      <span>{formatDuration(item.duration_seconds)}</span>
-                    </div>
-                  </div>
 
-                  <div className="meeting-row-actions">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => void handleInspect(item.code)}
-                    >
-                      <SparklesIcon size={14} />
-                      <span>{item.my_role === 'host' ? 'Notes & Roster' : 'Visual Notes'}</span>
-                    </button>
-                    {item.status === 'active' && (
+            {error && <div className="alert alert-danger">{error}</div>}
+
+            {items.length === 0 ? (
+              <div className="empty-state">
+                {loading
+                  ? 'Loading your past meetings...'
+                  : 'No meeting history yet. Meetings you host or join will appear here.'}
+              </div>
+            ) : (
+              <div className="meeting-list">
+                {items.map((item) => (
+                  <div
+                    key={item.id}
+                    className="meeting-row meeting-row-clickable"
+                    onClick={() => void handleInspect(item.code)}
+                  >
+                    <div className="meeting-row-main">
+                      <div className="meeting-row-title">
+                        <span>{item.title}</span>
+                        <span
+                          className={`badge ${
+                            item.status === 'active' ? 'badge-success' : 'badge-warning'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                        {item.my_role === 'host' && <span className="badge badge-neutral">Host</span>}
+                      </div>
+                      <div className="meeting-row-meta">
+                        <span>{new Date(item.created_at).toLocaleDateString()}</span>
+                        <span>·</span>
+                        <span>{formatDuration(item.duration_seconds)}</span>
+                      </div>
+                    </div>
+
+                    <div className="meeting-row-actions" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         className="btn btn-primary btn-sm"
-                        onClick={() => navigate(`/meet/${item.code}`)}
+                        onClick={() => void handleInspect(item.code)}
                       >
-                        Rejoin
+                        <SparklesIcon size={14} />
+                        <span>{item.my_role === 'host' ? 'Open Notes & Roster' : 'Visual Notes'}</span>
                       </button>
-                    )}
+                      {item.status === 'active' && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => navigate(`/meet/${item.code}`)}
+                        >
+                          Rejoin
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <div className="right-stack">
-          {/* Basic Free AI Visual Summary — hidden whenever user already has Pro Master Notes or an Unlimited Pro subscription */}
-          {!hideBasicNotes && (
-          <section className="card">
-            <div className="card-header">
-              <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <SparklesIcon size={18} />
-                <span>AI Visual Summary Notes</span>
-              </h2>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      ) : (
+        /* Dedicated Full-Screen Notes Reader View (Zero list clutter!) */
+        <div className="notes-fullscreen-shell">
+          <div className="notes-reader-topbar">
+            <div className="notes-reader-left">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setSelected(null);
+                  setError(null);
+                  if (initialCode) navigate('/history', { replace: true });
+                }}
+              >
+                <ChevronLeftIcon size={15} />
+                <span>Back to Meetings</span>
+              </button>
               {selected && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className={`btn btn-sm ${regenerateLimitReached ? 'btn-pro-gold' : 'btn-secondary'}`}
-                    disabled={generatingAi}
-                    title={
-                      regenerateLimitReached
-                        ? '2/2 free regenerates used — Upgrade to Pro Monthly or Yearly for unlimited regenerations'
-                        : undefined
+                <div className="notes-reader-heading">
+                  <h1 className="notes-reader-title">{selected.title}</h1>
+                  <span className="notes-reader-meta">
+                    {new Date(selected.created_at).toLocaleDateString()} ·{' '}
+                    {formatDuration(selected.duration_seconds)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {selected && !hideBasicNotes && (
+              <div className="notes-reader-actions">
+                <button
+                  type="button"
+                  className={`btn btn-sm ${regenerateLimitReached ? 'btn-pro-gold' : 'btn-secondary'}`}
+                  disabled={generatingAi}
+                  title={
+                    regenerateLimitReached
+                      ? '2/2 free regenerates used — Upgrade to Pro Monthly or Yearly for unlimited regenerations'
+                      : undefined
+                  }
+                  onClick={() => {
+                    if (regenerateLimitReached) {
+                      setUpgradeForMcq(false);
+                      setUpgradeOpen(true);
+                      return;
                     }
-                    onClick={() => {
-                      if (regenerateLimitReached) {
-                        setUpgradeForMcq(false);
-                        setUpgradeOpen(true);
-                        return;
-                      }
-                      void handleGenerateAiNotes();
-                    }}
-                  >
-                    <SparklesIcon size={14} />
-                    <span>
-                      {generatingAi
-                        ? 'Analyzing...'
-                        : regenerateLimitReached
-                          ? 'Pro'
-                          : selected.ai_summary
-                            ? subscription?.is_unlimited
-                              ? 'Regenerate'
-                              : `Regenerate (${2 - effectiveRegenCount} left)`
-                            : 'Generate Notes'}
-                    </span>
-                  </button>
-                  {currentPage && (
+                    void handleGenerateAiNotes();
+                  }}
+                >
+                  <SparklesIcon size={14} />
+                  <span>
+                    {generatingAi
+                      ? 'Analyzing...'
+                      : regenerateLimitReached
+                        ? 'Pro'
+                        : selected.ai_summary
+                          ? subscription?.is_unlimited
+                            ? 'Regenerate'
+                            : `Regenerate (${2 - effectiveRegenCount} left)`
+                          : 'Generate Notes'}
+                  </span>
+                </button>
+                {currentPage && (
+                  <>
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
+                      onClick={handleDownloadVisualPdf}
+                    >
+                      <DownloadIcon size={14} />
+                      <span>Download PDF</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
                       onClick={
                         renderedPages.length > 1
                           ? handleDownloadAllPages
@@ -515,23 +567,25 @@ export function HistoryPage() {
                       <DownloadIcon size={14} />
                       <span>
                         {renderedPages.length > 1
-                          ? `Download All (${renderedPages.length} PNGs)`
-                          : 'Download Image (PNG)'}
+                          ? `PNG (${renderedPages.length})`
+                          : 'PNG'}
                       </span>
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {detailLoading ? (
-              <p className="status-item-desc">Loading meeting notes...</p>
-            ) : !selected ? (
-              <div className="empty-state">
-                Select any meeting on the left to inspect and download its multi-page
-                black-background study notes.
+                  </>
+                )}
               </div>
-            ) : selected.ai_summary && currentPage ? (
+            )}
+          </div>
+
+          {error && <div className="alert alert-danger">{error}</div>}
+
+          <div className="notes-reader-stack">
+            {/* Basic Free AI Visual Summary — hidden whenever user already has Pro Master Notes or an Unlimited Pro subscription */}
+            {!hideBasicNotes && (
+            <section className="card notes-reader-card">
+              {detailLoading ? (
+                <div className="empty-state">Loading meeting visual notes...</div>
+              ) : !selected ? null : selected.ai_summary && currentPage ? (
               <div className="visual-notes-panel">
                 <div className="visual-notes-toolbar">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -603,19 +657,17 @@ export function HistoryPage() {
                 </button>
 
                 <div className="visual-notes-footer-actions">
-                  {renderedPages.length > 1 && (
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={handleDownloadCurrentPage}
-                    >
-                      <DownloadIcon size={14} />
-                      <span>Download Page {currentPage.pageNumber} (.png)</span>
-                    </button>
-                  )}
                   <button
                     type="button"
                     className="btn btn-primary btn-sm"
+                    onClick={handleDownloadVisualPdf}
+                  >
+                    <DownloadIcon size={14} />
+                    <span>Download Notes PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
                     onClick={
                       renderedPages.length > 1
                         ? handleDownloadAllPages
@@ -626,54 +678,60 @@ export function HistoryPage() {
                     <span>
                       {renderedPages.length > 1
                         ? `Download All ${renderedPages.length} Pages (.png)`
-                        : 'Download High-Res Notes Image (.png)'}
+                        : 'Download Image (.png)'}
                     </span>
                   </button>
                 </div>
 
-                {/* Try Pro Notes CTA Banner right below Free Notes (when not yet upgraded) */}
+                {/* Get Pro Notes at ₹9 Only CTA Banner at the end of Notes */}
                 {!selected.pro_notes && (
                   <div className="pro-cta-banner">
                     <div className="pro-cta-copy">
                       <span className="pro-pill-badge">
-                        <SparklesIcon size={12} /> TRY PRO NOTES
+                        <SparklesIcon size={12} /> MYMEET PRO NOTES
                       </span>
-                      <h3>Unlock Deep Pro Master Notes for this Session</h3>
+                      <h3>Get Pro Notes at ₹9 Only</h3>
                       <p>
-                        Get copy-paste code / step-by-step derivations, comparison tables, exam &
-                        interview traps, 1-min cheat sheet &amp; HD PDF export.
+                        Unlock deep code snippets &amp; step-by-step derivations, comparison tables,
+                        exam &amp; interview traps, 1-min cheat sheet, HD PDF &amp; 20-MCQ session
+                        practice tests.
                       </p>
                     </div>
                     <div className="pro-cta-actions">
+                      {subscription?.is_pro && subscription.credits_remaining > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-pro-gold"
+                          disabled={upgradingPro}
+                          onClick={() => void handleUpgradeToProNotes()}
+                        >
+                          <SparklesIcon size={15} />
+                          <span>
+                            {upgradingPro
+                              ? 'Building Pro Notes...'
+                              : `Upgrade with 1 Credit (${subscription.credits_remaining} left)`}
+                          </span>
+                        </button>
+                      )}
                       <button
                         type="button"
-                        className="btn btn-pro-gold"
-                        disabled={upgradingPro}
-                        onClick={() => void handleUpgradeToProNotes()}
+                        className={`btn ${
+                          subscription?.is_pro && subscription.credits_remaining > 0
+                            ? 'btn-secondary btn-sm'
+                            : 'btn-pro-gold'
+                        }`}
+                        onClick={() => {
+                          setUpgradeForMcq(false);
+                          setUpgradeOpen(true);
+                        }}
                       >
                         <SparklesIcon size={15} />
                         <span>
-                          {upgradingPro
-                            ? 'Building Pro Notes...'
-                            : subscription?.is_unlimited
-                              ? 'Generate Pro Notes (Unlimited)'
-                              : subscription?.is_pro && subscription.credits_remaining > 0
-                                ? `Upgrade with 1 Credit (${subscription.credits_remaining} left)`
-                                : 'Try Pro Notes · ₹9'}
+                          {subscription?.is_pro && subscription.credits_remaining > 0
+                            ? 'View All Pro Offers (₹9 · ₹49 · ₹349 · ₹899)'
+                            : 'Get Pro Notes at ₹9 Only · See All Offers'}
                         </span>
                       </button>
-                      {!subscription?.is_unlimited && (
-                        <button
-                          type="button"
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => {
-                            setUpgradeForMcq(false);
-                            setUpgradeOpen(true);
-                          }}
-                        >
-                          See All Plans (₹49 · ₹349 · ₹899)
-                        </button>
-                      )}
                     </div>
                   </div>
                 )}
@@ -927,8 +985,9 @@ export function HistoryPage() {
               )}
             </section>
           )}
+          </div>
         </div>
-      </div>
+      )}
 
       {lightboxOpen && currentPage && selected && (
         <div
