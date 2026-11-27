@@ -1208,6 +1208,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 15,
     gap: 12,
+    overflow: 'hidden',
   },
   proShareChip: {
     paddingHorizontal: 10,
