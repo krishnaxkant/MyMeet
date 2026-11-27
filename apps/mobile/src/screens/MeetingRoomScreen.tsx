@@ -278,13 +278,17 @@ export function MeetingRoomScreen({
     }
   }, [session?.access_token, code]);
 
+  const joinedCountForPoll = meeting?.joined_count ?? 1;
   useEffect(() => {
     void loadRoom();
+    const baseMs =
+      joinedCountForPoll > 30 ? 10_000 : joinedCountForPoll > 10 ? 6_000 : 3_000;
+    const jitterMs = Math.round(baseMs * (0.9 + Math.random() * 0.2));
     const timer = setInterval(() => {
       void loadRoom();
-    }, 2500);
+    }, jitterMs);
     return () => clearInterval(timer);
-  }, [loadRoom]);
+  }, [loadRoom, joinedCountForPoll]);
 
   useEffect(() => {
     if (!meeting?.started_at) return;

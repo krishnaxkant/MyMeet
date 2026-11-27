@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { getSupabaseAdmin } from '../config/supabase.js';
 
@@ -13,6 +14,53 @@ declare global {
       user?: AuthenticatedUser;
     }
   }
+}
+
+// Short-lived in-memory cache for verified Supabase JWTs (cuts 100-user auth traffic by ~50x)
+const AUTH_CACHE_TTL_MS = 60_000;
+const AUTH_CACHE_MAX_ENTRIES = 1500;
+const authCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
+
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getJwtExpMs(token: string): number | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as {
+      exp?: number;
+    };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function getCachedAuthUser(tokenHash: string): AuthenticatedUser | null {
+  const entry = authCache.get(tokenHash);
+  if (!entry) return null;
+  if (Date.now() >= entry.expiresAt) {
+    authCache.delete(tokenHash);
+    return null;
+  }
+  return entry.user;
+}
+
+function setCachedAuthUser(tokenHash: string, token: string, user: AuthenticatedUser): void {
+  const now = Date.now();
+  const jwtExp = getJwtExpMs(token);
+  const maxAllowedExp = jwtExp ? jwtExp - 5_000 : now + AUTH_CACHE_TTL_MS;
+  const expiresAt = Math.min(now + AUTH_CACHE_TTL_MS, maxAllowedExp);
+  if (expiresAt <= now) return;
+
+  if (authCache.size >= AUTH_CACHE_MAX_ENTRIES) {
+    // Evict oldest entry (Map maintains insertion order)
+    const firstKey = authCache.keys().next().value;
+    if (firstKey) authCache.delete(firstKey);
+  }
+  authCache.set(tokenHash, { user, expiresAt });
 }
 
 export const requireAuth = async (
@@ -39,6 +87,14 @@ export const requireAuth = async (
       return;
     }
 
+    const tokenHash = hashToken(token);
+    const cachedUser = getCachedAuthUser(tokenHash);
+    if (cachedUser) {
+      req.user = cachedUser;
+      next();
+      return;
+    }
+
     const supabase = getSupabaseAdmin();
     if (!supabase) {
       res.status(503).json({
@@ -58,11 +114,14 @@ export const requireAuth = async (
     }
 
     const rawFullName = data.user.user_metadata?.full_name;
-    req.user = {
+    const authenticated: AuthenticatedUser = {
       id: data.user.id,
       email: data.user.email ?? '',
       fullName: typeof rawFullName === 'string' ? rawFullName : undefined,
     };
+
+    setCachedAuthUser(tokenHash, token, authenticated);
+    req.user = authenticated;
 
     next();
   } catch (err) {

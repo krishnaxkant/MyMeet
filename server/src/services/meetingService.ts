@@ -173,29 +173,33 @@ async function fetchMeetingRowByCode(rawCode: string): Promise<MeetingRow> {
   return data;
 }
 
-async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promise<MeetingDetail> {
-  const supabase = requireSupabase();
-  const { data: participantRows, error } = await supabase
-    .from('meeting_participants')
-    .select('id, meeting_id, user_id, role, status, joined_at, left_at')
-    .eq('meeting_id', meeting.id)
-    .order('joined_at', { ascending: true });
+interface CachedRoomSnapshot {
+  meeting: MeetingRow;
+  participants: ParticipantRow[];
+  profilesMap: Map<string, ProfileMini>;
+  expiresAt: number;
+}
 
-  if (error) {
-    throw new HttpError(500, `Failed to load meeting participants: ${error.message}`);
+const ROOM_SNAPSHOT_TTL_MS = 2_500;
+const ROOM_CACHE_MAX_ROOMS = 300;
+const roomSnapshotCache = new Map<string, CachedRoomSnapshot>();
+const inflightRoomSnapshots = new Map<string, Promise<CachedRoomSnapshot>>();
+
+export function invalidateMeetingCache(rawCode: string): void {
+  const code = normalizeMeetingCode(rawCode);
+  if (code) {
+    roomSnapshotCache.delete(code);
   }
+}
 
-  const rows = (participantRows ?? []) as ParticipantRow[];
+function projectMeetingDetail(snapshot: CachedRoomSnapshot, viewerId: string): MeetingDetail {
+  const { meeting, participants: rows, profilesMap } = snapshot;
   const myRow = rows.find((r) => r.user_id === viewerId) ?? null;
   const isHost = meeting.host_id === viewerId;
   const isCoHost = !isHost && myRow?.role === 'co_host' && myRow?.status === 'joined';
   const canManage = isHost || isCoHost;
   const canSeeRoster = canManage || myRow?.status === 'joined';
-
-  const profileIds = [meeting.host_id, ...(canSeeRoster ? rows.map((r) => r.user_id) : [])];
-  const profilesMap = await fetchProfilesMap(profileIds);
   const hostProfile = profilesMap.get(meeting.host_id);
-
   const joinedCount = rows.filter((r) => r.status === 'joined').length;
 
   const participants: MeetingParticipantInfo[] = canSeeRoster
@@ -232,6 +236,67 @@ async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promis
     can_manage: canManage,
     participants,
   };
+}
+
+async function fetchFreshRoomSnapshot(meeting: MeetingRow): Promise<CachedRoomSnapshot> {
+  const supabase = requireSupabase();
+  const { data: participantRows, error } = await supabase
+    .from('meeting_participants')
+    .select('id, meeting_id, user_id, role, status, joined_at, left_at')
+    .eq('meeting_id', meeting.id)
+    .order('joined_at', { ascending: true });
+
+  if (error) {
+    throw new HttpError(500, `Failed to load meeting participants: ${error.message}`);
+  }
+
+  const rows = (participantRows ?? []) as ParticipantRow[];
+  const profileIds = [meeting.host_id, ...rows.map((r) => r.user_id)];
+  const profilesMap = await fetchProfilesMap(profileIds);
+
+  const snapshot: CachedRoomSnapshot = {
+    meeting,
+    participants: rows,
+    profilesMap,
+    expiresAt: Date.now() + ROOM_SNAPSHOT_TTL_MS,
+  };
+
+  if (roomSnapshotCache.size >= ROOM_CACHE_MAX_ROOMS) {
+    const oldestKey = roomSnapshotCache.keys().next().value;
+    if (oldestKey) roomSnapshotCache.delete(oldestKey);
+  }
+  roomSnapshotCache.set(meeting.code, snapshot);
+  return snapshot;
+}
+
+async function getCachedRoomSnapshotByCode(rawCode: string): Promise<CachedRoomSnapshot> {
+  const code = normalizeMeetingCode(rawCode);
+  const existing = roomSnapshotCache.get(code);
+  if (existing && Date.now() < existing.expiresAt) {
+    return existing;
+  }
+
+  const inflight = inflightRoomSnapshots.get(code);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async () => {
+    const meeting = await fetchMeetingRowByCode(code);
+    return fetchFreshRoomSnapshot(meeting);
+  })().finally(() => {
+    inflightRoomSnapshots.delete(code);
+  });
+
+  inflightRoomSnapshots.set(code, promise);
+  return promise;
+}
+
+async function buildMeetingDetail(meeting: MeetingRow, viewerId: string): Promise<MeetingDetail> {
+  // Always refresh cache on write-path rebuilds so all polling clients immediately see fresh state
+  invalidateMeetingCache(meeting.code);
+  const snapshot = await fetchFreshRoomSnapshot(meeting);
+  return projectMeetingDetail(snapshot, viewerId);
 }
 
 export async function createMeeting(
@@ -404,8 +469,8 @@ export async function listUserMeetings(userId: string): Promise<MeetingSummary[]
 }
 
 export async function getMeetingByCode(rawCode: string, userId: string): Promise<MeetingDetail> {
-  const meeting = await fetchMeetingRowByCode(rawCode);
-  return buildMeetingDetail(meeting, userId);
+  const snapshot = await getCachedRoomSnapshotByCode(rawCode);
+  return projectMeetingDetail(snapshot, userId);
 }
 
 export async function joinMeeting(
@@ -486,6 +551,8 @@ export async function leaveMeeting(rawCode: string, userId: string): Promise<voi
   if (error) {
     throw new HttpError(500, `Failed to leave meeting: ${error.message}`);
   }
+
+  invalidateMeetingCache(meeting.code);
 }
 
 async function assertCanManageMeeting(meeting: MeetingRow, actorId: string): Promise<void> {

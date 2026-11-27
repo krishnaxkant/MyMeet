@@ -704,15 +704,33 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
 
     const VideoViewComponent = runtime.LiveKitRN?.VideoView;
 
+    // Cap visible tiles to 6 on mobile so 50-100 student classes never freeze the phone GPU
+    // Priority: Active speakers -> Host -> Local user -> Camera ON -> Others
+    const MAX_VISIBLE_MOBILE_TILES = screenShare ? 4 : 6;
+    const prioritizedTiles =
+      tiles.length > MAX_VISIBLE_MOBILE_TILES
+        ? [...tiles]
+            .sort((a, b) => {
+              const score = (t: TileSnapshot) =>
+                (t.isSpeaking ? 8 : 0) +
+                (t.isHost ? 4 : 0) +
+                (t.isLocal ? 2 : 0) +
+                (t.videoTrack ? 1 : 0);
+              return score(b) - score(a);
+            })
+            .slice(0, MAX_VISIBLE_MOBILE_TILES)
+        : tiles;
+    const hiddenTilesCount = Math.max(0, tiles.length - prioritizedTiles.length);
+
     // Build exact flex rows so participant blocks NEVER overflow outside the screen
     const tileRows: TileSnapshot[][] = [];
-    if (tiles.length <= 2) {
-      for (const t of tiles) tileRows.push([t]);
-    } else if (tiles.length === 3) {
-      tileRows.push([tiles[0], tiles[1]], [tiles[2]]);
+    if (prioritizedTiles.length <= 2) {
+      for (const t of prioritizedTiles) tileRows.push([t]);
+    } else if (prioritizedTiles.length === 3) {
+      tileRows.push([prioritizedTiles[0], prioritizedTiles[1]], [prioritizedTiles[2]]);
     } else {
-      for (let i = 0; i < tiles.length; i += 2) {
-        tileRows.push(tiles.slice(i, i + 2));
+      for (let i = 0; i < prioritizedTiles.length; i += 2) {
+        tileRows.push(prioritizedTiles.slice(i, i + 2));
       }
     }
 
@@ -825,6 +843,14 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
             </View>
           ))}
         </View>
+
+        {hiddenTilesCount > 0 && (
+          <View style={styles.overflowCountPill}>
+            <Text style={styles.overflowCountText}>
+              +{hiddenTilesCount} more participants in class
+            </Text>
+          </View>
+        )}
 
         {caption && (
           <View style={styles.captionBar}>
@@ -1048,5 +1074,19 @@ const styles = StyleSheet.create({
     color: '#F8FAFC',
     fontSize: 12.5,
     lineHeight: 17,
+  },
+  overflowCountPill: {
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.25)',
+  },
+  overflowCountText: {
+    color: '#CBD5E1',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
 });

@@ -67,6 +67,38 @@ function formatElapsed(startedAt: string | null): string {
   return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
+interface AttachableAudioTrack {
+  attach: (el: HTMLMediaElement) => void;
+  detach: (el: HTMLMediaElement) => void;
+}
+
+function HiddenAudioPlayer({
+  track,
+  muted,
+}: {
+  track: AttachableAudioTrack;
+  muted: boolean;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    track.attach(el);
+    return () => {
+      track.detach(el);
+    };
+  }, [track]);
+
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.muted = muted;
+    }
+  }, [muted]);
+
+  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
+}
+
 export function MeetingRoomPage() {
   const { code = '' } = useParams<{ code: string }>();
   const { session, user, profile } = useAuth();
@@ -222,13 +254,18 @@ export function MeetingRoomPage() {
     }
   }, [session?.access_token, code]);
 
+  const joinedCountForPoll = meeting?.joined_count ?? 1;
   useEffect(() => {
     void fetchRoomState();
+    const baseMs =
+      joinedCountForPoll > 30 ? 10_000 : joinedCountForPoll > 10 ? 6_000 : 3_000;
+    // Small random jitter prevents 100 clients from polling at the exact same millisecond
+    const jitterMs = Math.round(baseMs * (0.9 + Math.random() * 0.2));
     const poll = setInterval(() => {
       void fetchRoomState();
-    }, 2500);
+    }, jitterMs);
     return () => clearInterval(poll);
-  }, [fetchRoomState]);
+  }, [fetchRoomState, joinedCountForPoll]);
 
   useEffect(() => {
     if (!meeting?.started_at) return;
@@ -561,10 +598,34 @@ export function MeetingRoomPage() {
     showSidebar && sidebarTab === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
   const isLiveKitConnected = livekit.connectionState === ConnectionState.Connected;
   const screenShares = livekit.participants.filter((p) => Boolean(p.screenShareTrack));
-  const tileParticipantsCount =
+
+  // Cap visible video tiles on Web (12 normal / 6 during screen share) so 50-100 student classes stay buttery smooth
+  // Priority: Active speakers -> Host -> Local user -> Camera ON -> Others
+  const MAX_WEB_TILES = screenShares.length > 0 ? 6 : 12;
+  const prioritizedLiveKitParticipants =
+    livekit.participants.length > MAX_WEB_TILES
+      ? [...livekit.participants].sort((a, b) => {
+          const score = (p: (typeof livekit.participants)[number]) =>
+            (p.isSpeaking ? 8 : 0) +
+            (p.isHost || p.identity === meeting.host_id ? 4 : 0) +
+            (p.isLocal ? 2 : 0) +
+            (p.cameraEnabled ? 1 : 0);
+          return score(b) - score(a);
+        })
+      : livekit.participants;
+  const visibleLiveKitParticipants = prioritizedLiveKitParticipants.slice(0, MAX_WEB_TILES);
+  const hiddenLiveKitParticipants = prioritizedLiveKitParticipants.slice(MAX_WEB_TILES);
+
+  const visibleFallbackParticipants = joinedParticipants.slice(0, MAX_WEB_TILES);
+  const hiddenParticipantCount =
     isLiveKitConnected && livekit.participants.length > 0
-      ? livekit.participants.length
-      : Math.max(1, joinedParticipants.length);
+      ? hiddenLiveKitParticipants.length
+      : Math.max(0, joinedParticipants.length - visibleFallbackParticipants.length);
+
+  const tileParticipantsCount =
+    isLiveKitConnected && visibleLiveKitParticipants.length > 0
+      ? visibleLiveKitParticipants.length
+      : Math.max(1, visibleFallbackParticipants.length);
   const gridCountAttr =
     tileParticipantsCount <= 1
       ? '1'
@@ -678,8 +739,8 @@ export function MeetingRoomPage() {
             className={`participant-tiles-grid ${screenShares.length > 0 ? 'has-screen-share' : ''}`}
             data-count={gridCountAttr}
           >
-            {isLiveKitConnected && livekit.participants.length > 0
-              ? livekit.participants.map((p) => (
+            {isLiveKitConnected && visibleLiveKitParticipants.length > 0
+              ? visibleLiveKitParticipants.map((p) => (
                   <VideoTile
                     key={p.identity}
                     name={p.name}
@@ -700,7 +761,7 @@ export function MeetingRoomPage() {
                     videoEffect={p.isLocal ? videoEffect : 'none'}
                   />
                 ))
-              : joinedParticipants.map((participant) => {
+              : visibleFallbackParticipants.map((participant) => {
                   const name = participant.full_name || participant.email || 'Participant';
                   const isMe = participant.user_id === user?.id;
                   return (
@@ -721,6 +782,28 @@ export function MeetingRoomPage() {
                   );
                 })}
           </div>
+
+          {/* Keep hidden remote participants' audio active even when video grid is capped in large rooms */}
+          {hiddenLiveKitParticipants.map((p) =>
+            !p.isLocal && p.audioTrack ? (
+              <HiddenAudioPlayer
+                key={`audio-${p.identity}`}
+                track={p.audioTrack}
+                muted={speakerMuted}
+              />
+            ) : null,
+          )}
+
+          {hiddenParticipantCount > 0 && (
+            <button
+              type="button"
+              className="room-floating-pill room-floating-pill-info"
+              style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 25 }}
+              onClick={() => openSidebarTab('people')}
+            >
+              +{hiddenParticipantCount} more participants
+            </button>
+          )}
 
           {livekit.latestCaption && (captions.captionsEnabled || Date.now() - livekit.latestCaption.timestamp < 8000) && (
             <div className="captions-bar" role="status" aria-live="polite">
