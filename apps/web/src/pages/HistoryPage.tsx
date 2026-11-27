@@ -46,6 +46,24 @@ function formatExactTime(iso: string): string {
   });
 }
 
+function readLocalRegenCount(code: string): number {
+  try {
+    const raw = window.localStorage.getItem(`mymeet_regen_${code}`);
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function saveLocalRegenCount(code: string, count: number): void {
+  try {
+    window.localStorage.setItem(`mymeet_regen_${code}`, String(count));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
 export function HistoryPage() {
   const { session, user, profile } = useAuth();
   const navigate = useNavigate();
@@ -65,6 +83,7 @@ export function HistoryPage() {
   const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeForMcq, setUpgradeForMcq] = useState(false);
+  const [localRegenCounts, setLocalRegenCounts] = useState<Record<string, number>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -121,11 +140,42 @@ export function HistoryPage() {
 
   const handleGenerateAiNotes = async () => {
     if (!session?.access_token || !selected) return;
+    const hadSummary = Boolean(selected.ai_summary);
+    const currentUsed = Math.max(
+      selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
+      localRegenCounts[selected.code] ?? readLocalRegenCount(selected.code),
+    );
+    if (hadSummary && !subscription?.is_unlimited && currentUsed >= 2) {
+      setUpgradeForMcq(false);
+      setUpgradeOpen(true);
+      return;
+    }
+
     setGeneratingAi(true);
     setError(null);
     try {
       const summary = await generateAiSummary(session.access_token, selected.code);
-      setSelected((prev) => (prev ? { ...prev, ai_summary: summary } : prev));
+      const nextCount = hadSummary
+        ? Math.max(summary.sources_summary?.regenerate_count ?? 0, currentUsed + 1)
+        : (summary.sources_summary?.regenerate_count ?? 0);
+      if (hadSummary) {
+        saveLocalRegenCount(selected.code, nextCount);
+        setLocalRegenCounts((prev) => ({ ...prev, [selected.code]: nextCount }));
+      }
+      setSelected((prev) =>
+        prev
+          ? {
+              ...prev,
+              ai_summary: {
+                ...summary,
+                sources_summary: {
+                  ...(summary.sources_summary ?? {}),
+                  regenerate_count: nextCount,
+                },
+              },
+            }
+          : prev,
+      );
       setActivePageIdx(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to generate AI visual notes.');
@@ -282,10 +332,14 @@ export function HistoryPage() {
   };
 
   const isHost = selected?.my_role === 'host';
+  const effectiveRegenCount = selected
+    ? Math.max(
+        selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
+        localRegenCounts[selected.code] ?? readLocalRegenCount(selected.code),
+      )
+    : 0;
   const regenerateLimitReached = Boolean(
-    selected?.ai_summary &&
-      !subscription?.is_unlimited &&
-      (selected.ai_summary.sources_summary?.regenerate_count ?? 0) >= 1,
+    selected?.ai_summary && !subscription?.is_unlimited && effectiveRegenCount >= 2,
   );
 
   return (
@@ -388,23 +442,32 @@ export function HistoryPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button
                     type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={generatingAi || regenerateLimitReached}
+                    className={`btn btn-sm ${regenerateLimitReached ? 'btn-pro-gold' : 'btn-secondary'}`}
+                    disabled={generatingAi}
                     title={
                       regenerateLimitReached
-                        ? 'Upgrade to Pro Monthly (₹349/mo) or Pro Yearly (₹899/yr) for unlimited regenerations'
+                        ? '2/2 free regenerates used — Upgrade to Pro Monthly or Yearly for unlimited regenerations'
                         : undefined
                     }
-                    onClick={() => void handleGenerateAiNotes()}
+                    onClick={() => {
+                      if (regenerateLimitReached) {
+                        setUpgradeForMcq(false);
+                        setUpgradeOpen(true);
+                        return;
+                      }
+                      void handleGenerateAiNotes();
+                    }}
                   >
                     <SparklesIcon size={14} />
                     <span>
                       {generatingAi
                         ? 'Analyzing...'
                         : regenerateLimitReached
-                          ? 'Not enough credits'
+                          ? 'Pro'
                           : selected.ai_summary
-                            ? 'Regenerate'
+                            ? subscription?.is_unlimited
+                              ? 'Regenerate'
+                              : `Regenerate (${2 - effectiveRegenCount} left)`
                             : 'Generate Notes'}
                     </span>
                   </button>

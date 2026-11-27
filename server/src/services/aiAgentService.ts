@@ -1095,7 +1095,7 @@ export async function generateMeetingAiSummaryForUser(
     }
   }
 
-  // Enforce 1-time free regeneration cap unless user has Unlimited Monthly (₹349) or Yearly (₹899) plan
+  // Enforce max 2 free regenerations unless user has Unlimited Monthly (₹349) or Yearly (₹899) plan
   const { data: existingSummary } = await supabase
     .from('meeting_ai_summaries')
     .select('id, sources_summary')
@@ -1106,10 +1106,10 @@ export async function generateMeetingAiSummaryForUser(
   if (existingSummary) {
     const prevCount = Number(existingSummary.sources_summary?.regenerate_count ?? 0);
     const subscription = await getUserSubscriptionStatus(userId);
-    if (!subscription.is_unlimited && prevCount >= 1) {
+    if (!subscription.is_unlimited && prevCount >= 2) {
       throw new HttpError(
         402,
-        'Not enough credits. Upgrade to Pro Monthly (₹349/mo) or Pro Yearly (₹899/yr) for unlimited note regenerations.',
+        'Free regenerate limit (2/2) reached. Upgrade to Pro Monthly (₹349/mo) or Pro Yearly (₹899/yr) for unlimited regenerations.',
       );
     }
     nextRegenCount = prevCount + 1;

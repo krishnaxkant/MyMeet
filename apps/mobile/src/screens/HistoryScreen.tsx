@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -326,6 +327,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   const [upgradeForMcq, setUpgradeForMcq] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<MeetingMcqQuiz | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
+  const [localRegenCounts, setLocalRegenCounts] = useState<Record<string, number>>({});
   const [fullBoardOpen, setFullBoardOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -362,6 +364,11 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
       try {
         const detail = await getHistoryDetail(session.access_token, code);
         setSelected(detail);
+        const stored = await AsyncStorage.getItem(`mymeet_regen_${detail.code}`).catch(() => null);
+        const parsed = Number(stored);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          setLocalRegenCounts((prev) => ({ ...prev, [detail.code]: parsed }));
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unable to load visual notes.');
       } finally {
@@ -379,11 +386,44 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
 
   const handleGenerateAi = async () => {
     if (!session?.access_token || !selected) return;
+    const hadSummary = Boolean(selected.ai_summary);
+    const currentUsed = Math.max(
+      selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
+      localRegenCounts[selected.code] ?? 0,
+    );
+    if (hadSummary && !subscription?.is_unlimited && currentUsed >= 2) {
+      setUpgradeForMcq(false);
+      setUpgradeOpen(true);
+      return;
+    }
+
     setGeneratingAi(true);
     setError(null);
     try {
       const summary = await generateAiSummary(session.access_token, selected.code);
-      setSelected((prev) => (prev ? { ...prev, ai_summary: summary } : prev));
+      const nextCount = hadSummary
+        ? Math.max(summary.sources_summary?.regenerate_count ?? 0, currentUsed + 1)
+        : (summary.sources_summary?.regenerate_count ?? 0);
+      if (hadSummary) {
+        void AsyncStorage.setItem(`mymeet_regen_${selected.code}`, String(nextCount)).catch(
+          () => {},
+        );
+        setLocalRegenCounts((prev) => ({ ...prev, [selected.code]: nextCount }));
+      }
+      setSelected((prev) =>
+        prev
+          ? {
+              ...prev,
+              ai_summary: {
+                ...summary,
+                sources_summary: {
+                  ...(summary.sources_summary ?? {}),
+                  regenerate_count: nextCount,
+                },
+              },
+            }
+          : prev,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to generate AI visual notes.');
     } finally {
@@ -442,10 +482,14 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   );
 
   const isHost = selected?.my_role === 'host';
+  const effectiveRegenCount = selected
+    ? Math.max(
+        selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
+        localRegenCounts[selected.code] ?? 0,
+      )
+    : 0;
   const regenerateLimitReached = Boolean(
-    selected?.ai_summary &&
-      !subscription?.is_unlimited &&
-      (selected.ai_summary.sources_summary?.regenerate_count ?? 0) >= 1,
+    selected?.ai_summary && !subscription?.is_unlimited && effectiveRegenCount >= 2,
   );
 
   // Step-by-step Android Back inside History: Modals -> Detail -> History List -> Previous Screen
@@ -499,19 +543,33 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
               <Pressable
                 style={[
                   styles.genBtn,
-                  { backgroundColor: regenerateLimitReached ? '#334155' : colors.accent },
-                  (generatingAi || regenerateLimitReached) && { opacity: 0.72 },
+                  { backgroundColor: regenerateLimitReached ? '#F59E0B' : colors.accent },
+                  generatingAi && { opacity: 0.7 },
                 ]}
-                disabled={generatingAi || regenerateLimitReached}
-                onPress={() => void handleGenerateAi()}
+                disabled={generatingAi}
+                onPress={() => {
+                  if (regenerateLimitReached) {
+                    setUpgradeForMcq(false);
+                    setUpgradeOpen(true);
+                    return;
+                  }
+                  void handleGenerateAi();
+                }}
               >
-                <Text style={styles.shareBtnText}>
+                <Text
+                  style={[
+                    styles.shareBtnText,
+                    regenerateLimitReached && { color: '#090D16', fontWeight: '800' },
+                  ]}
+                >
                   {generatingAi
                     ? 'Analyzing...'
                     : regenerateLimitReached
-                      ? 'Not enough credits'
+                      ? '✦ Pro'
                       : selected.ai_summary
-                        ? 'Regenerate'
+                        ? subscription?.is_unlimited
+                          ? 'Regenerate'
+                          : `Regenerate (${2 - effectiveRegenCount})`
                         : 'Generate'}
                 </Text>
               </Pressable>
