@@ -1486,7 +1486,14 @@ export async function getOrGenerateMeetingMcqsForUser(
   rawCode: string,
   userId: string,
 ): Promise<MeetingMcqQuizRecord> {
-  // TEMP TEST MODE: MCQ subscription lock removed so you can test the quiz generator freely.
+  const subscription = await getUserSubscriptionStatus(userId);
+  if (!subscription.mcq_enabled) {
+    throw new HttpError(
+      402,
+      'Session MCQ Practice Tests are included in Pro Monthly (₹349/mo) and Pro Yearly (₹899/yr). Upgrade to unlock!',
+    );
+  }
+
   const ctx = await assertMeetingAccessAndLoadContext(rawCode, userId);
   const supabase = requireSupabase();
 

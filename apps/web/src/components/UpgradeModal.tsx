@@ -199,71 +199,83 @@ export function UpgradeModal({
         {loading ? (
           <div className="empty-state">Loading MyMeet Pro plans...</div>
         ) : (
-          <div className="pro-plans-grid">
-            {plans.map((plan) => {
-              const isBest = plan.code === 'pro_yearly_899';
-              const isMcqHighlighted = highlightMcq && plan.mcq_enabled;
-              const isCurrent = subscription?.plan_code === plan.code && subscription.is_pro;
-              const isBusy = busyPlan === plan.code;
-              return (
-                <div
-                  key={plan.code}
-                  className={`pro-plan-card ${isBest ? 'pro-plan-card-best' : ''} ${
-                    isMcqHighlighted && !isBest ? 'pro-plan-card-accent' : ''
-                  }`}
-                >
-                  <div className="pro-plan-top">
-                    <div className="pro-plan-name">{plan.name}</div>
-                    {plan.badge && (
-                      <span className={`pro-plan-tag ${isBest ? 'pro-plan-tag-gold' : ''}`}>
-                        {plan.badge}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="pro-plan-price-row">
-                    <span className="pro-plan-price">₹{plan.price_inr}</span>
-                    <span className="pro-plan-cycle">
-                      {plan.code === 'pro_yearly_899'
-                        ? '/ year (~₹75/mo)'
-                        : plan.code === 'pro_monthly_349'
-                          ? '/ month'
-                          : plan.code === 'pack_49'
-                            ? '/ 15 credits · 30d'
-                            : '/ 1 credit · 30d'}
-                    </span>
-                  </div>
-
-                  <p className="pro-plan-tagline">{plan.tagline}</p>
-
-                  <ul className="pro-plan-features">
-                    {plan.highlights.map((feat) => (
-                      <li key={feat}>
-                        <CheckIcon size={14} />
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <button
-                    type="button"
-                    className={`btn ${isBest ? 'btn-pro-gold' : 'btn-primary'}`}
-                    style={{ width: '100%', marginTop: 'auto' }}
-                    disabled={Boolean(busyPlan)}
-                    onClick={() => void handleSelectPlan(plan.code as PaidPlanCode)}
+          <>
+            <div className="pro-plans-grid">
+              {plans.map((plan) => {
+                const isBest = plan.code === 'pro_yearly_899';
+                const isMcqHighlighted = highlightMcq && plan.mcq_enabled;
+                const isCurrent = subscription?.plan_code === plan.code && subscription.is_pro;
+                const isBusy = busyPlan === plan.code;
+                return (
+                  <div
+                    key={plan.code}
+                    className={`pro-plan-card ${isBest ? 'pro-plan-card-best' : ''} ${
+                      isMcqHighlighted && !isBest ? 'pro-plan-card-accent' : ''
+                    }`}
                   >
-                    {isBusy
-                      ? 'Processing...'
-                      : isCurrent && plan.is_unlimited
-                        ? `Extend ${plan.name} (₹${plan.price_inr})`
-                        : subscription?.razorpay_live
-                          ? `Pay ₹${plan.price_inr} via UPI / Card`
-                          : `Activate ₹${plan.price_inr} Plan (Test)`}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
+                    <div className="pro-plan-top">
+                      <div className="pro-plan-name">{plan.name}</div>
+                      {plan.badge && (
+                        <span className={`pro-plan-tag ${isBest ? 'pro-plan-tag-gold' : ''}`}>
+                          {plan.badge}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="pro-plan-price-row">
+                      <span className="pro-plan-price">₹{plan.price_inr}</span>
+                      <span className="pro-plan-cycle">
+                        {plan.code === 'pro_yearly_899'
+                          ? '/ year (~₹75/mo)'
+                          : plan.code === 'pro_monthly_349'
+                            ? '/ month'
+                            : plan.code === 'pack_49'
+                              ? '/ 15 credits · 30d'
+                              : '/ 1 credit · 30d'}
+                      </span>
+                    </div>
+
+                    <p className="pro-plan-tagline">{plan.tagline}</p>
+
+                    <div className="pro-plan-divider" />
+
+                    <ul className="pro-plan-features">
+                      {plan.highlights.map((feat) => (
+                        <li key={feat}>
+                          <CheckIcon size={14} />
+                          <span>{feat}</span>
+                        </li>
+                      ))}
+                    </ul>
+
+                    <button
+                      type="button"
+                      className={`btn ${isBest ? 'btn-pro-gold' : 'btn-primary'}`}
+                      style={{ width: '100%', marginTop: 'auto' }}
+                      disabled={Boolean(busyPlan)}
+                      onClick={() => void handleSelectPlan(plan.code as PaidPlanCode)}
+                    >
+                      {isBusy
+                        ? 'Opening Checkout...'
+                        : isCurrent && plan.is_unlimited
+                          ? `Extend ${plan.name} (₹${plan.price_inr})`
+                          : subscription?.razorpay_live
+                            ? `Pay ₹${plan.price_inr} · UPI / Card`
+                            : `Activate ₹${plan.price_inr} (Test)`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pro-trust-strip">
+              <span>🔒 Secured by Razorpay (UPI · GPay · PhonePe · Cards)</span>
+              <span>·</span>
+              <span>⚡ Instant Pro Activation</span>
+              <span>·</span>
+              <span>📄 Permanent Access to Unlocked Meeting Notes</span>
+            </div>
+          </>
         )}
       </div>
     </div>

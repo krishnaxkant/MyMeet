@@ -207,8 +207,15 @@ export function HistoryPage() {
     }
   };
 
-  const handleOpenMcqTest = async (_overrideSub?: UserSubscriptionStatus) => {
+  const handleOpenMcqTest = async (overrideSub?: UserSubscriptionStatus) => {
     if (!session?.access_token || !selected) return;
+    const sub = overrideSub ?? subscription;
+    if (!sub?.mcq_enabled) {
+      setUpgradeForMcq(true);
+      setUpgradeOpen(true);
+      return;
+    }
+
     setLoadingMcq(true);
     setError(null);
     try {
@@ -800,18 +807,25 @@ export function HistoryPage() {
                   Polish Every Concept Studied in &ldquo;{selected.title}&rdquo;
                 </h3>
                 <p className="status-item-desc" style={{ margin: 0 }}>
-                  Attempt 20 high-level MCQs crafted strictly from today&apos;s session topics with
-                  instant grading &amp; detailed concept explanations.
+                  {subscription?.mcq_enabled
+                    ? 'Attempt 20 high-level MCQs crafted strictly from today’s session topics with instant grading & detailed concept explanations.'
+                    : 'Attempt 20 exam-level MCQs for every session — included in Pro Monthly (₹349/mo) & Pro Yearly (₹899/yr).'}
                 </p>
               </div>
               <button
                 type="button"
-                className="btn btn-primary"
+                className={`btn ${subscription?.mcq_enabled ? 'btn-primary' : 'btn-pro-gold'}`}
                 disabled={loadingMcq}
                 onClick={() => void handleOpenMcqTest()}
               >
                 <SparklesIcon size={15} />
-                <span>{loadingMcq ? 'Preparing MCQ Test...' : 'Take MCQ Test Now →'}</span>
+                <span>
+                  {loadingMcq
+                    ? 'Preparing 20 MCQs...'
+                    : subscription?.mcq_enabled
+                      ? 'Take 20-MCQ Test Now →'
+                      : 'Unlock 20-MCQ Tests · ₹349/mo'}
+                </span>
               </button>
             </section>
           )}

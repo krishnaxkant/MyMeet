@@ -24,6 +24,11 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
   const hasAnsweredCurrent = typeof selectedOpt === 'number';
   const isCorrectCurrent = selectedOpt === question.correct_index;
 
+  // Sequential unlock: student CANNOT access a future question before attempting the current one
+  const firstUnansweredIdx = quiz.questions.findIndex((q) => typeof answers[q.id] !== 'number');
+  const maxUnlockedIdx = firstUnansweredIdx === -1 ? total - 1 : firstUnansweredIdx;
+
+  const answeredCount = Object.keys(answers).length;
   const correctCount = quiz.questions.reduce(
     (acc, q) => acc + (answers[q.id] === q.correct_index ? 1 : 0),
     0,
@@ -41,44 +46,28 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
     setShowSummary(false);
   };
 
-  const weakConcepts = quiz.questions
-    .filter((q) => answers[q.id] !== q.correct_index)
-    .map((q) => q.concept);
+  const weakConcepts = Array.from(
+    new Set(
+      quiz.questions.filter((q) => answers[q.id] !== q.correct_index).map((q) => q.concept),
+    ),
+  );
 
   return (
     <div
-      className="visual-lightbox-backdrop"
+      className="visual-lightbox-backdrop mcq-studio-backdrop"
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      style={{ padding: 16 }}
     >
-      <div
-        className="card"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 680,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          padding: 24,
-          borderRadius: 20,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 12,
-            marginBottom: 14,
-          }}
-        >
-          <div>
+      <div className="mcq-studio-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mcq-studio-glow-bar" />
+
+        <div className="mcq-studio-header">
+          <div className="mcq-studio-title-wrap">
             <span className="pro-pill-badge">
-              <SparklesIcon size={12} /> SESSION MCQ TEST
+              <SparklesIcon size={11} /> SESSION MASTERY TEST · {total} Qs
             </span>
-            <h2 style={{ margin: '6px 0 2px', fontSize: 19, fontWeight: 800 }}>
+            <h2 className="mcq-studio-title">
               {quiz.topic_label || `${meetingTitle} · Practice Test`}
             </h2>
           </div>
@@ -88,27 +77,36 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
         </div>
 
         {showSummary ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="mcq-studio-body">
             <div className="mcq-score-card">
-              <div className="mcq-score-big">
-                {correctCount} / {total}
+              <div className="mcq-score-ring">
+                <span className="mcq-score-pct-ring">{pct}%</span>
               </div>
-              <div className="mcq-score-pct">{pct}% Concept Mastery</div>
-              <p className="status-item-desc" style={{ margin: 0 }}>
-                {pct >= 80
-                  ? 'Outstanding mastery! You nailed today’s core concepts.'
-                  : pct >= 50
-                    ? 'Good progress! Review the highlighted concepts below and retake.'
-                    : 'Great practice run — revisit the Pro Notes cheat sheet and try again!'}
+              <div className="mcq-score-big">
+                {correctCount} <span className="mcq-score-denom">/ {total}</span>
+              </div>
+              <div className="mcq-score-pct">
+                {pct >= 85
+                  ? 'Exam-Ready Mastery'
+                  : pct >= 60
+                    ? 'Solid Understanding'
+                    : 'Concept Review Recommended'}
+              </div>
+              <p className="mcq-score-sub">
+                {pct >= 85
+                  ? 'Outstanding performance — you nailed today’s session concepts.'
+                  : pct >= 60
+                    ? 'Great attempt! Polish the weak concepts below and retake to hit 90%+.'
+                    : 'Good practice run — review the Pro Master Notes cheat sheet and try again.'}
               </p>
             </div>
 
             {weakConcepts.length > 0 && (
               <div className="mcq-review-box">
-                <strong style={{ fontSize: 13 }}>Concepts to Polish:</strong>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                  {Array.from(new Set(weakConcepts)).map((c) => (
-                    <span key={c} className="badge badge-warning">
+                <div className="mcq-review-title">Concepts to Polish ({weakConcepts.length})</div>
+                <div className="mcq-review-chips">
+                  {weakConcepts.map((c) => (
+                    <span key={c} className="mcq-weak-chip">
                       {c}
                     </span>
                   ))}
@@ -116,48 +114,44 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div className="mcq-footer-nav">
               <button type="button" className="btn btn-secondary" onClick={handleRetake}>
-                Retake Quiz
+                Retake All {total} Questions
               </button>
-              <button type="button" className="btn btn-primary" onClick={onClose}>
-                Done
+              <button type="button" className="btn btn-pro-gold" onClick={onClose}>
+                Finish &amp; Return to Notes
               </button>
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="mcq-studio-body">
             <div className="mcq-progress-row">
-              <span style={{ fontSize: 12.5, fontWeight: 700 }}>
-                Question {currentIdx + 1} of {total} · Score: {correctCount}/
-                {Object.keys(answers).length}
-              </span>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <span className="badge badge-neutral">{question.concept}</span>
-                <span
-                  className={`badge ${
-                    question.difficulty === 'hard'
-                      ? 'badge-warning'
-                      : question.difficulty === 'easy'
-                        ? 'badge-success'
-                        : 'badge-neutral'
-                  }`}
-                >
+              <div className="mcq-counter-pill">
+                Question <strong>{currentIdx + 1}</strong> of {total}
+              </div>
+              <div className="mcq-meta-tags">
+                <span className="mcq-score-chip">
+                  Score: {correctCount}/{answeredCount}
+                </span>
+                <span className="mcq-concept-chip">{question.concept}</span>
+                <span className={`mcq-diff-chip mcq-diff-${question.difficulty}`}>
                   {question.difficulty}
                 </span>
               </div>
             </div>
 
-            {/* 20-Question Quick Jump Palette */}
+            {/* Sequential 20-Question Palette (future questions locked until current is attempted) */}
             <div className="mcq-palette">
               {quiz.questions.map((item, i) => {
                 const ans = answers[item.id];
                 const isDone = typeof ans === 'number';
                 const isGood = isDone && ans === item.correct_index;
+                const isLocked = i > maxUnlockedIdx;
                 const cls = [
                   'mcq-palette-dot',
                   i === currentIdx ? 'mcq-palette-current' : '',
                   isDone ? (isGood ? 'mcq-palette-ok' : 'mcq-palette-bad') : '',
+                  isLocked ? 'mcq-palette-locked' : '',
                 ]
                   .filter(Boolean)
                   .join(' ');
@@ -165,9 +159,16 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
                   <button
                     key={item.id}
                     type="button"
+                    disabled={isLocked}
                     className={cls}
-                    onClick={() => setCurrentIdx(i)}
-                    title={`Jump to Question ${i + 1}`}
+                    onClick={() => {
+                      if (!isLocked) setCurrentIdx(i);
+                    }}
+                    title={
+                      isLocked
+                        ? `Attempt Question ${maxUnlockedIdx + 1} first to unlock`
+                        : `Question ${i + 1}`
+                    }
                   >
                     {i + 1}
                   </button>
@@ -178,68 +179,71 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
             <div className="mcq-progress-track">
               <div
                 className="mcq-progress-fill"
-                style={{ width: `${((currentIdx + 1) / total) * 100}%` }}
+                style={{ width: `${(answeredCount / total) * 100}%` }}
               />
             </div>
 
-            <div className="mcq-question-text">{question.question}</div>
+            <div className="mcq-question-card">
+              <div className="mcq-question-text">{question.question}</div>
 
-            <div className="mcq-options-list">
-              {question.options.map((opt, idx) => {
-                const isSelected = selectedOpt === idx;
-                const isRight = idx === question.correct_index;
-                let cls = 'mcq-option-btn';
-                if (hasAnsweredCurrent) {
-                  if (isRight) cls += ' mcq-option-correct';
-                  else if (isSelected) cls += ' mcq-option-wrong';
-                }
-                return (
-                  <button
-                    key={idx}
-                    type="button"
-                    className={cls}
-                    onClick={() => handleSelectOption(idx)}
-                  >
-                    <span className="mcq-option-letter">{OPTION_LETTERS[idx]}</span>
-                    <span style={{ flex: 1, textAlign: 'left' }}>{opt}</span>
-                    {hasAnsweredCurrent && isRight && <CheckIcon size={16} />}
-                  </button>
-                );
-              })}
+              <div className="mcq-options-list">
+                {question.options.map((opt, idx) => {
+                  const isSelected = selectedOpt === idx;
+                  const isRight = idx === question.correct_index;
+                  let cls = 'mcq-option-btn';
+                  if (hasAnsweredCurrent) {
+                    if (isRight) cls += ' mcq-option-correct';
+                    else if (isSelected) cls += ' mcq-option-wrong';
+                    else cls += ' mcq-option-dim';
+                  }
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      className={cls}
+                      disabled={hasAnsweredCurrent}
+                      onClick={() => handleSelectOption(idx)}
+                    >
+                      <span className="mcq-option-letter">{OPTION_LETTERS[idx]}</span>
+                      <span className="mcq-option-label">{opt}</span>
+                      {hasAnsweredCurrent && isRight && (
+                        <span className="mcq-option-check">
+                          <CheckIcon size={15} />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            {hasAnsweredCurrent && (
+            {hasAnsweredCurrent ? (
               <div
                 className={`mcq-explanation ${
                   isCorrectCurrent ? 'mcq-explanation-ok' : 'mcq-explanation-warn'
                 }`}
               >
-                <strong>
+                <div className="mcq-explanation-head">
                   {isCorrectCurrent
-                    ? '✓ Correct!'
-                    : `✕ Correct Answer: ${OPTION_LETTERS[question.correct_index]}`}
-                </strong>
-                <p style={{ margin: '4px 0 0', fontSize: 13.5, lineHeight: 1.5 }}>
-                  {question.explanation}
-                </p>
+                    ? '✓ Correct Answer'
+                    : `✕ Correct Answer: Option ${OPTION_LETTERS[question.correct_index]}`}
+                </div>
+                <p className="mcq-explanation-body">{question.explanation}</p>
+              </div>
+            ) : (
+              <div className="mcq-attempt-hint">
+                Select an option above to unlock the next question.
               </div>
             )}
 
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginTop: 6,
-              }}
-            >
+            <div className="mcq-footer-nav">
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={currentIdx === 0}
                 onClick={() => setCurrentIdx((i) => Math.max(0, i - 1))}
               >
-                Previous
+                ← Previous
               </button>
               {currentIdx < total - 1 ? (
                 <button
@@ -257,7 +261,7 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
                   disabled={!hasAnsweredCurrent}
                   onClick={() => setShowSummary(true)}
                 >
-                  View Final Score →
+                  View Mastery Score →
                 </button>
               )}
             </div>

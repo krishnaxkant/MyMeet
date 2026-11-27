@@ -26,6 +26,10 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
   const answered = typeof selected === 'number';
   const isRight = selected === q.correct_index;
 
+  // Sequential unlock: student CANNOT access a future question before attempting the current one
+  const firstUnansweredIdx = quiz.questions.findIndex((item) => typeof answers[item.id] !== 'number');
+  const maxUnlockedIdx = firstUnansweredIdx === -1 ? total - 1 : firstUnansweredIdx;
+
   const score = quiz.questions.reduce(
     (acc, item) => acc + (answers[item.id] === item.correct_index ? 1 : 0),
     0,
@@ -142,11 +146,14 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                     const ans = answers[item.id];
                     const isDone = typeof ans === 'number';
                     const isGood = isDone && ans === item.correct_index;
+                    const isLocked = i > maxUnlockedIdx;
                     return (
                       <Pressable
                         key={item.id}
+                        disabled={isLocked}
                         style={[
                           styles.paletteDot,
+                          isLocked && { opacity: 0.32 },
                           {
                             backgroundColor: isDone
                               ? isGood
@@ -163,7 +170,9 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                                   : colors.border,
                           },
                         ]}
-                        onPress={() => setIdx(i)}
+                        onPress={() => {
+                          if (!isLocked) setIdx(i);
+                        }}
                       >
                         <Text
                           style={{
@@ -220,7 +229,7 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                   );
                 })}
 
-                {answered && (
+                {answered ? (
                   <View
                     style={[
                       styles.expBox,
@@ -233,12 +242,23 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                     ]}
                   >
                     <Text style={{ color: colors.text, fontWeight: '800', fontSize: 13 }}>
-                      {isRight ? '✓ Correct!' : `✕ Right Answer: ${LETTERS[q.correct_index]}`}
+                      {isRight ? '✓ Correct Answer!' : `✕ Right Answer: ${LETTERS[q.correct_index]}`}
                     </Text>
                     <Text style={{ color: colors.textMuted, fontSize: 12.5, marginTop: 4, lineHeight: 18 }}>
                       {q.explanation}
                     </Text>
                   </View>
+                ) : (
+                  <Text
+                    style={{
+                      color: colors.textMuted,
+                      fontSize: 12,
+                      textAlign: 'center',
+                      paddingVertical: 4,
+                    }}
+                  >
+                    Select an option above to unlock the next question.
+                  </Text>
                 )}
 
                 <View style={styles.navRow}>

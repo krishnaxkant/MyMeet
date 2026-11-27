@@ -66,8 +66,8 @@ export function UpgradePlansModal({
     try {
       const order = await createBillingOrder(accessToken, planCode, meetingCode);
       if (order.provider === 'razorpay') {
-        // Open MyMeet Web profile/billing for secure Razorpay UPI Checkout on Android
-        await Linking.openURL(`${WEB_APP_URL}/profile`);
+        // Open MyMeet Web secure Razorpay UPI Checkout directly with this plan highlighted
+        await Linking.openURL(`${WEB_APP_URL}/profile?upgrade=${encodeURIComponent(planCode)}`);
         setBusyPlan(null);
         return;
       }

@@ -80,7 +80,11 @@ export function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeOpen, setUpgradeOpen] = useState(() =>
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).has('upgrade')
+      : false,
+  );
   const [savedNotice, setSavedNotice] = useState<{
     id: number;
     text: string;
