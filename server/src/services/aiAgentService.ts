@@ -193,7 +193,7 @@ const GEMINI_FALLBACK_MODELS = [
 
 function getGeminiModelCandidates(useProTier = false): string[] {
   const baseList = useProTier
-    ? [env.geminiProModel, 'gemini-3-flash-preview', env.geminiModel, ...GEMINI_FALLBACK_MODELS]
+    ? [env.geminiProModel, 'gemini-3.5-flash-lite', 'gemini-3-flash-preview', 'gemini-3.1-flash-lite']
     : [env.geminiModel, ...GEMINI_FALLBACK_MODELS];
   const ordered = baseList
     .map((m) => m.trim())
@@ -212,7 +212,7 @@ async function callGeminiApi(
     contents: [{ role: 'user', parts }],
     generationConfig: {
       temperature: useProTier ? 0.3 : 0.35,
-      ...(useProTier ? { maxOutputTokens: 8192 } : {}),
+      ...(useProTier ? { maxOutputTokens: 16384 } : {}),
       ...(expectJson ? { responseMimeType: 'application/json' } : {}),
     },
   };
@@ -1519,6 +1519,19 @@ export async function getOrGenerateMeetingMcqsForUser(
     );
   }
 
+  const visualFlowSummaryText = (ctx.baseSummary?.sources_summary?.visual_flow ?? [])
+    .map(
+      (s, i) =>
+        `${i + 1}. ${s.title}: ${s.body}${s.formula ? ` | Formula/Code: ${s.formula}` : ''}${
+          s.bullets?.length ? ` | Points: ${s.bullets.join('; ')}` : ''
+        }`,
+    )
+    .join('\n');
+
+  const keyPointsSummaryText = (ctx.baseSummary?.key_points ?? [])
+    .map((k) => `- ${k}`)
+    .join('\n');
+
   const mcqPrompt = [
     'You are an elite Competitive Exam & Concept Mastery Quiz Designer for MyMeet Pro.',
     'Generate EXACTLY 20 high-quality, non-repetitive Multiple Choice Questions (MCQs) that thoroughly cover EVERY concept, sub-topic, comparison, formula, code behavior, and real-world implication discussed or finalized by the [HOST]/[CO-HOST] in this session.',
@@ -1529,7 +1542,7 @@ export async function getOrGenerateMeetingMcqsForUser(
     '   - 5 "easy" questions: sharp conceptual clarity & core definitions.',
     '   - 8 "medium" questions: applied scenarios, output prediction, formula/numerical application, or comparing two methods/attributes.',
     '   - 7 "hard" questions: tricky exam/interview traps, edge cases, debugging scenarios, "which statement is FALSE/TRUE" or "what happens if..." reasoning.',
-    '3. Every question MUST have 4 plausible, distinct options (no silly obvious wrong options) and 1 unambiguous `correct_index` (0, 1, 2, or 3). Vary `correct_index` across 0, 1, 2, 3 fairly.',
+    '3. Every question MUST have an `options` JSON ARRAY of 4 plausible, distinct strings and 1 integer `correct_index` (0, 1, 2, or 3). Vary `correct_index` across 0, 1, 2, 3 fairly.',
     '4. Include a crisp, crystal-clear `explanation` (1-3 sentences) explaining WHY the right answer is correct and why the main distractor is wrong so the student masters the concept.',
     '5. Use clean Unicode math (e.g. u², θ, √, ÷), NEVER raw LaTeX backslashes like \\frac.',
     '6. Ignore casual chatter and rejected participant mistakes.',
@@ -1552,10 +1565,12 @@ export async function getOrGenerateMeetingMcqsForUser(
     '',
     `Session Topic: ${ctx.meeting.title}`,
     '',
-    '--- BASE SUMMARY ---',
+    '--- SESSION SUMMARY & STUDY NOTES ---',
     ctx.baseSummary?.overview || '(None)',
+    visualFlowSummaryText ? `\n--- VISUAL STUDY SECTIONS ---\n${visualFlowSummaryText}` : '',
+    keyPointsSummaryText ? `\n--- KEY TAKEAWAYS ---\n${keyPointsSummaryText}` : '',
     ctx.baseSummary?.detailed_notes_markdown
-      ? `\n${ctx.baseSummary.detailed_notes_markdown.slice(0, 3500)}`
+      ? `\n--- DETAILED NOTES ---\n${ctx.baseSummary.detailed_notes_markdown.slice(0, 3500)}`
       : '',
     '',
     '--- CHRONOLOGICAL SPOKEN VOICE CONTENT (ROLE-TAGGED) ---',
@@ -1570,29 +1585,77 @@ export async function getOrGenerateMeetingMcqsForUser(
     throw new HttpError(503, 'AI Quiz generator is temporarily busy. Please try again shortly.');
   }
 
-  let parsed: Record<string, unknown>;
+  let parsedRaw: unknown;
   try {
     const cleaned = geminiRes.text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-    parsed = JSON.parse(cleaned) as Record<string, unknown>;
-  } catch {
+    parsedRaw = JSON.parse(cleaned);
+  } catch (parseErr) {
+    console.warn('[ai-agent] MCQ JSON parse error:', parseErr, geminiRes.text.slice(0, 260));
     throw new HttpError(502, 'Could not parse generated MCQ quiz. Please try again.');
   }
 
-  const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const parsedObj =
+    parsedRaw && typeof parsedRaw === 'object' && !Array.isArray(parsedRaw)
+      ? (parsedRaw as Record<string, unknown>)
+      : {};
+
+  const rawQuestions: unknown[] = Array.isArray(parsedRaw)
+    ? parsedRaw
+    : Array.isArray(parsedObj.questions)
+      ? parsedObj.questions
+      : Array.isArray(parsedObj.mcqs)
+        ? parsedObj.mcqs
+        : Array.isArray(parsedObj.quiz)
+          ? parsedObj.quiz
+          : Array.isArray(parsedObj.items)
+            ? parsedObj.items
+            : [];
+
   const questions: SessionMcqQuestion[] = rawQuestions
     .filter((q): q is Record<string, unknown> => Boolean(q && typeof q === 'object'))
     .map((q, idx): SessionMcqQuestion | null => {
-      const text = typeof q.question === 'string' ? q.question.trim() : '';
-      const opts = Array.isArray(q.options)
-        ? q.options.map((o) => String(o ?? '').trim()).filter(Boolean)
-        : [];
-      const correctIdx =
-        typeof q.correct_index === 'number' &&
-        Number.isInteger(q.correct_index) &&
-        q.correct_index >= 0 &&
-        q.correct_index <= 3
-          ? q.correct_index
-          : 0;
+      const text =
+        typeof q.question === 'string'
+          ? q.question.trim()
+          : typeof q.prompt === 'string'
+            ? q.prompt.trim()
+            : typeof q.text === 'string'
+              ? q.text.trim()
+              : '';
+
+      let opts: string[] = [];
+      if (Array.isArray(q.options)) {
+        opts = q.options.map((o) => String(o ?? '').trim()).filter(Boolean);
+      } else if (q.options && typeof q.options === 'object') {
+        const optObj = q.options as Record<string, unknown>;
+        opts = ['A', 'B', 'C', 'D', 'a', 'b', 'c', 'd']
+          .map((k) => (typeof optObj[k] === 'string' ? (optObj[k] as string).trim() : ''))
+          .filter(Boolean);
+        if (opts.length < 4) {
+          opts = Object.values(optObj)
+            .map((v) => String(v ?? '').trim())
+            .filter(Boolean);
+        }
+      } else if (Array.isArray(q.choices)) {
+        opts = q.choices.map((o) => String(o ?? '').trim()).filter(Boolean);
+      }
+
+      const rawCorrect = q.correct_index ?? q.correctIndex ?? q.answer ?? q.correct_answer;
+      let correctIdx = 0;
+      if (typeof rawCorrect === 'number' && Number.isInteger(rawCorrect) && rawCorrect >= 0 && rawCorrect <= 3) {
+        correctIdx = rawCorrect;
+      } else if (typeof rawCorrect === 'string') {
+        const norm = rawCorrect.trim().toUpperCase();
+        if (norm === 'A' || norm === '0') correctIdx = 0;
+        else if (norm === 'B' || norm === '1') correctIdx = 1;
+        else if (norm === 'C' || norm === '2') correctIdx = 2;
+        else if (norm === 'D' || norm === '3') correctIdx = 3;
+        else {
+          const matchIdx = opts.findIndex((o) => o.toUpperCase() === norm);
+          if (matchIdx >= 0 && matchIdx <= 3) correctIdx = matchIdx;
+        }
+      }
+
       if (!text || opts.length < 4) return null;
       const diffRaw = typeof q.difficulty === 'string' ? q.difficulty.toLowerCase() : 'medium';
       const difficulty: 'easy' | 'medium' | 'hard' =
@@ -1617,12 +1680,18 @@ export async function getOrGenerateMeetingMcqsForUser(
     .slice(0, 25);
 
   if (questions.length === 0) {
+    console.warn(
+      '[ai-agent] MCQ produced 0 valid questions. Model:',
+      geminiRes.model,
+      'Raw snippet:',
+      geminiRes.text.slice(0, 350),
+    );
     throw new HttpError(502, 'Could not build valid practice MCQs for this session.');
   }
 
   const topicLabel =
-    typeof parsed.topic_label === 'string' && parsed.topic_label.trim()
-      ? parsed.topic_label.trim().slice(0, 120)
+    typeof parsedObj.topic_label === 'string' && parsedObj.topic_label.trim()
+      ? parsedObj.topic_label.trim().slice(0, 120)
       : `${ctx.meeting.title} · Mastery Quiz`;
 
   const { data: saved, error: saveErr } = await supabase
