@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { env } from '../config/env.js';
 import { getLiveKitHealth } from '../config/livekit.js';
 import { checkSupabaseConnection } from '../config/supabase.js';
+import { isGeminiConfigured } from '../services/aiAgentService.js';
 
 export const getHealth = async (
   _req: Request,
@@ -11,6 +12,10 @@ export const getHealth = async (
   try {
     const supabase = await checkSupabaseConnection();
     const livekit = getLiveKitHealth();
+    const gemini = {
+      configured: isGeminiConfigured(),
+      model: env.geminiModel,
+    };
     const isDegraded = supabase.status === 'error';
 
     res.status(isDegraded ? 503 : 200).json({
@@ -22,6 +27,7 @@ export const getHealth = async (
       uptimeSeconds: Math.round(process.uptime()),
       supabase,
       livekit,
+      gemini,
     });
   } catch (error) {
     next(error);
