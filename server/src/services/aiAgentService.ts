@@ -212,11 +212,13 @@ async function callGeminiApi(
     contents: [{ role: 'user', parts }],
     generationConfig: {
       temperature: useProTier ? 0.3 : 0.35,
+      ...(useProTier ? { maxOutputTokens: 8192 } : {}),
       ...(expectJson ? { responseMimeType: 'application/json' } : {}),
     },
   };
 
   const candidates = getGeminiModelCandidates(useProTier);
+  const timeoutMs = useProTier ? 45_000 : 25_000;
   for (const model of candidates) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
       model,
@@ -228,7 +230,7 @@ async function callGeminiApi(
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(25_000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
 
         if (!response.ok) {
@@ -1495,7 +1497,8 @@ export async function getOrGenerateMeetingMcqsForUser(
     .eq('meeting_id', ctx.meeting.id)
     .maybeSingle<MeetingMcqQuizRecord>();
 
-  if (!existingErr && existing && Array.isArray(existing.questions) && existing.questions.length > 0) {
+  // Reuse cached quiz only if it already has the full 20-question set
+  if (!existingErr && existing && Array.isArray(existing.questions) && existing.questions.length >= 20) {
     return existing;
   }
 
@@ -1517,23 +1520,27 @@ export async function getOrGenerateMeetingMcqsForUser(
   }
 
   const mcqPrompt = [
-    'You are an expert Exam & Concept Mastery Quiz Designer for MyMeet Pro.',
-    'Generate 8 to 10 high-quality Multiple Choice Questions (MCQs) strictly based on what was taught, explained, or finalized by the [HOST]/[CO-HOST] in this exact session.',
+    'You are an elite Competitive Exam & Concept Mastery Quiz Designer for MyMeet Pro.',
+    'Generate EXACTLY 20 high-quality, non-repetitive Multiple Choice Questions (MCQs) that thoroughly cover EVERY concept, sub-topic, comparison, formula, code behavior, and real-world implication discussed or finalized by the [HOST]/[CO-HOST] in this session.',
     '',
-    'RULES:',
-    '1. Mix difficulties cleanly: ~3 easy (core recall), ~4 medium (application/code/formula), ~2-3 hard (tricky edge cases / exam traps).',
-    '2. Every question MUST have exactly 4 distinct options (A, B, C, D) and 1 unambiguous `correct_index` (0, 1, 2, or 3).',
-    '3. Include a crisp, helpful `explanation` (1-3 sentences) explaining WHY the right answer is correct so the student polishes the concept immediately.',
-    '4. Use clean Unicode math (no raw LaTeX backslashes like \\frac).',
-    '5. Ignore casual chatter and rejected participant mistakes.',
+    'STRICT QUALITY RULES:',
+    '1. EXACT COUNT = 20 QUESTIONS (q1 through q20). Cover every angle of the discussed topics without repeating the same question in different words.',
+    '2. HIGH-LEVEL DIFFICULTY MIX:',
+    '   - 5 "easy" questions: sharp conceptual clarity & core definitions.',
+    '   - 8 "medium" questions: applied scenarios, output prediction, formula/numerical application, or comparing two methods/attributes.',
+    '   - 7 "hard" questions: tricky exam/interview traps, edge cases, debugging scenarios, "which statement is FALSE/TRUE" or "what happens if..." reasoning.',
+    '3. Every question MUST have 4 plausible, distinct options (no silly obvious wrong options) and 1 unambiguous `correct_index` (0, 1, 2, or 3). Vary `correct_index` across 0, 1, 2, 3 fairly.',
+    '4. Include a crisp, crystal-clear `explanation` (1-3 sentences) explaining WHY the right answer is correct and why the main distractor is wrong so the student masters the concept.',
+    '5. Use clean Unicode math (e.g. u², θ, √, ÷), NEVER raw LaTeX backslashes like \\frac.',
+    '6. Ignore casual chatter and rejected participant mistakes.',
     '',
     'Return ONLY valid JSON matching this schema:',
     '{',
-    '  "topic_label": "Short quiz topic title e.g. DOM & Script Loading Mastery Quiz",',
+    '  "topic_label": "Short quiz topic title e.g. DOM & Script Loading Mastery Test (20 Qs)",',
     '  "questions": [',
     '    {',
     '      "id": "q1",',
-    '      "question": "Clear question text",',
+    '      "question": "Clear, high-standard question text",',
     '      "options": ["Option A", "Option B", "Option C", "Option D"],',
     '      "correct_index": 1,',
     '      "explanation": "Why Option B is correct and what concept to remember",',
@@ -1607,7 +1614,7 @@ export async function getOrGenerateMeetingMcqsForUser(
       };
     })
     .filter((q): q is SessionMcqQuestion => q !== null)
-    .slice(0, 10);
+    .slice(0, 25);
 
   if (questions.length === 0) {
     throw new HttpError(502, 'Could not build valid practice MCQs for this session.');

@@ -129,7 +129,8 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div className="mcq-progress-row">
               <span style={{ fontSize: 12.5, fontWeight: 700 }}>
-                Question {currentIdx + 1} of {total}
+                Question {currentIdx + 1} of {total} · Score: {correctCount}/
+                {Object.keys(answers).length}
               </span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <span className="badge badge-neutral">{question.concept}</span>
@@ -145,6 +146,33 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
                   {question.difficulty}
                 </span>
               </div>
+            </div>
+
+            {/* 20-Question Quick Jump Palette */}
+            <div className="mcq-palette">
+              {quiz.questions.map((item, i) => {
+                const ans = answers[item.id];
+                const isDone = typeof ans === 'number';
+                const isGood = isDone && ans === item.correct_index;
+                const cls = [
+                  'mcq-palette-dot',
+                  i === currentIdx ? 'mcq-palette-current' : '',
+                  isDone ? (isGood ? 'mcq-palette-ok' : 'mcq-palette-bad') : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ');
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className={cls}
+                    onClick={() => setCurrentIdx(i)}
+                    title={`Jump to Question ${i + 1}`}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="mcq-progress-track">

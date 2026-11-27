@@ -800,8 +800,8 @@ export function HistoryPage() {
                   Polish Every Concept Studied in &ldquo;{selected.title}&rdquo;
                 </h3>
                 <p className="status-item-desc" style={{ margin: 0 }}>
-                  Take an instant 8–10 question MCQ quiz crafted strictly from today&apos;s session
-                  with detailed concept explanations.
+                  Attempt 20 high-level MCQs crafted strictly from today&apos;s session topics with
+                  instant grading &amp; detailed concept explanations.
                 </p>
               </div>
               <button

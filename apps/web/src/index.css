@@ -4023,3 +4023,36 @@ code {
     padding: 6px 12px;
   }
 }
+
+
+.mcq-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.mcq-palette-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.mcq-palette-current {
+  border-color: #6366f1;
+  color: var(--text);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
+}
+.mcq-palette-ok {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: #22c55e;
+  color: #22c55e;
+}
+.mcq-palette-bad {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+  color: #ef4444;
+}

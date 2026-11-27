@@ -767,7 +767,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                   Take MCQ Test for Today&apos;s Session
                 </Text>
                 <Text style={styles.proBannerSub}>
-                  Test yourself with 8–10 AI MCQs built strictly from this session + instant concept
+                  Attempt 20 high-level MCQs built strictly from this session + instant concept
                   explanations.
                 </Text>
                 <Pressable

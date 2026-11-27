@@ -126,12 +126,58 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
               <View style={{ gap: 12 }}>
                 <View style={styles.metaRow}>
                   <Text style={{ color: colors.textMuted, fontSize: 12, fontWeight: '700' }}>
-                    Question {idx + 1} of {total}
+                    Q{idx + 1} / {total} · Score: {score}/{Object.keys(answers).length}
                   </Text>
                   <Text style={styles.conceptTag}>
                     {q.concept} · {q.difficulty.toUpperCase()}
                   </Text>
                 </View>
+
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.paletteRow}
+                >
+                  {quiz.questions.map((item, i) => {
+                    const ans = answers[item.id];
+                    const isDone = typeof ans === 'number';
+                    const isGood = isDone && ans === item.correct_index;
+                    return (
+                      <Pressable
+                        key={item.id}
+                        style={[
+                          styles.paletteDot,
+                          {
+                            backgroundColor: isDone
+                              ? isGood
+                                ? 'rgba(34, 197, 94, 0.22)'
+                                : 'rgba(239, 68, 68, 0.22)'
+                              : colors.surfaceElevated,
+                            borderColor:
+                              i === idx
+                                ? '#7C3AED'
+                                : isDone
+                                  ? isGood
+                                    ? '#22C55E'
+                                    : '#EF4444'
+                                  : colors.border,
+                          },
+                        ]}
+                        onPress={() => setIdx(i)}
+                      >
+                        <Text
+                          style={{
+                            color: isDone ? (isGood ? '#22C55E' : '#EF4444') : colors.text,
+                            fontSize: 11,
+                            fontWeight: '800',
+                          }}
+                        >
+                          {i + 1}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
 
                 <Text style={[styles.qText, { color: colors.text }]}>{q.question}</Text>
 
@@ -348,4 +394,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(245, 158, 11, 0.2)',
   },
   weakChipText: { color: '#F59E0B', fontSize: 11.5, fontWeight: '700' },
+  paletteRow: { flexDirection: 'row', gap: 6, paddingVertical: 2 },
+  paletteDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
