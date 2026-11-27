@@ -1,5 +1,9 @@
 import { getSupabaseAdmin } from '../config/supabase.js';
-import type { MeetingAiSummaryRecord } from './aiAgentService.js';
+import {
+  getMeetingProNotesForUser,
+  type MeetingAiSummaryRecord,
+  type MeetingProNotesRecord,
+} from './aiAgentService.js';
 import type { MeetingMessageInfo } from './chatService.js';
 import {
   HttpError,
@@ -31,6 +35,7 @@ export interface MeetingHistoryDetail extends MeetingHistoryItem {
   participants: MeetingParticipantInfo[];
   messages: MeetingMessageInfo[];
   ai_summary: MeetingAiSummaryRecord | null;
+  pro_notes: MeetingProNotesRecord | null;
   transcript_count: number;
   screen_note_count: number;
 }
@@ -205,32 +210,34 @@ export async function getMeetingHistoryDetail(
     throw new HttpError(404, 'Meeting history record not found.');
   }
 
-  const [partsRes, msgsRes, summaryRes, transcriptCountRes, screenCountRes] = await Promise.all([
-    supabase
-      .from('meeting_participants')
-      .select('id, meeting_id, user_id, role, status, joined_at, left_at')
-      .eq('meeting_id', meeting.id)
-      .order('joined_at', { ascending: true }),
-    supabase
-      .from('meeting_messages')
-      .select('id, meeting_id, sender_id, content, created_at')
-      .eq('meeting_id', meeting.id)
-      .order('created_at', { ascending: true })
-      .limit(300),
-    supabase
-      .from('meeting_ai_summaries')
-      .select('*')
-      .eq('meeting_id', meeting.id)
-      .maybeSingle<MeetingAiSummaryRecord>(),
-    supabase
-      .from('meeting_transcripts')
-      .select('id', { count: 'exact', head: true })
-      .eq('meeting_id', meeting.id),
-    supabase
-      .from('meeting_screen_notes')
-      .select('id', { count: 'exact', head: true })
-      .eq('meeting_id', meeting.id),
-  ]);
+  const [partsRes, msgsRes, summaryRes, transcriptCountRes, screenCountRes, proNotes] =
+    await Promise.all([
+      supabase
+        .from('meeting_participants')
+        .select('id, meeting_id, user_id, role, status, joined_at, left_at')
+        .eq('meeting_id', meeting.id)
+        .order('joined_at', { ascending: true }),
+      supabase
+        .from('meeting_messages')
+        .select('id, meeting_id, sender_id, content, created_at')
+        .eq('meeting_id', meeting.id)
+        .order('created_at', { ascending: true })
+        .limit(300),
+      supabase
+        .from('meeting_ai_summaries')
+        .select('*')
+        .eq('meeting_id', meeting.id)
+        .maybeSingle<MeetingAiSummaryRecord>(),
+      supabase
+        .from('meeting_transcripts')
+        .select('id', { count: 'exact', head: true })
+        .eq('meeting_id', meeting.id),
+      supabase
+        .from('meeting_screen_notes')
+        .select('id', { count: 'exact', head: true })
+        .eq('meeting_id', meeting.id),
+      getMeetingProNotesForUser(meeting.id, userId),
+    ]);
 
   if (partsRes.error) {
     throw new HttpError(500, `Failed to load participants: ${partsRes.error.message}`);
@@ -309,6 +316,7 @@ export async function getMeetingHistoryDetail(
     participants,
     messages,
     ai_summary: summaryRes.error ? null : summaryRes.data ?? null,
+    pro_notes: proNotes ?? null,
     transcript_count: transcriptCountRes.error ? 0 : transcriptCountRes.count ?? 0,
     screen_note_count: screenCountRes.error ? 0 : screenCountRes.count ?? 0,
   };

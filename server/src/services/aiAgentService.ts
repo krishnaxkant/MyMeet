@@ -1,8 +1,68 @@
 import { env } from '../config/env.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
 import type { AuthenticatedUser } from '../middleware/authMiddleware.js';
+import {
+  consumeOneProCreditIfNeeded,
+  getUserSubscriptionStatus,
+  type UserSubscriptionStatus,
+} from './billingService.js';
 import { getMeetingByCode, HttpError, normalizeMeetingCode } from './meetingService.js';
 import { getOrCreateProfile } from './profileService.js';
+
+export interface ProNoteDeepSection {
+  title: string;
+  kind: 'concept' | 'code' | 'derivation' | 'example' | 'decision';
+  explanation: string;
+  code_or_formula?: string;
+  bullets?: string[];
+  worked_example?: string;
+}
+
+export interface ProComparisonTable {
+  title?: string;
+  headers: string[];
+  rows: string[][];
+}
+
+export interface ProExamTrap {
+  trap: string;
+  fix: string;
+}
+
+export interface MeetingProNotesRecord {
+  id: string;
+  meeting_id: string;
+  user_id: string;
+  unlock_source: string;
+  environment_label: string;
+  pro_overview: string;
+  deep_sections: ProNoteDeepSection[];
+  comparison_table: ProComparisonTable | null;
+  exam_traps: ProExamTrap[];
+  cheat_sheet: string[];
+  pro_markdown: string;
+  model_used: string;
+  created_at: string;
+}
+
+export interface SessionMcqQuestion {
+  id: string;
+  question: string;
+  options: [string, string, string, string];
+  correct_index: number;
+  explanation: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  concept: string;
+}
+
+export interface MeetingMcqQuizRecord {
+  id: string;
+  meeting_id: string;
+  topic_label: string;
+  questions: SessionMcqQuestion[];
+  model_used: string;
+  created_at: string;
+}
 
 export type VisualNoteKind = 'concept' | 'formula' | 'step' | 'example' | 'takeaway';
 
@@ -130,8 +190,11 @@ const GEMINI_FALLBACK_MODELS = [
   'gemini-3-flash-preview',
 ];
 
-function getGeminiModelCandidates(): string[] {
-  const ordered = [env.geminiModel, ...GEMINI_FALLBACK_MODELS]
+function getGeminiModelCandidates(useProTier = false): string[] {
+  const baseList = useProTier
+    ? [env.geminiProModel, 'gemini-3-flash-preview', env.geminiModel, ...GEMINI_FALLBACK_MODELS]
+    : [env.geminiModel, ...GEMINI_FALLBACK_MODELS];
+  const ordered = baseList
     .map((m) => m.trim())
     .filter((m) => m.length > 0 && m !== 'gemini-2.5-flash');
   return Array.from(new Set(ordered));
@@ -140,18 +203,19 @@ function getGeminiModelCandidates(): string[] {
 async function callGeminiApi(
   parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>,
   expectJson = false,
+  useProTier = false,
 ): Promise<{ text: string; model: string } | null> {
   if (!isGeminiConfigured()) return null;
 
   const body: Record<string, unknown> = {
     contents: [{ role: 'user', parts }],
     generationConfig: {
-      temperature: 0.35,
+      temperature: useProTier ? 0.3 : 0.35,
       ...(expectJson ? { responseMimeType: 'application/json' } : {}),
     },
   };
 
-  const candidates = getGeminiModelCandidates();
+  const candidates = getGeminiModelCandidates(useProTier);
   for (const model of candidates) {
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
       model,
@@ -1037,4 +1101,527 @@ export async function generateMeetingAiSummaryForUser(
   }
 
   return summary;
+}
+
+async function assertMeetingAccessAndLoadContext(rawCode: string, userId: string) {
+  const code = normalizeMeetingCode(rawCode);
+  const supabase = requireSupabase();
+
+  const { data: meeting, error } = await supabase
+    .from('meetings')
+    .select('id, code, title, host_id')
+    .eq('code', code)
+    .maybeSingle<{ id: string; code: string; title: string; host_id: string }>();
+
+  if (error) {
+    throw new HttpError(500, `Failed to look up meeting: ${error.message}`);
+  }
+  if (!meeting) {
+    throw new HttpError(404, 'Meeting not found.');
+  }
+
+  if (meeting.host_id !== userId) {
+    const { data: part } = await supabase
+      .from('meeting_participants')
+      .select('id')
+      .eq('meeting_id', meeting.id)
+      .eq('user_id', userId)
+      .maybeSingle<{ id: string }>();
+
+    if (!part) {
+      throw new HttpError(403, 'You do not have permission to access notes for this meeting.');
+    }
+  }
+
+  const [transcriptsRes, screenRes, msgsRes, participantsRes, summaryRes] = await Promise.all([
+    supabase
+      .from('meeting_transcripts')
+      .select('id, speaker_id, speaker_name, content, created_at')
+      .eq('meeting_id', meeting.id)
+      .order('created_at', { ascending: true })
+      .limit(500),
+    supabase
+      .from('meeting_screen_notes')
+      .select('id, sharer_name, extracted_text, created_at')
+      .eq('meeting_id', meeting.id)
+      .order('created_at', { ascending: true })
+      .limit(80),
+    supabase
+      .from('meeting_messages')
+      .select('sender_id, content, created_at')
+      .eq('meeting_id', meeting.id)
+      .order('created_at', { ascending: true })
+      .limit(200),
+    supabase
+      .from('meeting_participants')
+      .select('user_id, role')
+      .eq('meeting_id', meeting.id),
+    supabase
+      .from('meeting_ai_summaries')
+      .select('*')
+      .eq('meeting_id', meeting.id)
+      .maybeSingle<MeetingAiSummaryRecord>(),
+  ]);
+
+  const transcripts = (transcriptsRes.data ?? []) as TranscriptRow[];
+  const screenNotes = (screenRes.data ?? []) as ScreenNoteRow[];
+  const msgRows = (msgsRes.data ?? []) as MessageRow[];
+  const participantRoles = (participantsRes.data ?? []) as ParticipantRoleRow[];
+  const baseSummary = summaryRes.data ?? null;
+
+  const roleMap = new Map<string, SpeakerAuthority>();
+  roleMap.set(meeting.host_id, 'HOST');
+  for (const row of participantRoles) {
+    if (row.user_id === meeting.host_id || row.role === 'host') {
+      roleMap.set(row.user_id, 'HOST');
+    } else if (row.role === 'co_host') {
+      roleMap.set(row.user_id, 'CO-HOST');
+    } else if (!roleMap.has(row.user_id)) {
+      roleMap.set(row.user_id, 'PARTICIPANT');
+    }
+  }
+
+  const formattedTranscripts = transcripts.map((t) => {
+    const auth = resolveSpeakerAuthority(t.speaker_id, meeting.host_id, roleMap);
+    const label = t.speaker_name ? `${auth} · ${t.speaker_name}` : auth;
+    return `- [${label}]: ${t.content}`;
+  });
+
+  const usableScreenTexts = screenNotes
+    .map((s) => s.extracted_text.trim())
+    .filter(
+      (txt) =>
+        txt.length > 0 &&
+        !txt.startsWith('Shared screen frame captured') &&
+        !txt.startsWith('Visual screen frame captured'),
+    );
+
+  const formattedChats = msgRows
+    .map((m) => {
+      const content = m.content.trim();
+      if (!content || content.startsWith('[Recording')) return null;
+      const auth = resolveSpeakerAuthority(m.sender_id, meeting.host_id, roleMap);
+      return `- [${auth}]: ${content}`;
+    })
+    .filter((line): line is string => Boolean(line));
+
+  return {
+    meeting,
+    formattedTranscripts,
+    usableScreenTexts,
+    formattedChats,
+    baseSummary,
+  };
+}
+
+export async function getMeetingProNotesForUser(
+  meetingId: string,
+  userId: string,
+): Promise<MeetingProNotesRecord | null> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('meeting_pro_notes')
+    .select('*')
+    .eq('meeting_id', meetingId)
+    .eq('user_id', userId)
+    .maybeSingle<MeetingProNotesRecord>();
+  if (error || !data) return null;
+  return data;
+}
+
+export async function upgradeMeetingToProNotesForUser(
+  rawCode: string,
+  userId: string,
+): Promise<{ pro_notes: MeetingProNotesRecord; subscription: UserSubscriptionStatus }> {
+  const ctx = await assertMeetingAccessAndLoadContext(rawCode, userId);
+  const supabase = requireSupabase();
+
+  // Already unlocked for this meeting? Return immediately without spending another credit!
+  const existing = await getMeetingProNotesForUser(ctx.meeting.id, userId);
+  if (existing) {
+    const subscription = await getUserSubscriptionStatus(userId);
+    return { pro_notes: existing, subscription };
+  }
+
+  const hasContent =
+    ctx.formattedTranscripts.length > 0 ||
+    ctx.usableScreenTexts.length > 0 ||
+    ctx.formattedChats.length > 0 ||
+    Boolean(
+      ctx.baseSummary &&
+        ctx.baseSummary.environment_type !== 'no_important_content' &&
+        ctx.baseSummary.overview,
+    );
+
+  if (!hasContent) {
+    throw new HttpError(
+      400,
+      'This session has no substantive study or meeting content to upgrade into Pro Notes.',
+    );
+  }
+
+  // Verify entitlement BEFORE calling Gemini Pro (credit is only deducted once Pro Notes succeed!)
+  const preStatus = await getUserSubscriptionStatus(userId);
+  if (!preStatus.is_pro || (!preStatus.is_unlimited && preStatus.credits_remaining <= 0)) {
+    throw new HttpError(
+      402,
+      'You need a Pro Note credit (₹9 for 1 credit, ₹49 for 15 credits) or Unlimited Pro plan to unlock Pro Master Notes.',
+    );
+  }
+
+  const proPrompt = [
+    'You are the MYMEET PRO Master Study & Executive Notes Architect.',
+    'The user PAID to upgrade from basic summary notes to DEEP, EXAM-READY & PRODUCTION-GRADE PRO MASTER NOTES.',
+    'Make these notes unmistakably richer, clearer, and more actionable than a basic overview:',
+    '',
+    'REQUIREMENTS:',
+    '1. SPEAKER AUTHORITY: Treat [HOST] and [CO-HOST] as final source of truth. Drop wrong/rejected participant guesses; cleanly include Host-approved participant ideas & doubts.',
+    '2. DEEP SECTIONS (3 to 7 sections): Provide thorough explanations PLUS concrete copy-paste code snippets (for coding/web/tech sessions) OR full step-by-step derivations & formulas in clean Unicode math (for math/physics/science) OR structured decisions & execution plan (for office/team). NEVER use raw LaTeX backslashes like \\frac or \\quad.',
+    '3. COMPARISON TABLE: Whenever 2 or more concepts, attributes, methods, algorithms, or options were compared (e.g. Normal vs Defer vs Async, SQL vs NoSQL, etc.), include a crisp `comparison_table` with `title`, `headers`, and `rows`. Otherwise set `comparison_table` to null.',
+    '4. EXAM & INTERVIEW TRAPS (3 to 5 items): List common mistakes, tricky edge cases, or viva/interview questions directly tied to this session, each with a sharp `trap` and clear `fix`.',
+    '5. 1-MINUTE CHEAT SHEET (5 to 8 ultra-dense bullets): Rapid-revision formulas, syntax rules, or key takeaways designed to review 5 minutes before an exam or meeting.',
+    '',
+    'Return ONLY valid JSON matching this exact schema:',
+    '{',
+    '  "environment_label": "PRO MASTER NOTES · <Specific Topic>",',
+    '  "pro_overview": "3-4 crisp sentences summarizing the entire session deeply",',
+    '  "deep_sections": [',
+    '    {',
+    '      "title": "Clear section heading",',
+    '      "kind": "concept | code | derivation | example | decision",',
+    '      "explanation": "Deep, crystal-clear explanation (3-5 sentences)",',
+    '      "code_or_formula": "Optional clean code snippet or Unicode math derivation (omit if none)",',
+    '      "bullets": ["2 to 5 concrete key points"],',
+    '      "worked_example": "Optional short worked example or real-world scenario"',
+    '    }',
+    '  ],',
+    '  "comparison_table": {',
+    '    "title": "Comparison title",',
+    '    "headers": ["Feature", "Option A", "Option B"],',
+    '    "rows": [["Row 1", "...", "..."]]',
+    '  },',
+    '  "exam_traps": [',
+    '    { "trap": "Common mistake or tricky question", "fix": "Exact right approach / answer" }',
+    '  ],',
+    '  "cheat_sheet": ["Ultra-crisp 1-line revision rule or formula"],',
+    '  "pro_markdown": "Clean complete Markdown version for export"',
+    '}',
+    '',
+    `Session Topic: ${ctx.meeting.title}`,
+    '',
+    '--- BASE SESSION OVERVIEW ---',
+    ctx.baseSummary?.overview || '(None)',
+    ctx.baseSummary?.detailed_notes_markdown
+      ? `\n--- BASE NOTES ---\n${ctx.baseSummary.detailed_notes_markdown.slice(0, 3500)}`
+      : '',
+    '',
+    '--- CHRONOLOGICAL SPOKEN VOICE CONTENT (ROLE-TAGGED) ---',
+    ctx.formattedTranscripts.length > 0 ? ctx.formattedTranscripts.join('\n') : '(None)',
+    '',
+    '--- SHARED SCREEN CONTENT ---',
+    ctx.usableScreenTexts.length > 0 ? ctx.usableScreenTexts.join('\n') : '(None)',
+    '',
+    '--- CHAT CONTENT ---',
+    ctx.formattedChats.length > 0 ? ctx.formattedChats.join('\n') : '(None)',
+  ].join('\n');
+
+  const geminiRes = await callGeminiApi([{ text: proPrompt }], true, true);
+  if (!geminiRes?.text) {
+    throw new HttpError(503, 'AI Pro engine is temporarily busy. Please try again in a few seconds (no credit was deducted).');
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    const cleaned = geminiRes.text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    parsed = JSON.parse(cleaned) as Record<string, unknown>;
+  } catch {
+    throw new HttpError(502, 'Could not parse AI Pro notes response. Please retry (no credit was deducted).');
+  }
+
+  const validKinds = ['concept', 'code', 'derivation', 'example', 'decision'] as const;
+  const rawSections = Array.isArray(parsed.deep_sections) ? parsed.deep_sections : [];
+  const deepSections: ProNoteDeepSection[] = rawSections
+    .filter((s): s is Record<string, unknown> => Boolean(s && typeof s === 'object'))
+    .map((s) => {
+      const k = typeof s.kind === 'string' ? s.kind.toLowerCase() : 'concept';
+      const kind = (validKinds as readonly string[]).includes(k)
+        ? (k as ProNoteDeepSection['kind'])
+        : 'concept';
+      return {
+        title: typeof s.title === 'string' && s.title.trim() ? s.title.trim().slice(0, 120) : 'Deep Concept',
+        kind,
+        explanation: typeof s.explanation === 'string' ? s.explanation.trim().slice(0, 1200) : '',
+        ...(typeof s.code_or_formula === 'string' && s.code_or_formula.trim()
+          ? { code_or_formula: s.code_or_formula.trim().slice(0, 1600) }
+          : {}),
+        ...(Array.isArray(s.bullets)
+          ? {
+              bullets: s.bullets
+                .filter((b): b is string => typeof b === 'string' && b.trim().length > 0)
+                .map((b) => b.trim().slice(0, 260))
+                .slice(0, 6),
+            }
+          : {}),
+        ...(typeof s.worked_example === 'string' && s.worked_example.trim()
+          ? { worked_example: s.worked_example.trim().slice(0, 700) }
+          : {}),
+      };
+    })
+    .filter((s) => s.explanation.length > 0)
+    .slice(0, 8);
+
+  let comparisonTable: ProComparisonTable | null = null;
+  if (parsed.comparison_table && typeof parsed.comparison_table === 'object') {
+    const ct = parsed.comparison_table as Record<string, unknown>;
+    const headers = Array.isArray(ct.headers)
+      ? ct.headers.filter((h): h is string => typeof h === 'string' && h.trim().length > 0).slice(0, 6)
+      : [];
+    const rows = Array.isArray(ct.rows)
+      ? ct.rows
+          .filter((r): r is unknown[] => Array.isArray(r))
+          .map((r) => r.map((cell) => String(cell ?? '').trim()).slice(0, headers.length))
+          .filter((r) => r.length > 0)
+          .slice(0, 10)
+      : [];
+    if (headers.length >= 2 && rows.length >= 1) {
+      comparisonTable = {
+        ...(typeof ct.title === 'string' && ct.title.trim() ? { title: ct.title.trim() } : {}),
+        headers,
+        rows,
+      };
+    }
+  }
+
+  const rawTraps = Array.isArray(parsed.exam_traps) ? parsed.exam_traps : [];
+  const examTraps: ProExamTrap[] = rawTraps
+    .filter((t): t is Record<string, unknown> => Boolean(t && typeof t === 'object'))
+    .map((t) => ({
+      trap: typeof t.trap === 'string' ? t.trap.trim().slice(0, 300) : '',
+      fix: typeof t.fix === 'string' ? t.fix.trim().slice(0, 360) : '',
+    }))
+    .filter((t) => t.trap && t.fix)
+    .slice(0, 6);
+
+  const cheatSheet = Array.isArray(parsed.cheat_sheet)
+    ? parsed.cheat_sheet
+        .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+        .map((c) => c.trim().slice(0, 260))
+        .slice(0, 10)
+    : [];
+
+  const envLabel =
+    typeof parsed.environment_label === 'string' && parsed.environment_label.trim()
+      ? parsed.environment_label.trim().slice(0, 120)
+      : `PRO MASTER NOTES · ${ctx.meeting.title}`;
+  const proOverview =
+    typeof parsed.pro_overview === 'string' && parsed.pro_overview.trim()
+      ? parsed.pro_overview.trim().slice(0, 900)
+      : ctx.baseSummary?.overview || `Deep Pro Notes for ${ctx.meeting.title}`;
+  const proMarkdown =
+    typeof parsed.pro_markdown === 'string' && parsed.pro_markdown.trim()
+      ? parsed.pro_markdown.trim()
+      : `# ${ctx.meeting.title} — Pro Master Notes\n\n${proOverview}`;
+
+  // Deduct 1 credit (or pass through for Unlimited plans) right before persisting
+  const { unlockSource, updatedStatus } = await consumeOneProCreditIfNeeded(userId);
+
+  const { data: saved, error: saveErr } = await supabase
+    .from('meeting_pro_notes')
+    .upsert(
+      {
+        meeting_id: ctx.meeting.id,
+        user_id: userId,
+        unlock_source: unlockSource,
+        environment_label: envLabel,
+        pro_overview: proOverview,
+        deep_sections: deepSections,
+        comparison_table: comparisonTable,
+        exam_traps: examTraps,
+        cheat_sheet: cheatSheet,
+        pro_markdown: proMarkdown,
+        model_used: geminiRes.model,
+      },
+      { onConflict: 'meeting_id,user_id' },
+    )
+    .select('*')
+    .single<MeetingProNotesRecord>();
+
+  if (saveErr || !saved) {
+    throw new HttpError(
+      500,
+      `Could not save Pro Notes (ensure SQL migration 20261127000001_pro_plans_and_mcqs.sql is run): ${saveErr?.message ?? 'Unknown'}`,
+    );
+  }
+
+  return { pro_notes: saved, subscription: updatedStatus };
+}
+
+export async function getOrGenerateMeetingMcqsForUser(
+  rawCode: string,
+  userId: string,
+): Promise<MeetingMcqQuizRecord> {
+  const subscription = await getUserSubscriptionStatus(userId);
+  if (!subscription.mcq_enabled) {
+    throw new HttpError(
+      402,
+      'Session MCQ Practice Tests are included in Pro Monthly (₹349/mo) and Pro Yearly (₹899/yr). Upgrade to unlock!',
+    );
+  }
+
+  const ctx = await assertMeetingAccessAndLoadContext(rawCode, userId);
+  const supabase = requireSupabase();
+
+  // Reuse cached quiz for this meeting so retaking is instant & free!
+  const { data: existing } = await supabase
+    .from('meeting_mcqs')
+    .select('*')
+    .eq('meeting_id', ctx.meeting.id)
+    .maybeSingle<MeetingMcqQuizRecord>();
+
+  if (existing && Array.isArray(existing.questions) && existing.questions.length > 0) {
+    return existing;
+  }
+
+  const hasContent =
+    ctx.formattedTranscripts.length > 0 ||
+    ctx.usableScreenTexts.length > 0 ||
+    ctx.formattedChats.length > 0 ||
+    Boolean(
+      ctx.baseSummary &&
+        ctx.baseSummary.environment_type !== 'no_important_content' &&
+        ctx.baseSummary.overview,
+    );
+
+  if (!hasContent) {
+    throw new HttpError(
+      400,
+      'This session has no study or technical content to generate practice MCQs from.',
+    );
+  }
+
+  const mcqPrompt = [
+    'You are an expert Exam & Concept Mastery Quiz Designer for MyMeet Pro.',
+    'Generate 8 to 10 high-quality Multiple Choice Questions (MCQs) strictly based on what was taught, explained, or finalized by the [HOST]/[CO-HOST] in this exact session.',
+    '',
+    'RULES:',
+    '1. Mix difficulties cleanly: ~3 easy (core recall), ~4 medium (application/code/formula), ~2-3 hard (tricky edge cases / exam traps).',
+    '2. Every question MUST have exactly 4 distinct options (A, B, C, D) and 1 unambiguous `correct_index` (0, 1, 2, or 3).',
+    '3. Include a crisp, helpful `explanation` (1-3 sentences) explaining WHY the right answer is correct so the student polishes the concept immediately.',
+    '4. Use clean Unicode math (no raw LaTeX backslashes like \\frac).',
+    '5. Ignore casual chatter and rejected participant mistakes.',
+    '',
+    'Return ONLY valid JSON matching this schema:',
+    '{',
+    '  "topic_label": "Short quiz topic title e.g. DOM & Script Loading Mastery Quiz",',
+    '  "questions": [',
+    '    {',
+    '      "id": "q1",',
+    '      "question": "Clear question text",',
+    '      "options": ["Option A", "Option B", "Option C", "Option D"],',
+    '      "correct_index": 1,',
+    '      "explanation": "Why Option B is correct and what concept to remember",',
+    '      "difficulty": "easy | medium | hard",',
+    '      "concept": "Short 2-4 word concept tag"',
+    '    }',
+    '  ]',
+    '}',
+    '',
+    `Session Topic: ${ctx.meeting.title}`,
+    '',
+    '--- BASE SUMMARY ---',
+    ctx.baseSummary?.overview || '(None)',
+    ctx.baseSummary?.detailed_notes_markdown
+      ? `\n${ctx.baseSummary.detailed_notes_markdown.slice(0, 3500)}`
+      : '',
+    '',
+    '--- CHRONOLOGICAL SPOKEN VOICE CONTENT (ROLE-TAGGED) ---',
+    ctx.formattedTranscripts.length > 0 ? ctx.formattedTranscripts.join('\n') : '(None)',
+    '',
+    '--- SHARED SCREEN CONTENT ---',
+    ctx.usableScreenTexts.length > 0 ? ctx.usableScreenTexts.join('\n') : '(None)',
+  ].join('\n');
+
+  const geminiRes = await callGeminiApi([{ text: mcqPrompt }], true, true);
+  if (!geminiRes?.text) {
+    throw new HttpError(503, 'AI Quiz generator is temporarily busy. Please try again shortly.');
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    const cleaned = geminiRes.text.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    parsed = JSON.parse(cleaned) as Record<string, unknown>;
+  } catch {
+    throw new HttpError(502, 'Could not parse generated MCQ quiz. Please try again.');
+  }
+
+  const rawQuestions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  const questions: SessionMcqQuestion[] = rawQuestions
+    .filter((q): q is Record<string, unknown> => Boolean(q && typeof q === 'object'))
+    .map((q, idx): SessionMcqQuestion | null => {
+      const text = typeof q.question === 'string' ? q.question.trim() : '';
+      const opts = Array.isArray(q.options)
+        ? q.options.map((o) => String(o ?? '').trim()).filter(Boolean)
+        : [];
+      const correctIdx =
+        typeof q.correct_index === 'number' &&
+        Number.isInteger(q.correct_index) &&
+        q.correct_index >= 0 &&
+        q.correct_index <= 3
+          ? q.correct_index
+          : 0;
+      if (!text || opts.length < 4) return null;
+      const diffRaw = typeof q.difficulty === 'string' ? q.difficulty.toLowerCase() : 'medium';
+      const difficulty: 'easy' | 'medium' | 'hard' =
+        diffRaw === 'easy' || diffRaw === 'hard' ? diffRaw : 'medium';
+      return {
+        id: typeof q.id === 'string' && q.id.trim() ? q.id.trim() : `q${idx + 1}`,
+        question: text.slice(0, 420),
+        options: [opts[0], opts[1], opts[2], opts[3]],
+        correct_index: correctIdx,
+        explanation:
+          typeof q.explanation === 'string' && q.explanation.trim()
+            ? q.explanation.trim().slice(0, 500)
+            : 'Review the session notes for this concept.',
+        difficulty,
+        concept:
+          typeof q.concept === 'string' && q.concept.trim()
+            ? q.concept.trim().slice(0, 60)
+            : 'Core Concept',
+      };
+    })
+    .filter((q): q is SessionMcqQuestion => q !== null)
+    .slice(0, 10);
+
+  if (questions.length === 0) {
+    throw new HttpError(502, 'Could not build valid practice MCQs for this session.');
+  }
+
+  const topicLabel =
+    typeof parsed.topic_label === 'string' && parsed.topic_label.trim()
+      ? parsed.topic_label.trim().slice(0, 120)
+      : `${ctx.meeting.title} · Mastery Quiz`;
+
+  const { data: saved, error: saveErr } = await supabase
+    .from('meeting_mcqs')
+    .upsert(
+      {
+        meeting_id: ctx.meeting.id,
+        topic_label: topicLabel,
+        questions,
+        model_used: geminiRes.model,
+      },
+      { onConflict: 'meeting_id' },
+    )
+    .select('*')
+    .single<MeetingMcqQuizRecord>();
+
+  if (saveErr || !saved) {
+    throw new HttpError(
+      500,
+      `Could not save session MCQs (ensure SQL migration 20261127000001_pro_plans_and_mcqs.sql is run): ${saveErr?.message ?? 'Unknown'}`,
+    );
+  }
+
+  return saved;
 }

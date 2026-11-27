@@ -2,8 +2,10 @@ import { Router } from 'express';
 import {
   analyzeScreenFrameHandler,
   generateAiSummaryHandler,
+  generateMeetingMcqsHandler,
   recordTranscriptHandler,
   transcribeAudioChunkHandler,
+  upgradeProNotesHandler,
 } from '../controllers/aiAgentController.js';
 import { listMessagesHandler, sendMessageHandler } from '../controllers/chatController.js';
 import {
@@ -59,6 +61,8 @@ router.post('/:code/ai/transcript', recordTranscriptHandler);
 router.post('/:code/ai/audio-chunk', transcribeAudioChunkHandler);
 router.post('/:code/ai/screen-frame', analyzeScreenFrameHandler);
 router.post('/:code/ai/summary', generateAiSummaryHandler);
+router.post('/:code/ai/pro-notes', upgradeProNotesHandler);
+router.post('/:code/ai/mcqs', generateMeetingMcqsHandler);
 
 router.post('/:code/end', endMeetingHandler);
 

@@ -6,21 +6,29 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { BackButton } from '../components/BackButton';
+import { SessionMcqModal } from '../components/SessionMcqModal';
 import { StatusBadge } from '../components/StatusBadge';
+import { UpgradePlansModal } from '../components/UpgradePlansModal';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
 import {
   generateAiSummary,
+  getBillingStatus,
   getHistoryDetail,
+  getOrGenerateMeetingMcqs,
   listHistory,
+  upgradeMeetingProNotes,
   type MeetingAiSummary,
   type MeetingHistoryDetail,
   type MeetingHistoryItem,
+  type MeetingMcqQuiz,
+  type UserSubscriptionStatus,
   type VisualNoteKind,
   type VisualNoteStep,
 } from '../services/api';
@@ -295,7 +303,7 @@ function BlackVisualBoard({
       )}
 
       <View style={styles.boardFooter}>
-        <Text style={styles.boardFooterText}>MEET · AI STUDY NOTES</Text>
+        <Text style={styles.boardFooterText}>MYMEET · AI STUDY NOTES</Text>
         <Text style={styles.boardFooterText}>CONTENT-ONLY SUMMARY</Text>
       </View>
     </View>
@@ -311,8 +319,22 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
+  const [upgradingPro, setUpgradingPro] = useState(false);
+  const [loadingMcq, setLoadingMcq] = useState(false);
+  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeForMcq, setUpgradeForMcq] = useState(false);
+  const [activeQuiz, setActiveQuiz] = useState<MeetingMcqQuiz | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
   const [fullBoardOpen, setFullBoardOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session?.access_token) return;
+    void getBillingStatus(session.access_token)
+      .then((res) => setSubscription(res.subscription))
+      .catch(() => {});
+  }, [session?.access_token]);
 
   const loadHistory = useCallback(async () => {
     if (!session?.access_token) return;
@@ -369,12 +391,70 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
     }
   };
 
+  const handleUpgradeToPro = async (overrideSub?: UserSubscriptionStatus) => {
+    if (!session?.access_token || !selected) return;
+    const sub = overrideSub ?? subscription;
+    const canUnlock = Boolean(sub?.is_pro && (sub.is_unlimited || sub.credits_remaining > 0));
+    if (!canUnlock) {
+      setUpgradeForMcq(false);
+      setUpgradeOpen(true);
+      return;
+    }
+    setUpgradingPro(true);
+    setError(null);
+    try {
+      const res = await upgradeMeetingProNotes(session.access_token, selected.code);
+      setSelected((prev) => (prev ? { ...prev, pro_notes: res.pro_notes } : prev));
+      setSubscription(res.subscription);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to upgrade notes to Pro.');
+    } finally {
+      setUpgradingPro(false);
+    }
+  };
+
+  const handleOpenMcq = async (overrideSub?: UserSubscriptionStatus) => {
+    if (!session?.access_token || !selected) return;
+    const sub = overrideSub ?? subscription;
+    if (!sub?.mcq_enabled) {
+      setUpgradeForMcq(true);
+      setUpgradeOpen(true);
+      return;
+    }
+    setLoadingMcq(true);
+    setError(null);
+    try {
+      const quiz = await getOrGenerateMeetingMcqs(session.access_token, selected.code);
+      setActiveQuiz(quiz);
+      setQuizOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load Session MCQ Test.');
+    } finally {
+      setLoadingMcq(false);
+    }
+  };
+
+  const hasImportantNotes = Boolean(
+    selected?.ai_summary &&
+      selected.ai_summary.environment_type !== 'no_important_content' &&
+      ((selected.ai_summary.sources_summary?.visual_flow?.length ?? 0) > 0 ||
+        (selected.ai_summary.key_points?.length ?? 0) > 0),
+  );
+
   const isHost = selected?.my_role === 'host';
 
-  // Step-by-step Android Back inside History: Fullboard -> Detail -> History List -> Previous Screen
+  // Step-by-step Android Back inside History: Modals -> Detail -> History List -> Previous Screen
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (quizOpen) {
+        setQuizOpen(false);
+        return true;
+      }
+      if (upgradeOpen) {
+        setUpgradeOpen(false);
+        return true;
+      }
       if (fullBoardOpen) {
         setFullBoardOpen(false);
         return true;
@@ -386,7 +466,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
       return false;
     });
     return () => sub.remove();
-  }, [fullBoardOpen, selected]);
+  }, [quizOpen, upgradeOpen, fullBoardOpen, selected]);
 
   return (
     <>
@@ -474,6 +554,181 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                 >
                   <Text style={styles.rejoinText}>
                     {generatingAi ? 'Analyzing Discussion...' : 'Generate Visual Notes'}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {/* Try Pro Notes CTA Banner right below Free Notes */}
+            {hasImportantNotes && !selected.pro_notes && (
+              <View style={styles.proBanner}>
+                <View style={styles.proPill}>
+                  <Text style={styles.proPillText}>✦ TRY PRO NOTES</Text>
+                </View>
+                <Text style={styles.proBannerTitle}>
+                  Upgrade to Deep Pro Master Notes
+                </Text>
+                <Text style={styles.proBannerSub}>
+                  Code snippets / derivations, comparison table, exam traps, 1-min cheat sheet &amp;
+                  shareable report.
+                </Text>
+                <Pressable
+                  style={[styles.proGoldBtn, upgradingPro && { opacity: 0.65 }]}
+                  disabled={upgradingPro}
+                  onPress={() => void handleUpgradeToPro()}
+                >
+                  <Text style={styles.proGoldBtnText}>
+                    {upgradingPro
+                      ? 'Building Pro Notes...'
+                      : subscription?.is_unlimited
+                        ? 'Generate Pro Notes (Unlimited)'
+                        : subscription?.is_pro && subscription.credits_remaining > 0
+                          ? `Upgrade with 1 Credit (${subscription.credits_remaining} left)`
+                          : 'Try Pro Notes · ₹9'}
+                  </Text>
+                </Pressable>
+                {!subscription?.is_unlimited && (
+                  <Pressable
+                    style={styles.proPlansLink}
+                    onPress={() => {
+                      setUpgradeForMcq(false);
+                      setUpgradeOpen(true);
+                    }}
+                  >
+                    <Text style={styles.proPlansLinkText}>
+                      View All Plans (₹9 · ₹49 · ₹349 · ₹899)
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+
+            {/* MYMEET PRO Master Notes Card */}
+            {selected.pro_notes && (
+              <View style={styles.proNotesCard}>
+                <View style={styles.itemRowHeader}>
+                  <View style={styles.proPill}>
+                    <Text style={styles.proPillText}>✦ MYMEET PRO · MASTER NOTES</Text>
+                  </View>
+                  <Pressable
+                    style={styles.proShareChip}
+                    onPress={() =>
+                      void Share.share({
+                        title: `${selected.title} — MyMeet Pro Notes`,
+                        message: selected.pro_notes?.pro_markdown || selected.pro_notes?.pro_overview || '',
+                      }).catch(() => {})
+                    }
+                  >
+                    <Text style={{ color: '#F59E0B', fontSize: 11.5, fontWeight: '800' }}>
+                      Share Pro Notes
+                    </Text>
+                  </Pressable>
+                </View>
+
+                <Text style={styles.proOverviewText}>{selected.pro_notes.pro_overview}</Text>
+
+                {selected.pro_notes.deep_sections.map((sec, idx) => (
+                  <View key={`${sec.title}-${idx}`} style={styles.proSecCard}>
+                    <Text style={styles.proSecTitle}>
+                      {idx + 1}. {sec.title}
+                    </Text>
+                    <Text style={styles.proSecBody}>{sec.explanation}</Text>
+                    {sec.code_or_formula ? (
+                      <View style={styles.proCodeBox}>
+                        <Text style={styles.proCodeText}>{sec.code_or_formula}</Text>
+                      </View>
+                    ) : null}
+                    {sec.bullets?.map((b, bi) => (
+                      <Text key={bi} style={styles.proSecBullet}>
+                        • {b}
+                      </Text>
+                    ))}
+                    {sec.worked_example ? (
+                      <View style={styles.proExampleBox}>
+                        <Text style={styles.proExampleText}>
+                          Example: {sec.worked_example}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ))}
+
+                {selected.pro_notes.comparison_table && (
+                  <View style={styles.proSecCard}>
+                    <Text style={styles.proSecTitle}>
+                      {selected.pro_notes.comparison_table.title || 'Comparison Matrix'}
+                    </Text>
+                    <Text style={styles.proTableHeader}>
+                      {selected.pro_notes.comparison_table.headers.join('  |  ')}
+                    </Text>
+                    {selected.pro_notes.comparison_table.rows.map((r, ri) => (
+                      <Text key={ri} style={styles.proSecBullet}>
+                        • {r.join('  —  ')}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+
+                {selected.pro_notes.exam_traps.length > 0 && (
+                  <View style={styles.proTrapCard}>
+                    <Text style={styles.proTrapHeading}>⚡ COMMON EXAM &amp; INTERVIEW TRAPS</Text>
+                    {selected.pro_notes.exam_traps.map((t, ti) => (
+                      <View key={ti} style={{ marginTop: 6 }}>
+                        <Text style={styles.proTrapLine}>Trap: {t.trap}</Text>
+                        <Text style={styles.proFixLine}>Fix: {t.fix}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {selected.pro_notes.cheat_sheet.length > 0 && (
+                  <View style={styles.proCheatCard}>
+                    <Text style={styles.proCheatHeading}>📌 1-MINUTE REVISION CHEAT SHEET</Text>
+                    {selected.pro_notes.cheat_sheet.map((c, ci) => (
+                      <Text key={ci} style={styles.proSecBullet}>
+                        ▸ {c}
+                      </Text>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Today's Session MCQ Practice Test Card */}
+            {hasImportantNotes && (
+              <View style={styles.mcqCard}>
+                <View style={styles.proPill}>
+                  <Text style={styles.proPillText}>🎯 SESSION MCQ PRACTICE TEST</Text>
+                </View>
+                <Text style={styles.proBannerTitle}>
+                  Take MCQ Test for Today&apos;s Session
+                </Text>
+                <Text style={styles.proBannerSub}>
+                  {subscription?.mcq_enabled
+                    ? 'Test yourself with 8–10 AI MCQs built strictly from this session + instant concept explanations.'
+                    : 'Included in Pro Monthly (₹349/mo) & Pro Yearly (₹899/yr) to polish every concept!'}
+                </Text>
+                <Pressable
+                  style={[
+                    styles.proGoldBtn,
+                    { backgroundColor: subscription?.mcq_enabled ? '#7C3AED' : '#F59E0B' },
+                    loadingMcq && { opacity: 0.65 },
+                  ]}
+                  disabled={loadingMcq}
+                  onPress={() => void handleOpenMcq()}
+                >
+                  <Text
+                    style={{
+                      color: subscription?.mcq_enabled ? '#FFFFFF' : '#090D16',
+                      fontSize: 13.5,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {loadingMcq
+                      ? 'Preparing MCQ Quiz...'
+                      : subscription?.mcq_enabled
+                        ? 'Take MCQ Test Now →'
+                        : 'Unlock Session MCQs (₹349/mo)'}
                   </Text>
                 </Pressable>
               </View>
@@ -596,6 +851,32 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
           </ScrollView>
         </View>
       </Modal>
+      <UpgradePlansModal
+        visible={upgradeOpen}
+        accessToken={session?.access_token ?? null}
+        meetingCode={selected?.code}
+        highlightMcq={upgradeForMcq}
+        onClose={() => setUpgradeOpen(false)}
+        onActivated={(nextSub, planCode) => {
+          setSubscription(nextSub);
+          if (upgradeForMcq && nextSub.mcq_enabled) {
+            void handleOpenMcq(nextSub);
+          } else if (
+            selected &&
+            !selected.pro_notes &&
+            (planCode === 'single_9' || planCode === 'pack_49' || nextSub.is_unlimited)
+          ) {
+            void handleUpgradeToPro(nextSub);
+          }
+        }}
+      />
+
+      <SessionMcqModal
+        visible={quizOpen}
+        quiz={activeQuiz}
+        meetingTitle={selected?.title ?? 'Session'}
+        onClose={() => setQuizOpen(false)}
+      />
     </>
   );
 }
@@ -815,4 +1096,104 @@ const styles = StyleSheet.create({
   },
   closeModalBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   fullModalScroll: { padding: 14, paddingBottom: 32 },
+  proBanner: {
+    backgroundColor: '#0F172A',
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 15,
+    gap: 8,
+  },
+  mcqCard: {
+    backgroundColor: '#0F172A',
+    borderColor: '#7C3AED',
+    borderWidth: 1.5,
+    borderRadius: 16,
+    padding: 15,
+    gap: 8,
+  },
+  proPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+  },
+  proPillText: { color: '#FFFFFF', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  proBannerTitle: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  proBannerSub: { color: '#CBD5E1', fontSize: 12.5, lineHeight: 18 },
+  proGoldBtn: {
+    backgroundColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  proGoldBtnText: { color: '#090D16', fontSize: 13.5, fontWeight: '800' },
+  proPlansLink: { alignItems: 'center', paddingVertical: 4 },
+  proPlansLinkText: { color: '#93C5FD', fontSize: 12, fontWeight: '700' },
+  proNotesCard: {
+    backgroundColor: '#060A14',
+    borderColor: '#F59E0B',
+    borderWidth: 1.5,
+    borderRadius: 18,
+    padding: 15,
+    gap: 12,
+  },
+  proShareChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(245, 158, 11, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.5)',
+  },
+  proOverviewText: { color: '#E2E8F0', fontSize: 13, lineHeight: 19 },
+  proSecCard: {
+    backgroundColor: '#0F172A',
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 6,
+  },
+  proSecTitle: { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' },
+  proSecBody: { color: '#CBD5E1', fontSize: 12.5, lineHeight: 18 },
+  proCodeBox: {
+    backgroundColor: '#020617',
+    borderColor: 'rgba(56, 189, 248, 0.35)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+  },
+  proCodeText: { color: '#38BDF8', fontSize: 12, fontFamily: 'monospace' },
+  proSecBullet: { color: '#CBD5E1', fontSize: 12.5, lineHeight: 18 },
+  proExampleBox: {
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 8,
+  },
+  proExampleText: { color: '#A7F3D0', fontSize: 12, lineHeight: 17 },
+  proTableHeader: { color: '#FDE68A', fontSize: 12, fontWeight: '800', marginBottom: 4 },
+  proTrapCard: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+  },
+  proTrapHeading: { color: '#FBBF24', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.5 },
+  proTrapLine: { color: '#FEF3C7', fontSize: 12.5, fontWeight: '700' },
+  proFixLine: { color: '#CBD5E1', fontSize: 12, marginTop: 2 },
+  proCheatCard: {
+    backgroundColor: 'rgba(99, 102, 241, 0.14)',
+    borderColor: 'rgba(129, 140, 248, 0.45)',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    gap: 4,
+  },
+  proCheatHeading: { color: '#A5B4FC', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.5 },
 });

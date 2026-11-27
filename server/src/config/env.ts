@@ -35,4 +35,7 @@ export const env = {
     !process.env.GEMINI_MODEL || process.env.GEMINI_MODEL.trim() === 'gemini-2.5-flash'
       ? 'gemini-3.5-flash-lite'
       : process.env.GEMINI_MODEL.trim(),
+  geminiProModel: process.env.GEMINI_PRO_MODEL?.trim() || 'gemini-3.1-pro-preview',
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID?.trim() || '',
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET?.trim() || '',
 } as const;

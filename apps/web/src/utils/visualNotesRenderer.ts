@@ -324,7 +324,7 @@ function paintBlackPageCanvas(
   ctx.font = `600 12px ${FONT_SANS}`;
   ctx.fillStyle = '#475569';
   ctx.textBaseline = 'middle';
-  ctx.fillText('MEET · AI STUDY NOTES', PAD_X, PAGE_H - 42);
+  ctx.fillText('MYMEET · AI STUDY NOTES', PAD_X, PAGE_H - 42);
   ctx.textAlign = 'right';
   ctx.fillText(`${pageNumber} / ${totalPages}`, PAGE_W - PAD_X, PAGE_H - 42);
   ctx.restore();

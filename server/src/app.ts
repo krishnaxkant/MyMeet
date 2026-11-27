@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import billingRoutes from './routes/billingRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
@@ -53,6 +54,7 @@ export const createApp = () => {
   app.use('/api/schedules', scheduleRoutes);
   app.use('/api/history', historyRoutes);
   app.use('/api/devices', deviceRoutes);
+  app.use('/api/billing', billingRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

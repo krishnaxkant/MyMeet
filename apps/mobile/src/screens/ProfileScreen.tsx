@@ -10,8 +10,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { UpgradePlansModal } from '../components/UpgradePlansModal';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../hooks/useTheme';
+import { getBillingStatus, type UserSubscriptionStatus } from '../services/api';
 
 interface ProfileScreenProps {
   onBack: () => void;
@@ -25,7 +27,7 @@ function getInitials(name: string): string {
 }
 
 export function ProfileScreen({ onBack }: ProfileScreenProps) {
-  const { user, profile, profileLoading, saveProfile, refreshProfile, signOut } = useAuth();
+  const { session, user, profile, profileLoading, saveProfile, refreshProfile, signOut } = useAuth();
   const { theme, colors, toggleTheme } = useTheme();
 
   const [fullName, setFullName] = useState('');
@@ -34,11 +36,20 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
   const [photoAction, setPhotoAction] = useState<'uploading' | 'removing' | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [savedNotice, setSavedNotice] = useState<{
     id: number;
     text: string;
     tone: 'success' | 'danger';
   } | null>(null);
+
+  useEffect(() => {
+    if (!session?.access_token) return;
+    void getBillingStatus(session.access_token)
+      .then((res) => setSubscription(res.subscription))
+      .catch(() => {});
+  }, [session?.access_token]);
 
   useEffect(() => {
     setFullName(profile?.full_name ?? (user?.user_metadata?.full_name as string | undefined) ?? '');
@@ -189,12 +200,36 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
         </View>
 
         <View
-          style={[styles.heroCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: subscription?.is_pro ? '#F59E0B' : colors.border,
+              borderWidth: subscription?.is_pro ? 1.5 : 1,
+            },
+          ]}
         >
           {/* Studio Cover Banner */}
-          <View style={styles.coverBanner}>
-            <View style={styles.verifiedCoverPill}>
-              <Text style={styles.verifiedCoverText}>✓ Verified Account</Text>
+          <View
+            style={[
+              styles.coverBanner,
+              subscription?.is_pro && { backgroundColor: '#3B0764' },
+            ]}
+          >
+            <View
+              style={[
+                styles.verifiedCoverPill,
+                subscription?.is_pro && {
+                  backgroundColor: 'rgba(245, 158, 11, 0.24)',
+                  borderColor: 'rgba(245, 158, 11, 0.7)',
+                },
+              ]}
+            >
+              <Text style={styles.verifiedCoverText}>
+                {subscription?.is_pro
+                  ? `✦ MYMEET PRO · ${subscription.plan_name}`
+                  : '✓ Verified Account'}
+              </Text>
             </View>
           </View>
 
@@ -205,7 +240,10 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
                 <View
                   style={[
                     styles.avatarXl,
-                    { backgroundColor: colors.accent, borderColor: colors.surface },
+                    {
+                      backgroundColor: colors.accent,
+                      borderColor: subscription?.is_pro ? '#F59E0B' : colors.surface,
+                    },
                   ]}
                 >
                   {avatarData ? (
@@ -245,6 +283,13 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
             {/* Name & Email cleanly below banner (zero overlap) */}
             <View style={[styles.nameBlock, { borderBottomColor: colors.border }]}>
               <Text style={[styles.profileName, { color: colors.text }]}>{displayName}</Text>
+              {subscription?.is_pro && (
+                <View style={styles.proNameBadge}>
+                  <Text style={styles.proNameBadgeText}>
+                    ✦ PRO · {subscription.plan_name}
+                  </Text>
+                </View>
+              )}
               <Text style={[styles.profileEmail, { color: colors.textMuted }]}>
                 {photoAction === 'removing'
                   ? 'Removing photo...'
@@ -252,6 +297,97 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
                     ? 'Uploading photo...'
                     : emailAddress}
               </Text>
+            </View>
+
+            {/* Subscription & Credits Summary Card */}
+            <View
+              style={[
+                styles.subPanel,
+                {
+                  backgroundColor: colors.surfaceElevated,
+                  borderColor: subscription?.is_pro ? '#F59E0B' : colors.border,
+                },
+              ]}
+            >
+              <View style={styles.subTopRow}>
+                <View style={styles.flex1}>
+                  <Text style={[styles.subLabel, { color: colors.textMuted }]}>
+                    SUBSCRIPTION PLAN
+                  </Text>
+                  <Text style={[styles.subPlanName, { color: colors.text }]}>
+                    {subscription?.plan_name || 'Basic (Free)'}
+                  </Text>
+                </View>
+                <Pressable
+                  style={[
+                    styles.subUpgradeBtn,
+                    { backgroundColor: subscription?.is_pro ? '#7C3AED' : '#F59E0B' },
+                  ]}
+                  onPress={() => setUpgradeOpen(true)}
+                >
+                  <Text
+                    style={{
+                      color: subscription?.is_pro ? '#FFFFFF' : '#090D16',
+                      fontSize: 12,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {subscription?.is_pro ? 'Manage / Add' : 'Upgrade Pro'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.subMetricsRow}>
+                <View
+                  style={[
+                    styles.subMetricCell,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.subMetricLabel, { color: colors.textMuted }]}>Credits</Text>
+                  <Text style={[styles.subMetricVal, { color: colors.text }]}>
+                    {subscription?.is_unlimited
+                      ? '∞ Unlimited'
+                      : subscription?.is_pro
+                        ? `${subscription.credits_remaining} / ${Math.max(
+                            subscription.credits_remaining,
+                            subscription.credits_total,
+                          )}`
+                        : '0 left'}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.subMetricCell,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.subMetricLabel, { color: colors.textMuted }]}>
+                    MCQ Tests
+                  </Text>
+                  <Text style={[styles.subMetricVal, { color: colors.text }]}>
+                    {subscription?.mcq_enabled ? '✓ Unlocked' : 'Locked'}
+                  </Text>
+                </View>
+
+                <View
+                  style={[
+                    styles.subMetricCell,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.subMetricLabel, { color: colors.textMuted }]}>Valid Till</Text>
+                  <Text style={[styles.subMetricVal, { color: colors.text }]} numberOfLines={1}>
+                    {subscription?.is_pro && subscription.expires_at
+                      ? new Date(subscription.expires_at).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                        })
+                      : 'Free'}
+                  </Text>
+                </View>
+              </View>
             </View>
 
             {error && (
@@ -415,6 +551,20 @@ export function ProfileScreen({ onBack }: ProfileScreenProps) {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <UpgradePlansModal
+        visible={upgradeOpen}
+        accessToken={session?.access_token ?? null}
+        onClose={() => setUpgradeOpen(false)}
+        onActivated={(nextSub) => {
+          setSubscription(nextSub);
+          setSavedNotice({
+            id: Date.now(),
+            text: `✦ ${nextSub.plan_name} activated! Your Pro credits are ready.`,
+            tone: 'success',
+          });
+        }}
+      />
     </>
   );
 }
@@ -671,5 +821,69 @@ const styles = StyleSheet.create({
   sheetCancelText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  proNameBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  proNameBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  subPanel: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 12,
+    gap: 10,
+  },
+  subTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  subLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  subPlanName: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  subUpgradeBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  subMetricsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  subMetricCell: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    gap: 2,
+  },
+  subMetricLabel: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  subMetricVal: {
+    fontSize: 12.5,
+    fontWeight: '800',
   },
 });

@@ -9,13 +9,21 @@ import {
   SparklesIcon,
   UsersIcon,
 } from '../components/Icons';
+import { SessionMcqModal } from '../components/SessionMcqModal';
+import { UpgradeModal } from '../components/UpgradeModal';
 import { useAuth } from '../hooks/useAuth';
 import {
   generateAiSummary,
+  getBillingStatus,
   getHistoryDetail,
+  getOrGenerateMeetingMcqs,
   listHistory,
+  upgradeMeetingProNotes,
   type MeetingHistoryDetail,
   type MeetingHistoryItem,
+  type MeetingMcqQuiz,
+  type MeetingProNotes,
+  type UserSubscriptionStatus,
 } from '../services/api';
 import {
   downloadAllVisualNotesPngs,
@@ -39,7 +47,7 @@ function formatExactTime(iso: string): string {
 }
 
 export function HistoryPage() {
-  const { session } = useAuth();
+  const { session, user, profile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialCode = searchParams.get('code');
@@ -50,8 +58,22 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [generatingAi, setGeneratingAi] = useState(false);
+  const [upgradingPro, setUpgradingPro] = useState(false);
+  const [loadingMcq, setLoadingMcq] = useState(false);
+  const [activeQuiz, setActiveQuiz] = useState<MeetingMcqQuiz | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeForMcq, setUpgradeForMcq] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session?.access_token) return;
+    void getBillingStatus(session.access_token)
+      .then((res) => setSubscription(res.subscription))
+      .catch(() => {});
+  }, [session?.access_token]);
 
   const loadHistory = useCallback(async () => {
     if (!session?.access_token) return;
@@ -110,6 +132,109 @@ export function HistoryPage() {
     } finally {
       setGeneratingAi(false);
     }
+  };
+
+  const handleUpgradeToProNotes = async (overrideSub?: UserSubscriptionStatus) => {
+    if (!session?.access_token || !selected) return;
+    const sub = overrideSub ?? subscription;
+    const canUnlockNow = Boolean(sub?.is_pro && (sub.is_unlimited || sub.credits_remaining > 0));
+    if (!canUnlockNow) {
+      setUpgradeForMcq(false);
+      setUpgradeOpen(true);
+      return;
+    }
+
+    setUpgradingPro(true);
+    setError(null);
+    try {
+      const res = await upgradeMeetingProNotes(session.access_token, selected.code);
+      setSelected((prev) => (prev ? { ...prev, pro_notes: res.pro_notes } : prev));
+      setSubscription(res.subscription);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to generate Pro Master Notes.');
+    } finally {
+      setUpgradingPro(false);
+    }
+  };
+
+  const handleOpenMcqTest = async (overrideSub?: UserSubscriptionStatus) => {
+    if (!session?.access_token || !selected) return;
+    const sub = overrideSub ?? subscription;
+    if (!sub?.mcq_enabled) {
+      setUpgradeForMcq(true);
+      setUpgradeOpen(true);
+      return;
+    }
+
+    setLoadingMcq(true);
+    setError(null);
+    try {
+      const quiz = await getOrGenerateMeetingMcqs(session.access_token, selected.code);
+      setActiveQuiz(quiz);
+      setQuizOpen(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to generate session MCQ test.');
+    } finally {
+      setLoadingMcq(false);
+    }
+  };
+
+  const handleExportProPdf = (title: string, pro: MeetingProNotes) => {
+    const win = window.open('', '_blank', 'width=960,height=900');
+    if (!win) return;
+    const esc = (s: string) =>
+      s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const sectionsHtml = pro.deep_sections
+      .map(
+        (sec, idx) => `
+        <div class="sec">
+          <h3>${idx + 1}. ${esc(sec.title)} <span class="tag">${esc(sec.kind.toUpperCase())}</span></h3>
+          <p>${esc(sec.explanation)}</p>
+          ${sec.code_or_formula ? `<pre><code>${esc(sec.code_or_formula)}</code></pre>` : ''}
+          ${sec.bullets?.length ? `<ul>${sec.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>` : ''}
+          ${sec.worked_example ? `<div class="example"><strong>Worked Example:</strong> ${esc(sec.worked_example)}</div>` : ''}
+        </div>`,
+      )
+      .join('');
+    const tableHtml = pro.comparison_table
+      ? `<div class="sec"><h3>${esc(pro.comparison_table.title || 'Comparison Matrix')}</h3>
+          <table><thead><tr>${pro.comparison_table.headers.map((h) => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+          <tbody>${pro.comparison_table.rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`
+      : '';
+    const trapsHtml = pro.exam_traps.length
+      ? `<div class="sec traps"><h3>⚡ Common Exam & Interview Traps</h3>${pro.exam_traps
+          .map(
+            (t) =>
+              `<div class="trap-row"><strong>Trap:</strong> ${esc(t.trap)}<br/><strong>Fix:</strong> ${esc(t.fix)}</div>`,
+          )
+          .join('')}</div>`
+      : '';
+    const cheatHtml = pro.cheat_sheet.length
+      ? `<div class="sec cheat"><h3>📌 1-Minute Rapid Revision Cheat Sheet</h3><ul>${pro.cheat_sheet
+          .map((c) => `<li>${esc(c)}</li>`)
+          .join('')}</ul></div>`
+      : '';
+
+    win.document.write(`<!doctype html><html><head><title>${esc(title)} — MyMeet Pro Notes</title><style>
+      body{font-family:system-ui,-apple-system,sans-serif;max-width:820px;margin:32px auto;padding:0 24px;color:#0f172a;line-height:1.55;}
+      .badge{display:inline-block;padding:4px 10px;border-radius:999px;background:#4f46e5;color:#fff;font-size:11px;font-weight:800;letter-spacing:.05em;}
+      h1{margin:10px 0 6px;font-size:28px;} .overview{background:#f8fafc;border-left:4px solid #4f46e5;padding:12px 16px;border-radius:8px;margin:16px 0;}
+      .sec{margin:20px 0;padding:16px;border:1px solid #e2e8f0;border-radius:12px;page-break-inside:avoid;}
+      .sec h3{margin:0 0 8px;font-size:17px;} .tag{font-size:10px;background:#eef2ff;color:#4338ca;padding:2px 8px;border-radius:999px;margin-left:6px;}
+      pre{background:#0f172a;color:#e2e8f0;padding:12px 14px;border-radius:8px;overflow-x:auto;font-size:13px;}
+      table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13.5px;} th,td{border:1px solid #cbd5e1;padding:8px 10px;text-align:left;} th{background:#f1f5f9;}
+      .example{margin-top:10px;padding:10px 12px;background:#ecfdf5;border-radius:8px;font-size:13.5px;}
+      .traps{border-color:#fde68a;background:#fffbeb;} .trap-row{margin:8px 0;padding-bottom:8px;border-bottom:1px dashed #fcd34d;}
+      .cheat{border-color:#c7d2fe;background:#eef2ff;} .footer{margin-top:28px;font-size:11px;color:#64748b;text-align:center;}
+    </style></head><body>
+      <span class="badge">MYMEET PRO · MASTER NOTES</span>
+      <h1>${esc(title)}</h1>
+      <div class="overview">${esc(pro.pro_overview)}</div>
+      ${sectionsHtml}${tableHtml}${trapsHtml}${cheatHtml}
+      <div class="footer">Generated by MYMEET PRO · ${esc(pro.environment_label)}</div>
+      <script>window.onload=function(){window.print();}</script>
+    </body></html>`);
+    win.document.close();
   };
 
   const hasImportantNotes = Boolean(
@@ -399,6 +524,53 @@ export function HistoryPage() {
                     </span>
                   </button>
                 </div>
+
+                {/* Try Pro Notes CTA Banner right below Free Notes (when not yet upgraded) */}
+                {!selected.pro_notes && (
+                  <div className="pro-cta-banner">
+                    <div className="pro-cta-copy">
+                      <span className="pro-pill-badge">
+                        <SparklesIcon size={12} /> TRY PRO NOTES
+                      </span>
+                      <h3>Unlock Deep Pro Master Notes for this Session</h3>
+                      <p>
+                        Get copy-paste code / step-by-step derivations, comparison tables, exam &
+                        interview traps, 1-min cheat sheet &amp; HD PDF export.
+                      </p>
+                    </div>
+                    <div className="pro-cta-actions">
+                      <button
+                        type="button"
+                        className="btn btn-pro-gold"
+                        disabled={upgradingPro}
+                        onClick={() => void handleUpgradeToProNotes()}
+                      >
+                        <SparklesIcon size={15} />
+                        <span>
+                          {upgradingPro
+                            ? 'Building Pro Notes...'
+                            : subscription?.is_unlimited
+                              ? 'Generate Pro Notes (Unlimited)'
+                              : subscription?.is_pro && subscription.credits_remaining > 0
+                                ? `Upgrade with 1 Credit (${subscription.credits_remaining} left)`
+                                : 'Try Pro Notes · ₹9'}
+                        </span>
+                      </button>
+                      {!subscription?.is_unlimited && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => {
+                            setUpgradeForMcq(false);
+                            setUpgradeOpen(true);
+                          }}
+                        >
+                          See All Plans (₹49 · ₹349 · ₹899)
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : selected.ai_summary && !hasImportantNotes ? (
               <div className="empty-state">
@@ -438,6 +610,150 @@ export function HistoryPage() {
               </div>
             )}
           </section>
+
+          {/* MYMEET PRO Master Notes Card (when unlocked for this meeting) */}
+          {selected?.pro_notes && (
+            <section className="card pro-notes-card">
+              <div className="card-header" style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className="pro-pill-badge">
+                    <SparklesIcon size={12} /> MYMEET PRO · MASTER NOTES
+                  </span>
+                  <span className="status-item-desc">{selected.pro_notes.environment_label}</span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-pro-gold btn-sm"
+                  onClick={() => handleExportProPdf(selected.title, selected.pro_notes!)}
+                >
+                  <DownloadIcon size={14} />
+                  <span>Print / Save HD PDF</span>
+                </button>
+              </div>
+
+              <div className="pro-overview-box">{selected.pro_notes.pro_overview}</div>
+
+              <div className="pro-sections-stack">
+                {selected.pro_notes.deep_sections.map((sec, idx) => (
+                  <div key={`${sec.title}-${idx}`} className="pro-deep-section">
+                    <div className="pro-deep-section-head">
+                      <strong>
+                        {idx + 1}. {sec.title}
+                      </strong>
+                      <span className="badge badge-neutral">{sec.kind.toUpperCase()}</span>
+                    </div>
+                    <p className="pro-deep-text">{sec.explanation}</p>
+                    {sec.code_or_formula && (
+                      <pre className="pro-code-block">
+                        <code>{sec.code_or_formula}</code>
+                      </pre>
+                    )}
+                    {sec.bullets && sec.bullets.length > 0 && (
+                      <ul className="pro-bullet-list">
+                        {sec.bullets.map((b, bi) => (
+                          <li key={bi}>{b}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {sec.worked_example && (
+                      <div className="pro-worked-example">
+                        <strong>Worked Example:</strong> {sec.worked_example}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {selected.pro_notes.comparison_table && (
+                <div className="pro-table-wrap">
+                  <h3 className="pro-subhead">
+                    {selected.pro_notes.comparison_table.title || 'Comparison Matrix'}
+                  </h3>
+                  <div style={{ overflowX: 'auto' }}>
+                    <table className="pro-comparison-table">
+                      <thead>
+                        <tr>
+                          {selected.pro_notes.comparison_table.headers.map((h, i) => (
+                            <th key={i}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selected.pro_notes.comparison_table.rows.map((row, ri) => (
+                          <tr key={ri}>
+                            {row.map((cell, ci) => (
+                              <td key={ci}>{cell}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {selected.pro_notes.exam_traps.length > 0 && (
+                <div className="pro-traps-box">
+                  <h3 className="pro-subhead">⚡ Common Exam &amp; Interview Traps</h3>
+                  {selected.pro_notes.exam_traps.map((t, ti) => (
+                    <div key={ti} className="pro-trap-item">
+                      <div>
+                        <strong>Trap:</strong> {t.trap}
+                      </div>
+                      <div style={{ marginTop: 4 }}>
+                        <strong>Right Approach:</strong> {t.fix}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {selected.pro_notes.cheat_sheet.length > 0 && (
+                <div className="pro-cheatsheet-box">
+                  <h3 className="pro-subhead">📌 1-Minute Rapid Revision Cheat Sheet</h3>
+                  <ul className="pro-bullet-list">
+                    {selected.pro_notes.cheat_sheet.map((c, ci) => (
+                      <li key={ci}>{c}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Session MCQ Practice Test Card (Included in ₹349/mo & ₹899/yr) */}
+          {selected && hasImportantNotes && (
+            <section className="card pro-mcq-cta-card">
+              <div className="pro-cta-copy">
+                <span className="pro-pill-badge">
+                  <SparklesIcon size={12} /> TODAY&apos;S SESSION MCQ TEST
+                </span>
+                <h3 style={{ margin: '8px 0 4px', fontSize: 17 }}>
+                  Polish Every Concept Studied in &ldquo;{selected.title}&rdquo;
+                </h3>
+                <p className="status-item-desc" style={{ margin: 0 }}>
+                  {subscription?.mcq_enabled
+                    ? 'Take an instant 8–10 question MCQ quiz crafted strictly from today’s session with detailed concept explanations.'
+                    : 'Included with Pro Monthly (₹349/mo) & Pro Yearly (₹899/yr) — test yourself right after every session!'}
+                </p>
+              </div>
+              <button
+                type="button"
+                className={`btn ${subscription?.mcq_enabled ? 'btn-primary' : 'btn-pro-gold'}`}
+                disabled={loadingMcq}
+                onClick={() => void handleOpenMcqTest()}
+              >
+                <SparklesIcon size={15} />
+                <span>
+                  {loadingMcq
+                    ? 'Preparing MCQ Test...'
+                    : subscription?.mcq_enabled
+                      ? 'Take MCQ Test Now →'
+                      : 'Unlock Session MCQs (₹349/mo)'}
+                </span>
+              </button>
+            </section>
+          )}
 
           {/* HOST-ONLY Meeting Participants History */}
           {selected && isHost && (
@@ -543,6 +859,35 @@ export function HistoryPage() {
           </div>
         </div>
       )}
+
+      <UpgradeModal
+        open={upgradeOpen}
+        accessToken={session?.access_token ?? null}
+        userEmail={profile?.email ?? user?.email ?? ''}
+        userName={profile?.full_name ?? ''}
+        meetingCode={selected?.code}
+        highlightMcq={upgradeForMcq}
+        onClose={() => setUpgradeOpen(false)}
+        onActivated={(nextSub, planCode) => {
+          setSubscription(nextSub);
+          if (upgradeForMcq && nextSub.mcq_enabled) {
+            void handleOpenMcqTest(nextSub);
+          } else if (
+            selected &&
+            !selected.pro_notes &&
+            (planCode === 'single_9' || planCode === 'pack_49' || nextSub.is_unlimited)
+          ) {
+            void handleUpgradeToProNotes(nextSub);
+          }
+        }}
+      />
+
+      <SessionMcqModal
+        open={quizOpen}
+        quiz={activeQuiz}
+        meetingTitle={selected?.title ?? 'Session'}
+        onClose={() => setQuizOpen(false)}
+      />
     </div>
   );
 }

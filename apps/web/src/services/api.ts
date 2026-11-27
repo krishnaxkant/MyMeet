@@ -179,10 +179,96 @@ export interface MeetingAiSummary {
   updated_at: string;
 }
 
+export type PlanCode = 'free' | 'single_9' | 'pack_49' | 'pro_monthly_349' | 'pro_yearly_899';
+export type PaidPlanCode = Exclude<PlanCode, 'free'>;
+
+export interface PlanDefinition {
+  code: PlanCode;
+  name: string;
+  badge: string | null;
+  price_inr: number;
+  duration_days: number | null;
+  credits: number | null;
+  is_unlimited: boolean;
+  mcq_enabled: boolean;
+  tagline: string;
+  highlights: string[];
+}
+
+export interface UserSubscriptionStatus {
+  plan_code: PlanCode;
+  plan_name: string;
+  is_pro: boolean;
+  is_unlimited: boolean;
+  mcq_enabled: boolean;
+  credits_remaining: number;
+  credits_total: number;
+  started_at: string | null;
+  expires_at: string | null;
+  is_expired: boolean;
+  razorpay_live: boolean;
+}
+
+export interface ProNoteDeepSection {
+  title: string;
+  kind: 'concept' | 'code' | 'derivation' | 'example' | 'decision';
+  explanation: string;
+  code_or_formula?: string;
+  bullets?: string[];
+  worked_example?: string;
+}
+
+export interface ProComparisonTable {
+  title?: string;
+  headers: string[];
+  rows: string[][];
+}
+
+export interface ProExamTrap {
+  trap: string;
+  fix: string;
+}
+
+export interface MeetingProNotes {
+  id: string;
+  meeting_id: string;
+  user_id: string;
+  unlock_source: string;
+  environment_label: string;
+  pro_overview: string;
+  deep_sections: ProNoteDeepSection[];
+  comparison_table: ProComparisonTable | null;
+  exam_traps: ProExamTrap[];
+  cheat_sheet: string[];
+  pro_markdown: string;
+  model_used: string;
+  created_at: string;
+}
+
+export interface SessionMcqQuestion {
+  id: string;
+  question: string;
+  options: [string, string, string, string];
+  correct_index: number;
+  explanation: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  concept: string;
+}
+
+export interface MeetingMcqQuiz {
+  id: string;
+  meeting_id: string;
+  topic_label: string;
+  questions: SessionMcqQuestion[];
+  model_used: string;
+  created_at: string;
+}
+
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
   participants: MeetingParticipant[];
   messages: MeetingMessage[];
   ai_summary: MeetingAiSummary | null;
+  pro_notes?: MeetingProNotes | null;
   transcript_count: number;
   screen_note_count: number;
 }
@@ -672,4 +758,90 @@ export async function generateAiSummary(
     { method: 'POST' },
   );
   return payload.summary;
+}
+
+export async function getBillingStatus(
+  accessToken: string,
+): Promise<{ subscription: UserSubscriptionStatus; plans: PlanDefinition[] }> {
+  return authFetch<{ subscription: UserSubscriptionStatus; plans: PlanDefinition[] }>(
+    '/api/billing/status',
+    accessToken,
+  );
+}
+
+export async function createBillingOrder(
+  accessToken: string,
+  planCode: PaidPlanCode,
+  meetingCode?: string,
+): Promise<{
+  order_id: string;
+  provider: 'razorpay' | 'demo';
+  razorpay_key_id?: string;
+  razorpay_order_id?: string;
+  amount_paise: number;
+  amount_inr: number;
+  currency: 'INR';
+  plan: PlanDefinition;
+}> {
+  const payload = await authFetch<{
+    order: {
+      order_id: string;
+      provider: 'razorpay' | 'demo';
+      razorpay_key_id?: string;
+      razorpay_order_id?: string;
+      amount_paise: number;
+      amount_inr: number;
+      currency: 'INR';
+      plan: PlanDefinition;
+    };
+  }>('/api/billing/create-order', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      plan_code: planCode,
+      ...(meetingCode ? { meeting_code: meetingCode } : {}),
+    }),
+  });
+  return payload.order;
+}
+
+export async function verifyBillingPayment(
+  accessToken: string,
+  input: {
+    order_id: string;
+    razorpay_order_id?: string;
+    razorpay_payment_id?: string;
+    razorpay_signature?: string;
+  },
+): Promise<{
+  subscription: UserSubscriptionStatus;
+  plan_code: PaidPlanCode;
+  meeting_code: string | null;
+}> {
+  return authFetch('/api/billing/verify-payment', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export async function upgradeMeetingProNotes(
+  accessToken: string,
+  code: string,
+): Promise<{ pro_notes: MeetingProNotes; subscription: UserSubscriptionStatus }> {
+  return authFetch<{ pro_notes: MeetingProNotes; subscription: UserSubscriptionStatus }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/pro-notes`,
+    accessToken,
+    { method: 'POST' },
+  );
+}
+
+export async function getOrGenerateMeetingMcqs(
+  accessToken: string,
+  code: string,
+): Promise<MeetingMcqQuiz> {
+  const payload = await authFetch<{ quiz: MeetingMcqQuiz }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/mcqs`,
+    accessToken,
+    { method: 'POST' },
+  );
+  return payload.quiz;
 }
