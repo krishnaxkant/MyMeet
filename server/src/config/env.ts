@@ -31,5 +31,8 @@ export const env = {
   smtpPass: process.env.SMTP_PASS || '',
   smtpFrom: process.env.SMTP_FROM || '',
   geminiApiKey: process.env.GEMINI_API_KEY || '',
-  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+  geminiModel:
+    !process.env.GEMINI_MODEL || process.env.GEMINI_MODEL.trim() === 'gemini-2.5-flash'
+      ? 'gemini-3.5-flash-lite'
+      : process.env.GEMINI_MODEL.trim(),
 } as const;

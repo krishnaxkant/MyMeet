@@ -114,15 +114,24 @@ async function sleepMs(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const GEMINI_FALLBACK_MODELS = [
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+  'gemini-3-flash-preview',
+];
+
+function getGeminiModelCandidates(): string[] {
+  const ordered = [env.geminiModel, ...GEMINI_FALLBACK_MODELS]
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0 && m !== 'gemini-2.5-flash');
+  return Array.from(new Set(ordered));
+}
+
 async function callGeminiApi(
   parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }>,
   expectJson = false,
-): Promise<string | null> {
+): Promise<{ text: string; model: string } | null> {
   if (!isGeminiConfigured()) return null;
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-    env.geminiModel,
-  )}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`;
 
   const body: Record<string, unknown> = {
     contents: [{ role: 'user', parts }],
@@ -132,54 +141,58 @@ async function callGeminiApi(
     },
   };
 
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(40_000),
-      });
+  const candidates = getGeminiModelCandidates();
+  for (const model of candidates) {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      model,
+    )}:generateContent?key=${encodeURIComponent(env.geminiApiKey)}`;
 
-      if (!response.ok) {
-        const errText = await response.text().catch(() => '');
-        const retryable =
-          response.status === 429 ||
-          response.status === 500 ||
-          response.status === 502 ||
-          response.status === 503 ||
-          response.status === 504;
-        console.warn(
-          `[ai-agent] Gemini API HTTP ${response.status} (attempt ${attempt}/${maxAttempts}):`,
-          errText.slice(0, 240),
-        );
-        if (retryable && attempt < maxAttempts) {
-          await sleepMs(attempt === 1 ? 1200 : 2800);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(25_000),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '');
+          const retrySameModel = response.status === 500 || response.status === 502 || response.status === 504;
+          console.warn(
+            `[ai-agent] Gemini (${model}) HTTP ${response.status} (attempt ${attempt}/2):`,
+            errText.slice(0, 200),
+          );
+          if (retrySameModel && attempt < 2) {
+            await sleepMs(1000);
+            continue;
+          }
+          // Immediately fail over to next healthy model on 404 / 429 / 503
+          break;
+        }
+
+        const json = (await response.json()) as {
+          candidates?: Array<{
+            content?: { parts?: Array<{ text?: string }> };
+          }>;
+        };
+
+        const text = json.candidates?.[0]?.content?.parts
+          ?.map((p) => p.text ?? '')
+          .join('')
+          .trim();
+
+        if (text) {
+          return { text, model };
+        }
+        break;
+      } catch (err) {
+        console.warn(`[ai-agent] Gemini (${model}) request failed (attempt ${attempt}/2):`, err);
+        if (attempt < 2) {
+          await sleepMs(900);
           continue;
         }
-        return null;
       }
-
-      const json = (await response.json()) as {
-        candidates?: Array<{
-          content?: { parts?: Array<{ text?: string }> };
-        }>;
-      };
-
-      const text = json.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text ?? '')
-        .join('')
-        .trim();
-
-      return text || null;
-    } catch (err) {
-      console.warn(`[ai-agent] Gemini request failed (attempt ${attempt}/${maxAttempts}):`, err);
-      if (attempt < maxAttempts) {
-        await sleepMs(attempt === 1 ? 1200 : 2800);
-        continue;
-      }
-      return null;
     }
   }
 
@@ -253,7 +266,7 @@ export async function transcribeAndStoreAudioChunk(
     ? rawMime
     : 'audio/webm';
 
-  const extracted = await callGeminiApi([
+  const extractedRes = await callGeminiApi([
     {
       text: [
         `You are an intelligent AI Note-Taker listening to a live audio clip from "${meeting.title}".`,
@@ -261,7 +274,7 @@ export async function transcribeAndStoreAudioChunk(
         '',
         'YOUR JOB:',
         '- Transcribe and distill ONLY genuinely IMPORTANT educational, technical, or meeting content (concepts taught, formulas/equations explained, definitions, worked examples, code logic, decisions, homework, or deadlines).',
-        '- Write the distilled points in clear, concise English (preserving exact math formulas, terms, and technical names).',
+        '- Write the distilled points in clear, concise English (preserving exact math formulas, terms, and technical names in plain readable Unicode math, never raw LaTeX).',
         '',
         'STRICTLY IGNORE AND DO NOT INCLUDE:',
         '- Roll call / attendance ("roll number 12", "present sir", "absent", "attendance le raha hoon").',
@@ -281,11 +294,11 @@ export async function transcribeAndStoreAudioChunk(
     },
   ]);
 
-  if (!extracted) {
+  if (!extractedRes?.text) {
     return { saved: false, skipped: true, usedAi: false };
   }
 
-  const normalized = extracted.replace(/^["'`]+|["'`]+$/g, '').trim();
+  const normalized = extractedRes.text.replace(/^["'`]+|["'`]+$/g, '').trim();
   if (
     !normalized ||
     /^SKIP\b/i.test(normalized) ||
@@ -335,12 +348,12 @@ export async function analyzeAndStoreScreenFrame(
   let usedAi = false;
 
   if (isGeminiConfigured()) {
-    extractedText = await callGeminiApi([
+    const screenRes = await callGeminiApi([
       {
         text: [
           `Analyze the shared screen content from "${meeting.title}".`,
           'Extract ALL educational, mathematical, technical, or presentation content visible on screen:',
-          '- Transcribe every equation, formula, theorem, variable definition, and worked calculation step accurately.',
+          '- Transcribe every equation, formula, theorem, variable definition, and worked calculation step accurately in clean Unicode math (no raw LaTeX backslashes).',
           '- Capture code blocks, diagrams described in clear steps, headings, and key bullet points.',
           '- Do NOT mention browser tabs, app UI chrome, who is sharing, or meeting metadata.',
           '- Keep it clear, structured, and strictly factual (up to 260 words).',
@@ -353,6 +366,7 @@ export async function analyzeAndStoreScreenFrame(
         },
       },
     ]);
+    extractedText = screenRes?.text ?? null;
     usedAi = Boolean(extractedText);
   }
 
@@ -743,7 +757,7 @@ export async function generateMeetingAiSummaryById(
       '1. RUTHLESS NOISE & CASUAL CHAT FILTER (MOST IMPORTANT): Include ONLY genuinely important subject matter — concepts taught, formulas/equations, derivations, worked examples, code/architecture, project decisions, deadlines, or action items. STRICTLY IGNORE and NEVER include: casual friend banter, Hinglish/Hindi small talk ("pata nahi", "light band kar le", "kuch nahi karna", "hello hello"), app/UI/button testing ("full screen pe click karo", "check the code", "meeting not found"), attendance/roll call ("present sir", "roll no."), greetings, mic/screen checks, or participant counts.',
       '2. EMPTY-SESSION GATEKEEPER: If the transcripts/chat contain ONLY casual talk, greetings, jokes, UI/app testing, or non-substantive chatter with NO real educational, technical, or work topic discussed, you MUST set "has_important_content": false, "environment_type": "no_important_content", "environment_label": "Casual Session · No Study Notes", "overview": "No important educational, technical, or business content was detected in this session. Casual conversation was automatically filtered out.", "visual_flow": [], "key_points": [], "action_items": [], and "detailed_notes_markdown": "No important notes detected." NEVER fabricate study notes or formulas out of casual chatter!',
       '3. DEEP & COMPLETE WHEN SUBSTANTIVE (MULTI-PAGE READY): When real teaching or work discussion occurred, create clear sections in `visual_flow` (4 to 14 sections) covering every important topic, formula, and explanation thoroughly.',
-      '4. FORMULAS + EXPLANATIONS + EXAMPLES: Only use `kind: "formula"` when an actual mathematical/scientific formula, theorem, rule, or code snippet was taught. Never put casual sentences under "Formula & Explanation".',
+      '4. FORMULAS + EXPLANATIONS + EXAMPLES: Only use `kind: "formula"` when an actual mathematical/scientific formula, theorem, rule, or code snippet was taught. Never put casual sentences under "Formula & Explanation". Always write equations in clean, human-readable Unicode math (e.g. `T = (2u sin θ) / g`, `u²`, `√`, `θ`, `°`) — NEVER raw LaTeX commands like `\\frac`, `\\quad`, or `\\text`.',
       '5. SELECTIVE ARROWS ONLY: Set `"show_arrow": true` ONLY when a block directly flows into or derives the very next block.',
       '6. Only include `action_items` if actual homework, practice problems, or concrete next steps were discussed (otherwise return []).',
       '',
@@ -758,7 +772,7 @@ export async function generateMeetingAiSummaryById(
       '      "title": "Clear section heading (3-8 words)",',
       '      "kind": "concept | formula | step | example | takeaway",',
       '      "body": "Thorough, easy-to-understand explanation of what was taught or discussed (2-4 sentences)",',
-      '      "formula": "Optional equation, theorem, or code snippet (omit if none)",',
+      '      "formula": "Optional equation, theorem, or code snippet in clean Unicode math (omit if none)",',
       '      "bullets": ["Optional array of 2-6 clear sub-points, variable meanings, or worked solution steps"],',
       '      "show_arrow": true,',
       '      "arrow_label": "Only include when show_arrow is true (e.g. Worked Example, Apply Formula, Leads to)"',
@@ -783,7 +797,8 @@ export async function generateMeetingAiSummaryById(
       chatContents.length > 0 ? chatContents.map((c) => `- ${c}`).join('\n') : '(None)',
     ].join('\n');
 
-    const rawJson = await callGeminiApi([{ text: prompt }], true);
+    const geminiSummaryRes = await callGeminiApi([{ text: prompt }], true);
+    const rawJson = geminiSummaryRes?.text ?? null;
     if (rawJson) {
       try {
         const cleaned = rawJson.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
@@ -813,7 +828,7 @@ export async function generateMeetingAiSummaryById(
             action_items: [],
             visual_flow: [],
           };
-          modelUsed = env.geminiModel;
+          modelUsed = geminiSummaryRes?.model || env.geminiModel;
         } else if (parsed.overview) {
           const parsedFlow = sanitizeVisualFlow(parsed.visual_flow);
           const keyPoints = Array.isArray(parsed.key_points)
@@ -847,7 +862,7 @@ export async function generateMeetingAiSummaryById(
             action_items: actionItems,
             visual_flow: visualFlow,
           };
-          modelUsed = env.geminiModel;
+          modelUsed = geminiSummaryRes?.model || env.geminiModel;
         }
       } catch (err) {
         console.warn('[ai-agent] Failed to parse Gemini JSON summary:', err);
