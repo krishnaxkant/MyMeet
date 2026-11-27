@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeftIcon,
@@ -86,6 +86,7 @@ export function HistoryPage() {
   const [localRegenCounts, setLocalRegenCounts] = useState<Record<string, number>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoProTriggeredRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!session?.access_token) return;
@@ -332,6 +333,34 @@ export function HistoryPage() {
   };
 
   const isHost = selected?.my_role === 'host';
+  const hideBasicNotes = Boolean(
+    selected &&
+      (selected.pro_notes || (subscription?.is_unlimited && hasImportantNotes)),
+  );
+
+  // For Unlimited Monthly/Yearly Pro subscribers, automatically build Pro Master Notes
+  // so they NEVER see Basic Free Notes clutter!
+  useEffect(() => {
+    if (!session?.access_token || !selected || !subscription?.is_unlimited) return;
+    if (!hasImportantNotes || selected.pro_notes || upgradingPro) return;
+    if (autoProTriggeredRef.current.has(selected.code)) return;
+
+    autoProTriggeredRef.current.add(selected.code);
+    setUpgradingPro(true);
+    setError(null);
+    void upgradeMeetingProNotes(session.access_token, selected.code)
+      .then((res) => {
+        setSelected((prev) =>
+          prev && prev.code === selected.code ? { ...prev, pro_notes: res.pro_notes } : prev,
+        );
+        setSubscription(res.subscription);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Unable to build Pro Master Notes.');
+      })
+      .finally(() => setUpgradingPro(false));
+  }, [session?.access_token, selected, subscription?.is_unlimited, hasImportantNotes, upgradingPro]);
+
   const effectiveRegenCount = selected
     ? Math.max(
         selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
@@ -432,6 +461,8 @@ export function HistoryPage() {
         </section>
 
         <div className="right-stack">
+          {/* Basic Free AI Visual Summary — hidden whenever user already has Pro Master Notes or an Unlimited Pro subscription */}
+          {!hideBasicNotes && (
           <section className="card">
             <div className="card-header">
               <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -685,6 +716,35 @@ export function HistoryPage() {
               </div>
             )}
           </section>
+          )}
+
+          {/* Auto-building Pro Master Notes state for Unlimited subscribers */}
+          {selected && hideBasicNotes && !selected.pro_notes && (
+            <section className="card pro-notes-card" style={{ textAlign: 'center', padding: 32 }}>
+              <span className="pro-pill-badge" style={{ marginBottom: 12 }}>
+                <SparklesIcon size={12} /> MYMEET PRO · MASTER NOTES
+              </span>
+              <h2 style={{ margin: '8px 0 6px', fontSize: 19, fontWeight: 800 }}>
+                {upgradingPro
+                  ? `Building Pro Master Notes for "${selected.title}"...`
+                  : `Pro Master Notes Ready for "${selected.title}"`}
+              </h2>
+              <p className="status-item-desc" style={{ marginBottom: 16 }}>
+                Crafting deep explanations, code / derivations, comparison table, exam traps &amp;
+                1-minute cheat sheet.
+              </p>
+              {!upgradingPro && (
+                <button
+                  type="button"
+                  className="btn btn-pro-gold"
+                  onClick={() => void handleUpgradeToProNotes()}
+                >
+                  <SparklesIcon size={15} />
+                  <span>Generate Pro Master Notes</span>
+                </button>
+              )}
+            </section>
+          )}
 
           {/* MYMEET PRO Master Notes Card (when unlocked for this meeting) */}
           {selected?.pro_notes && (

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -330,6 +330,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   const [localRegenCounts, setLocalRegenCounts] = useState<Record<string, number>>({});
   const [fullBoardOpen, setFullBoardOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const autoProTriggeredRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!session?.access_token) return;
@@ -482,6 +483,33 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   );
 
   const isHost = selected?.my_role === 'host';
+  const hideBasicNotes = Boolean(
+    selected &&
+      (selected.pro_notes || (subscription?.is_unlimited && hasImportantNotes)),
+  );
+
+  // Automatically generate Pro Master Notes for Unlimited Pro subscribers (hide Basic Free Notes)
+  useEffect(() => {
+    if (!session?.access_token || !selected || !subscription?.is_unlimited) return;
+    if (!hasImportantNotes || selected.pro_notes || upgradingPro) return;
+    if (autoProTriggeredRef.current.has(selected.code)) return;
+
+    autoProTriggeredRef.current.add(selected.code);
+    setUpgradingPro(true);
+    setError(null);
+    void upgradeMeetingProNotes(session.access_token, selected.code)
+      .then((res) => {
+        setSelected((prev) =>
+          prev && prev.code === selected.code ? { ...prev, pro_notes: res.pro_notes } : prev,
+        );
+        setSubscription(res.subscription);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Unable to build Pro Master Notes.');
+      })
+      .finally(() => setUpgradingPro(false));
+  }, [session?.access_token, selected, subscription?.is_unlimited, hasImportantNotes, upgradingPro]);
+
   const effectiveRegenCount = selected
     ? Math.max(
         selected.ai_summary?.sources_summary?.regenerate_count ?? 0,
@@ -573,7 +601,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                         : 'Generate'}
                 </Text>
               </Pressable>
-              {selected.ai_summary && (
+              {selected.ai_summary && !hideBasicNotes && (
                 <Pressable
                   style={[
                     styles.secondaryButton,
@@ -605,26 +633,53 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
           <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 24 }} />
         ) : selected ? (
           <View style={{ gap: 14 }}>
-            {selected.ai_summary ? (
-              <BlackVisualBoard title={selected.title} summary={selected.ai_summary} />
-            ) : (
-              <View
-                style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <Text style={[styles.cardTitle, { color: colors.text }]}>{selected.title}</Text>
-                <Text style={[styles.subText, { color: colors.textMuted }]}>
-                  No visual notes generated for this meeting yet. Tap Generate to build your
-                  black-background study notes.
-                </Text>
-                <Pressable
-                  style={[styles.rejoinBtn, { backgroundColor: colors.accent }]}
-                  disabled={generatingAi}
-                  onPress={() => void handleGenerateAi()}
+            {/* Basic Free Notes — hidden whenever user has Pro Notes unlocked or an Unlimited Pro subscription */}
+            {!hideBasicNotes &&
+              (selected.ai_summary ? (
+                <BlackVisualBoard title={selected.title} summary={selected.ai_summary} />
+              ) : (
+                <View
+                  style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
                 >
-                  <Text style={styles.rejoinText}>
-                    {generatingAi ? 'Analyzing Discussion...' : 'Generate Visual Notes'}
+                  <Text style={[styles.cardTitle, { color: colors.text }]}>{selected.title}</Text>
+                  <Text style={[styles.subText, { color: colors.textMuted }]}>
+                    No visual notes generated for this meeting yet. Tap Generate to build your
+                    black-background study notes.
                   </Text>
-                </Pressable>
+                  <Pressable
+                    style={[styles.rejoinBtn, { backgroundColor: colors.accent }]}
+                    disabled={generatingAi}
+                    onPress={() => void handleGenerateAi()}
+                  >
+                    <Text style={styles.rejoinText}>
+                      {generatingAi ? 'Analyzing Discussion...' : 'Generate Visual Notes'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+
+            {/* Auto-building Pro Master Notes placeholder for Unlimited Pro subscribers */}
+            {hideBasicNotes && !selected.pro_notes && (
+              <View style={styles.proNotesCard}>
+                <View style={styles.proPill}>
+                  <Text style={styles.proPillText}>✦ MYMEET PRO · MASTER NOTES</Text>
+                </View>
+                <Text style={styles.proBannerTitle}>
+                  {upgradingPro
+                    ? `Building Pro Master Notes...`
+                    : `Pro Master Notes for ${selected.title}`}
+                </Text>
+                <Text style={styles.proBannerSub}>
+                  Crafting deep explanations, code / derivations, comparison table, exam traps &amp;
+                  1-min cheat sheet.
+                </Text>
+                {upgradingPro ? (
+                  <ActivityIndicator color="#F59E0B" style={{ marginTop: 6 }} />
+                ) : (
+                  <Pressable style={styles.proGoldBtn} onPress={() => void handleUpgradeToPro()}>
+                    <Text style={styles.proGoldBtnText}>Generate Pro Master Notes</Text>
+                  </Pressable>
+                )}
               </View>
             )}
 
