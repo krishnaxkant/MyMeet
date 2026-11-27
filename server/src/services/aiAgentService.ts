@@ -1484,25 +1484,18 @@ export async function getOrGenerateMeetingMcqsForUser(
   rawCode: string,
   userId: string,
 ): Promise<MeetingMcqQuizRecord> {
-  const subscription = await getUserSubscriptionStatus(userId);
-  if (!subscription.mcq_enabled) {
-    throw new HttpError(
-      402,
-      'Session MCQ Practice Tests are included in Pro Monthly (₹349/mo) and Pro Yearly (₹899/yr). Upgrade to unlock!',
-    );
-  }
-
+  // TEMP TEST MODE: MCQ subscription lock removed so you can test the quiz generator freely.
   const ctx = await assertMeetingAccessAndLoadContext(rawCode, userId);
   const supabase = requireSupabase();
 
-  // Reuse cached quiz for this meeting so retaking is instant & free!
-  const { data: existing } = await supabase
+  // Reuse cached quiz for this meeting if table exists & quiz is already generated
+  const { data: existing, error: existingErr } = await supabase
     .from('meeting_mcqs')
     .select('*')
     .eq('meeting_id', ctx.meeting.id)
     .maybeSingle<MeetingMcqQuizRecord>();
 
-  if (existing && Array.isArray(existing.questions) && existing.questions.length > 0) {
+  if (!existingErr && existing && Array.isArray(existing.questions) && existing.questions.length > 0) {
     return existing;
   }
 
@@ -1640,10 +1633,16 @@ export async function getOrGenerateMeetingMcqsForUser(
     .single<MeetingMcqQuizRecord>();
 
   if (saveErr || !saved) {
-    throw new HttpError(
-      500,
-      `Could not save session MCQs (ensure SQL migration 20261127000001_pro_plans_and_mcqs.sql is run): ${saveErr?.message ?? 'Unknown'}`,
-    );
+    // Gracefully return generated quiz even if SQL migration hasn't been run yet
+    console.warn('[ai-agent] Could not cache meeting_mcqs in DB (returning in-memory):', saveErr?.message);
+    return {
+      id: `temp-${Date.now()}`,
+      meeting_id: ctx.meeting.id,
+      topic_label: topicLabel,
+      questions,
+      model_used: geminiRes.model,
+      created_at: new Date().toISOString(),
+    };
   }
 
   return saved;

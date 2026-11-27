@@ -453,14 +453,8 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
     }
   };
 
-  const handleOpenMcq = async (overrideSub?: UserSubscriptionStatus) => {
+  const handleOpenMcq = async (_overrideSub?: UserSubscriptionStatus) => {
     if (!session?.access_token || !selected) return;
-    const sub = overrideSub ?? subscription;
-    if (!sub?.mcq_enabled) {
-      setUpgradeForMcq(true);
-      setUpgradeOpen(true);
-      return;
-    }
     setLoadingMcq(true);
     setError(null);
     try {
@@ -773,14 +767,13 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                   Take MCQ Test for Today&apos;s Session
                 </Text>
                 <Text style={styles.proBannerSub}>
-                  {subscription?.mcq_enabled
-                    ? 'Test yourself with 8–10 AI MCQs built strictly from this session + instant concept explanations.'
-                    : 'Included in Pro Monthly (₹349/mo) & Pro Yearly (₹899/yr) to polish every concept!'}
+                  Test yourself with 8–10 AI MCQs built strictly from this session + instant concept
+                  explanations.
                 </Text>
                 <Pressable
                   style={[
                     styles.proGoldBtn,
-                    { backgroundColor: subscription?.mcq_enabled ? '#7C3AED' : '#F59E0B' },
+                    { backgroundColor: '#7C3AED' },
                     loadingMcq && { opacity: 0.65 },
                   ]}
                   disabled={loadingMcq}
@@ -788,16 +781,12 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                 >
                   <Text
                     style={{
-                      color: subscription?.mcq_enabled ? '#FFFFFF' : '#090D16',
+                      color: '#FFFFFF',
                       fontSize: 13.5,
                       fontWeight: '800',
                     }}
                   >
-                    {loadingMcq
-                      ? 'Preparing MCQ Quiz...'
-                      : subscription?.mcq_enabled
-                        ? 'Take MCQ Test Now →'
-                        : 'Unlock Session MCQs (₹349/mo)'}
+                    {loadingMcq ? 'Preparing MCQ Quiz...' : 'Take MCQ Test Now →'}
                   </Text>
                 </Pressable>
               </View>

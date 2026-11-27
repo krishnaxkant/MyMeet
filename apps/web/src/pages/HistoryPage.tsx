@@ -207,15 +207,8 @@ export function HistoryPage() {
     }
   };
 
-  const handleOpenMcqTest = async (overrideSub?: UserSubscriptionStatus) => {
+  const handleOpenMcqTest = async (_overrideSub?: UserSubscriptionStatus) => {
     if (!session?.access_token || !selected) return;
-    const sub = overrideSub ?? subscription;
-    if (!sub?.mcq_enabled) {
-      setUpgradeForMcq(true);
-      setUpgradeOpen(true);
-      return;
-    }
-
     setLoadingMcq(true);
     setError(null);
     try {
@@ -807,25 +800,18 @@ export function HistoryPage() {
                   Polish Every Concept Studied in &ldquo;{selected.title}&rdquo;
                 </h3>
                 <p className="status-item-desc" style={{ margin: 0 }}>
-                  {subscription?.mcq_enabled
-                    ? 'Take an instant 8–10 question MCQ quiz crafted strictly from today’s session with detailed concept explanations.'
-                    : 'Included with Pro Monthly (₹349/mo) & Pro Yearly (₹899/yr) — test yourself right after every session!'}
+                  Take an instant 8–10 question MCQ quiz crafted strictly from today&apos;s session
+                  with detailed concept explanations.
                 </p>
               </div>
               <button
                 type="button"
-                className={`btn ${subscription?.mcq_enabled ? 'btn-primary' : 'btn-pro-gold'}`}
+                className="btn btn-primary"
                 disabled={loadingMcq}
                 onClick={() => void handleOpenMcqTest()}
               >
                 <SparklesIcon size={15} />
-                <span>
-                  {loadingMcq
-                    ? 'Preparing MCQ Test...'
-                    : subscription?.mcq_enabled
-                      ? 'Take MCQ Test Now →'
-                      : 'Unlock Session MCQs (₹349/mo)'}
-                </span>
+                <span>{loadingMcq ? 'Preparing MCQ Test...' : 'Take MCQ Test Now →'}</span>
               </button>
             </section>
           )}
