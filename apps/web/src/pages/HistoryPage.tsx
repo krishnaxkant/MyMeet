@@ -282,6 +282,11 @@ export function HistoryPage() {
   };
 
   const isHost = selected?.my_role === 'host';
+  const regenerateLimitReached = Boolean(
+    selected?.ai_summary &&
+      !subscription?.is_unlimited &&
+      (selected.ai_summary.sources_summary?.regenerate_count ?? 0) >= 1,
+  );
 
   return (
     <div className="settings-page">
@@ -384,16 +389,23 @@ export function HistoryPage() {
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    disabled={generatingAi}
+                    disabled={generatingAi || regenerateLimitReached}
+                    title={
+                      regenerateLimitReached
+                        ? 'Upgrade to Pro Monthly (₹349/mo) or Pro Yearly (₹899/yr) for unlimited regenerations'
+                        : undefined
+                    }
                     onClick={() => void handleGenerateAiNotes()}
                   >
                     <SparklesIcon size={14} />
                     <span>
                       {generatingAi
                         ? 'Analyzing...'
-                        : selected.ai_summary
-                          ? 'Regenerate'
-                          : 'Generate Notes'}
+                        : regenerateLimitReached
+                          ? 'Not enough credits'
+                          : selected.ai_summary
+                            ? 'Regenerate'
+                            : 'Generate Notes'}
                     </span>
                   </button>
                   {currentPage && (

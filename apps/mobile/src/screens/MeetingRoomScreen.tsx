@@ -167,6 +167,7 @@ export function MeetingRoomScreen({
   const [micEnabled, setMicEnabled] = useState(initialMicEnabled);
   const [camEnabled, setCamEnabled] = useState(initialCamEnabled);
   const [screenShareEnabled, setScreenShareEnabled] = useState(false);
+  const [remoteScreenShareActive, setRemoteScreenShareActive] = useState(false);
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Record<string, string>>({});
@@ -495,6 +496,9 @@ export function MeetingRoomScreen({
       if (typeof msg.camEnabled === 'boolean') setCamEnabled(msg.camEnabled);
       if (typeof msg.screenShareEnabled === 'boolean') {
         setScreenShareEnabled(msg.screenShareEnabled);
+      }
+      if (typeof msg.remoteScreenShareActive === 'boolean') {
+        setRemoteScreenShareActive(msg.remoteScreenShareActive);
       }
       if (msg.warning) {
         setMediaNotice(msg.warning);
@@ -845,10 +849,13 @@ export function MeetingRoomScreen({
           <Text style={styles.floatingCornerTime}>· {elapsed}</Text>
         </View>
 
-        {/* Top-Right Floating Camera Flip Button (symmetrical with top-left pill) */}
+        {/* Floating Camera Flip Button (moves to bottom-right when watching Host screen share so it never overlaps Host PiP) */}
         {camEnabled && (
           <Pressable
-            style={styles.floatingFlipBtn}
+            style={[
+              styles.floatingFlipBtn,
+              remoteScreenShareActive && { top: undefined, bottom: 14, right: 12 },
+            ]}
             onPress={() => sendStageCommand({ type: 'flipCam' })}
             accessibilityLabel="Switch front and back camera"
           >

@@ -598,10 +598,12 @@ export function MeetingRoomPage() {
     showSidebar && sidebarTab === 'chat' ? 0 : Math.max(0, messages.length - lastReadCount);
   const isLiveKitConnected = livekit.connectionState === ConnectionState.Connected;
   const screenShares = livekit.participants.filter((p) => Boolean(p.screenShareTrack));
+  const remoteScreenSharer = screenShares.find((p) => !p.isLocal) ?? null;
+  const localIsSharing = livekit.screenShareEnabled || screenShares.some((p) => p.isLocal);
 
-  // Cap visible video tiles on Web (12 normal / 6 during screen share) so 50-100 student classes stay buttery smooth
+  // Cap visible video tiles on Web (12 tiles) so 50-100 student classes stay buttery smooth
   // Priority: Active speakers -> Host -> Local user -> Camera ON -> Others
-  const MAX_WEB_TILES = screenShares.length > 0 ? 6 : 12;
+  const MAX_WEB_TILES = 12;
   const prioritizedLiveKitParticipants =
     livekit.participants.length > MAX_WEB_TILES
       ? [...livekit.participants].sort((a, b) => {
@@ -721,88 +723,130 @@ export function MeetingRoomPage() {
             <span className="stage-corner-time">{elapsed}</span>
           </div>
 
-          {screenShares.length > 0 && (
-            <div className="screen-share-spotlight">
-              {screenShares.map((sharer) => (
-                <VideoTile
-                  key={`screen-${sharer.identity}`}
-                  name={sharer.name}
-                  isLocal={sharer.isLocal}
-                  videoTrack={sharer.screenShareTrack}
-                  isScreenShare
-                />
-              ))}
+          {/* Presenter view: when YOU are sharing, show clean banner + normal participants grid (no mirror!) */}
+          {localIsSharing && !remoteScreenSharer && (
+            <div className="sharing-self-banner" role="status">
+              <span className="sharing-self-dot" />
+              <span>You are sharing your screen</span>
+              <button
+                type="button"
+                className="sharing-self-stop-btn"
+                onClick={() => void livekit.toggleScreenShare()}
+              >
+                Stop Sharing
+              </button>
             </div>
           )}
 
-          <div
-            className={`participant-tiles-grid ${screenShares.length > 0 ? 'has-screen-share' : ''}`}
-            data-count={gridCountAttr}
-          >
-            {isLiveKitConnected && visibleLiveKitParticipants.length > 0
-              ? visibleLiveKitParticipants.map((p) => (
-                  <VideoTile
-                    key={p.identity}
-                    name={p.name}
-                    avatarUrl={
-                      avatarMap.get(p.identity) ??
-                      (p.isLocal ? profile?.avatar_url ?? null : null)
-                    }
-                    isLocal={p.isLocal}
-                    isHost={p.isHost || p.identity === meeting.host_id}
-                    isSpeaking={p.isSpeaking}
-                    micEnabled={p.micEnabled}
-                    handRaised={Boolean(
-                      livekit.raisedHands[p.identity] || (p.isLocal && myHandRaised),
-                    )}
-                    videoTrack={p.videoTrack}
-                    audioTrack={p.audioTrack}
-                    speakerMuted={speakerMuted}
-                    videoEffect={p.isLocal ? videoEffect : 'none'}
-                  />
-                ))
-              : visibleFallbackParticipants.map((participant) => {
-                  const name = participant.full_name || participant.email || 'Participant';
-                  const isMe = participant.user_id === user?.id;
-                  return (
-                    <VideoTile
-                      key={participant.id}
-                      name={name}
-                      avatarUrl={
-                        participant.avatar_url ??
-                        (isMe ? profile?.avatar_url ?? null : null)
-                      }
-                      isLocal={isMe}
-                      isHost={participant.role === 'host'}
-                      micEnabled={isMe ? livekit.micEnabled : true}
-                      handRaised={Boolean(
-                        livekit.raisedHands[participant.user_id] || (isMe && myHandRaised),
-                      )}
-                    />
-                  );
-                })}
-          </div>
-
-          {/* Keep hidden remote participants' audio active even when video grid is capped in large rooms */}
-          {hiddenLiveKitParticipants.map((p) =>
-            !p.isLocal && p.audioTrack ? (
-              <HiddenAudioPlayer
-                key={`audio-${p.identity}`}
-                track={p.audioTrack}
-                muted={speakerMuted}
+          {/* Viewer presentation mode: full-stage shared screen + compact top-right sharer PiP */}
+          {remoteScreenSharer ? (
+            <div className="screen-share-viewer-stage">
+              <VideoTile
+                key={`screen-${remoteScreenSharer.identity}`}
+                name={remoteScreenSharer.name}
+                isLocal={false}
+                videoTrack={remoteScreenSharer.screenShareTrack}
+                isScreenShare
               />
-            ) : null,
-          )}
 
-          {hiddenParticipantCount > 0 && (
-            <button
-              type="button"
-              className="room-floating-pill room-floating-pill-info"
-              style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 25 }}
-              onClick={() => openSidebarTab('people')}
-            >
-              +{hiddenParticipantCount} more participants
-            </button>
+              {/* Compact Top-Right Floating Host / Sharer PiP Block */}
+              <div className="screen-sharer-pip">
+                <VideoTile
+                  key={`pip-${remoteScreenSharer.identity}`}
+                  name={remoteScreenSharer.name}
+                  avatarUrl={avatarMap.get(remoteScreenSharer.identity) ?? null}
+                  isLocal={false}
+                  isHost={remoteScreenSharer.isHost || remoteScreenSharer.identity === meeting.host_id}
+                  isSpeaking={remoteScreenSharer.isSpeaking}
+                  micEnabled={remoteScreenSharer.micEnabled}
+                  handRaised={Boolean(livekit.raisedHands[remoteScreenSharer.identity])}
+                  videoTrack={remoteScreenSharer.videoTrack}
+                  audioTrack={remoteScreenSharer.audioTrack}
+                  speakerMuted={speakerMuted}
+                  videoEffect="none"
+                />
+              </div>
+
+              {/* Keep ALL other remote participants' audio active in background while viewing screen */}
+              {livekit.participants.map((p) =>
+                !p.isLocal && p.identity !== remoteScreenSharer.identity && p.audioTrack ? (
+                  <HiddenAudioPlayer
+                    key={`audio-pres-${p.identity}`}
+                    track={p.audioTrack}
+                    muted={speakerMuted}
+                  />
+                ) : null,
+              )}
+            </div>
+          ) : (
+            <>
+              <div className="participant-tiles-grid" data-count={gridCountAttr}>
+                {isLiveKitConnected && visibleLiveKitParticipants.length > 0
+                  ? visibleLiveKitParticipants.map((p) => (
+                      <VideoTile
+                        key={p.identity}
+                        name={p.name}
+                        avatarUrl={
+                          avatarMap.get(p.identity) ??
+                          (p.isLocal ? profile?.avatar_url ?? null : null)
+                        }
+                        isLocal={p.isLocal}
+                        isHost={p.isHost || p.identity === meeting.host_id}
+                        isSpeaking={p.isSpeaking}
+                        micEnabled={p.micEnabled}
+                        handRaised={Boolean(
+                          livekit.raisedHands[p.identity] || (p.isLocal && myHandRaised),
+                        )}
+                        videoTrack={p.videoTrack}
+                        audioTrack={p.audioTrack}
+                        speakerMuted={speakerMuted}
+                        videoEffect={p.isLocal ? videoEffect : 'none'}
+                      />
+                    ))
+                  : visibleFallbackParticipants.map((participant) => {
+                      const name = participant.full_name || participant.email || 'Participant';
+                      const isMe = participant.user_id === user?.id;
+                      return (
+                        <VideoTile
+                          key={participant.id}
+                          name={name}
+                          avatarUrl={
+                            participant.avatar_url ??
+                            (isMe ? profile?.avatar_url ?? null : null)
+                          }
+                          isLocal={isMe}
+                          isHost={participant.role === 'host'}
+                          micEnabled={isMe ? livekit.micEnabled : true}
+                          handRaised={Boolean(
+                            livekit.raisedHands[participant.user_id] || (isMe && myHandRaised),
+                          )}
+                        />
+                      );
+                    })}
+              </div>
+
+              {/* Keep hidden remote participants' audio active even when video grid is capped in large rooms */}
+              {hiddenLiveKitParticipants.map((p) =>
+                !p.isLocal && p.audioTrack ? (
+                  <HiddenAudioPlayer
+                    key={`audio-${p.identity}`}
+                    track={p.audioTrack}
+                    muted={speakerMuted}
+                  />
+                ) : null,
+              )}
+
+              {hiddenParticipantCount > 0 && (
+                <button
+                  type="button"
+                  className="room-floating-pill room-floating-pill-info"
+                  style={{ position: 'absolute', bottom: 14, right: 14, zIndex: 25 }}
+                  onClick={() => openSidebarTab('people')}
+                >
+                  +{hiddenParticipantCount} more participants
+                </button>
+              )}
+            </>
           )}
 
           {livekit.latestCaption && (captions.captionsEnabled || Date.now() - livekit.latestCaption.timestamp < 8000) && (

@@ -175,6 +175,7 @@ export interface MeetingAiSummary {
     screen_captures?: number;
     chat_messages?: number;
     visual_flow?: VisualNoteStep[];
+    regenerate_count?: number;
   };
   model_used: string;
   generated_at: string;

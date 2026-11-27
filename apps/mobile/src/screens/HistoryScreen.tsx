@@ -442,6 +442,11 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   );
 
   const isHost = selected?.my_role === 'host';
+  const regenerateLimitReached = Boolean(
+    selected?.ai_summary &&
+      !subscription?.is_unlimited &&
+      (selected.ai_summary.sources_summary?.regenerate_count ?? 0) >= 1,
+  );
 
   // Step-by-step Android Back inside History: Modals -> Detail -> History List -> Previous Screen
   useEffect(() => {
@@ -492,16 +497,22 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
           ) : (
             <View style={styles.topActionRow}>
               <Pressable
-                style={[styles.genBtn, { backgroundColor: colors.accent }]}
-                disabled={generatingAi}
+                style={[
+                  styles.genBtn,
+                  { backgroundColor: regenerateLimitReached ? '#334155' : colors.accent },
+                  (generatingAi || regenerateLimitReached) && { opacity: 0.72 },
+                ]}
+                disabled={generatingAi || regenerateLimitReached}
                 onPress={() => void handleGenerateAi()}
               >
                 <Text style={styles.shareBtnText}>
                   {generatingAi
                     ? 'Analyzing...'
-                    : selected.ai_summary
-                      ? 'Regenerate'
-                      : 'Generate'}
+                    : regenerateLimitReached
+                      ? 'Not enough credits'
+                      : selected.ai_summary
+                        ? 'Regenerate'
+                        : 'Generate'}
                 </Text>
               </Pressable>
               {selected.ai_summary && (

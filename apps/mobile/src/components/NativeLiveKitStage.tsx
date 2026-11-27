@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { ActivityIndicator, Image, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import type { Participant, RemoteAudioTrack, Room, VideoTrack } from 'livekit-client';
 import { MicSymbol } from './MediaIcons';
 import { startNativeAiAudioCapture } from '../utils/nativeAiAudioCapture';
@@ -27,6 +27,7 @@ export interface NativeStageEvent {
   micEnabled?: boolean;
   camEnabled?: boolean;
   screenShareEnabled?: boolean;
+  remoteScreenShareActive?: boolean;
   identity?: string;
   name?: string;
   raised?: boolean;
@@ -60,6 +61,7 @@ interface TileSnapshot {
 interface ScreenSnapshot {
   identity: string;
   name: string;
+  isLocal: boolean;
   videoTrack: VideoTrack;
 }
 
@@ -119,6 +121,7 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
     aiNotesEnabledRef.current = aiNotesEnabled;
     const stopAiCaptureRef = useRef<(() => void) | null>(null);
     const activeAiTrackIdRef = useRef<string | null>(null);
+    const prevRemoteScreenRef = useRef(false);
 
     const desiredMicRef = useRef(initialMic);
     const desiredCamRef = useRef(initialCam);
@@ -235,19 +238,35 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
         ...Array.from(room.remoteParticipants.values()).map((p) => ({ p, isLocal: false })),
       ];
 
-      let activeScreen: ScreenSnapshot | null = null;
+      let remoteScreen: ScreenSnapshot | null = null;
+      let localScreen: ScreenSnapshot | null = null;
       for (const item of all) {
         const sp = item.p.getTrackPublication(LK.Track.Source.ScreenShare);
         if (sp?.track && !sp.isMuted) {
-          activeScreen = {
+          const snap: ScreenSnapshot = {
             identity: item.p.identity,
             name: item.p.name || item.p.identity,
+            isLocal: item.isLocal,
             videoTrack: sp.track as VideoTrack,
           };
-          break;
+          if (!item.isLocal && !remoteScreen) {
+            remoteScreen = snap;
+          } else if (item.isLocal && !localScreen) {
+            localScreen = snap;
+          }
         }
       }
+      const activeScreen = remoteScreen ?? localScreen;
       setScreenShare(activeScreen);
+
+      const isRemoteScreenNow = Boolean(activeScreen && !activeScreen.isLocal);
+      if (isRemoteScreenNow !== prevRemoteScreenRef.current) {
+        prevRemoteScreenRef.current = isRemoteScreenNow;
+        onStageEventRef.current({
+          type: 'mediaState',
+          remoteScreenShareActive: isRemoteScreenNow,
+        });
+      }
 
       const snapshots: TileSnapshot[] = all.map(({ p, isLocal }) => {
         const camPub = p.getTrackPublication(LK.Track.Source.Camera);
@@ -704,9 +723,15 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
 
     const VideoViewComponent = runtime.LiveKitRN?.VideoView;
 
+    const isRemotePresenting = Boolean(screenShare && !screenShare.isLocal && VideoViewComponent);
+    const isSelfPresenting = Boolean(screenShare && screenShare.isLocal);
+    const remoteSharerTile = isRemotePresenting
+      ? tiles.find((t) => t.identity === screenShare?.identity) ?? null
+      : null;
+
     // Cap visible tiles to 6 on mobile so 50-100 student classes never freeze the phone GPU
     // Priority: Active speakers -> Host -> Local user -> Camera ON -> Others
-    const MAX_VISIBLE_MOBILE_TILES = screenShare ? 4 : 6;
+    const MAX_VISIBLE_MOBILE_TILES = 6;
     const prioritizedTiles =
       tiles.length > MAX_VISIBLE_MOBILE_TILES
         ? [...tiles]
@@ -760,8 +785,25 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
           </View>
         )}
 
-        {screenShare && VideoViewComponent && (
-          <View style={styles.screenWrap}>
+        {/* Presenter View: when YOU are sharing, never mirror your own screen — show clean banner + participants */}
+        {isSelfPresenting && (
+          <View style={styles.selfShareBanner}>
+            <View style={styles.selfShareLeft}>
+              <View style={styles.selfShareDot} />
+              <Text style={styles.selfShareText}>You are sharing your screen</Text>
+            </View>
+            <Pressable
+              style={styles.selfShareStopBtn}
+              onPress={() => void enqueueMedia(() => applyScreenShareInternal(false))}
+            >
+              <Text style={styles.selfShareStopText}>Stop</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Viewer Presentation Mode: 100% full-stage shared screen + compact top-right Host/Sharer PiP */}
+        {isRemotePresenting && screenShare && VideoViewComponent ? (
+          <View style={styles.viewerScreenFull}>
             <View style={[styles.tile, styles.screenTile]}>
               <VideoViewComponent
                 videoTrack={screenShare.videoTrack}
@@ -776,80 +818,118 @@ export const NativeLiveKitStage = forwardRef<NativeStageHandle, NativeLiveKitSta
                 </View>
               </View>
             </View>
-          </View>
-        )}
 
-        <View style={styles.grid}>
-          {tileRows.map((row, rowIdx) => (
-            <View key={`row-${rowIdx}`} style={styles.gridRow}>
-              {row.map((tile) => {
-                const photoUrl = avatars[tile.identity] || null;
-                return (
-                  <View
-                    key={tile.identity}
-                    style={[
-                      styles.tile,
-                      styles.tileFlex,
-                      tile.isLocal && styles.tileLocal,
-                      tile.isSpeaking && styles.tileSpeaking,
-                      tile.isHandRaised && styles.tileHandRaised,
-                    ]}
-                  >
-                    {tile.videoTrack && VideoViewComponent ? (
-                      <VideoViewComponent
-                        videoTrack={tile.videoTrack}
-                        style={styles.videoFill}
-                        objectFit="cover"
-                        mirror={tile.isLocal && isFrontCamera}
+            {/* Compact Top-Right Floating Host / Sharer PiP Block */}
+            {remoteSharerTile && (
+              <View
+                style={[
+                  styles.sharerPipCard,
+                  remoteSharerTile.isSpeaking && styles.tileSpeaking,
+                ]}
+              >
+                {remoteSharerTile.videoTrack ? (
+                  <VideoViewComponent
+                    videoTrack={remoteSharerTile.videoTrack}
+                    style={styles.videoFill}
+                    objectFit="cover"
+                  />
+                ) : (
+                  <View style={styles.pipAvatarCircle}>
+                    {avatars[remoteSharerTile.identity] ? (
+                      <Image
+                        source={{ uri: avatars[remoteSharerTile.identity] }}
+                        style={styles.avatarImg}
                       />
                     ) : (
-                      <View style={styles.avatarCircle}>
-                        {photoUrl ? (
-                          <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
-                        ) : (
-                          <Text style={styles.avatarInitials}>{getInitials(tile.name)}</Text>
-                        )}
-                      </View>
+                      <Text style={styles.pipAvatarInitials}>
+                        {getInitials(remoteSharerTile.name)}
+                      </Text>
                     )}
-
-                    {tile.isHandRaised && (
-                      <View style={styles.handPill}>
-                        <Text style={styles.handPillText}>✋ Hand Raised</Text>
-                      </View>
-                    )}
-
-                    <View style={styles.tileFooter}>
-                      <View style={styles.namePill}>
-                        <Text style={styles.namePillText} numberOfLines={1}>
-                          {tile.isLocal ? `${tile.name} (You)` : tile.name}
-                        </Text>
-                      </View>
-                      <View style={styles.badges}>
-                        {tile.isHost && (
-                          <View style={styles.hostTag}>
-                            <Text style={styles.hostTagText}>Host</Text>
-                          </View>
-                        )}
-                        {!tile.micOn && (
-                          <View style={styles.mutedChip}>
-                            <MicSymbol color="#FFFFFF" muted />
-                          </View>
-                        )}
-                      </View>
-                    </View>
                   </View>
-                );
-              })}
-            </View>
-          ))}
-        </View>
-
-        {hiddenTilesCount > 0 && (
-          <View style={styles.overflowCountPill}>
-            <Text style={styles.overflowCountText}>
-              +{hiddenTilesCount} more participants in class
-            </Text>
+                )}
+                <View style={styles.pipFooter}>
+                  <Text style={styles.pipNameText} numberOfLines={1}>
+                    {remoteSharerTile.name}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
+        ) : (
+          <>
+            <View style={styles.grid}>
+              {tileRows.map((row, rowIdx) => (
+                <View key={`row-${rowIdx}`} style={styles.gridRow}>
+                  {row.map((tile) => {
+                    const photoUrl = avatars[tile.identity] || null;
+                    return (
+                      <View
+                        key={tile.identity}
+                        style={[
+                          styles.tile,
+                          styles.tileFlex,
+                          tile.isLocal && styles.tileLocal,
+                          tile.isSpeaking && styles.tileSpeaking,
+                          tile.isHandRaised && styles.tileHandRaised,
+                        ]}
+                      >
+                        {tile.videoTrack && VideoViewComponent ? (
+                          <VideoViewComponent
+                            videoTrack={tile.videoTrack}
+                            style={styles.videoFill}
+                            objectFit="cover"
+                            mirror={tile.isLocal && isFrontCamera}
+                          />
+                        ) : (
+                          <View style={styles.avatarCircle}>
+                            {photoUrl ? (
+                              <Image source={{ uri: photoUrl }} style={styles.avatarImg} />
+                            ) : (
+                              <Text style={styles.avatarInitials}>{getInitials(tile.name)}</Text>
+                            )}
+                          </View>
+                        )}
+
+                        {tile.isHandRaised && (
+                          <View style={styles.handPill}>
+                            <Text style={styles.handPillText}>✋ Hand Raised</Text>
+                          </View>
+                        )}
+
+                        <View style={styles.tileFooter}>
+                          <View style={styles.namePill}>
+                            <Text style={styles.namePillText} numberOfLines={1}>
+                              {tile.isLocal ? `${tile.name} (You)` : tile.name}
+                            </Text>
+                          </View>
+                          <View style={styles.badges}>
+                            {tile.isHost && (
+                              <View style={styles.hostTag}>
+                                <Text style={styles.hostTagText}>Host</Text>
+                              </View>
+                            )}
+                            {!tile.micOn && (
+                              <View style={styles.mutedChip}>
+                                <MicSymbol color="#FFFFFF" muted />
+                              </View>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+
+            {hiddenTilesCount > 0 && (
+              <View style={styles.overflowCountPill}>
+                <Text style={styles.overflowCountText}>
+                  +{hiddenTilesCount} more participants in class
+                </Text>
+              </View>
+            )}
+          </>
         )}
 
         {caption && (
@@ -1088,5 +1168,97 @@ const styles = StyleSheet.create({
     color: '#CBD5E1',
     fontSize: 11.5,
     fontWeight: '700',
+  },
+  viewerScreenFull: {
+    flex: 1,
+    position: 'relative',
+    minHeight: 0,
+  },
+  sharerPipCard: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 106,
+    height: 138,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#0F172A',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.28)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 10,
+    zIndex: 25,
+  },
+  pipAvatarCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  pipAvatarInitials: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  pipFooter: {
+    position: 'absolute',
+    left: 5,
+    right: 5,
+    bottom: 5,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(7, 11, 20, 0.82)',
+  },
+  pipNameText: {
+    color: '#F8FAFC',
+    fontSize: 10,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  selfShareBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 34,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.65)',
+  },
+  selfShareLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  selfShareDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#22C55E',
+  },
+  selfShareText: {
+    color: '#F8FAFC',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  selfShareStopBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#DC2626',
+  },
+  selfShareStopText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '800',
   },
 });

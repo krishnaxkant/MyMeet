@@ -90,6 +90,7 @@ export interface MeetingAiSummaryRecord {
     screen_captures?: number;
     chat_messages?: number;
     visual_flow?: VisualNoteStep[];
+    regenerate_count?: number;
   };
   model_used: string;
   generated_at: string;
@@ -783,6 +784,7 @@ function buildFallbackSummary(params: {
 
 export async function generateMeetingAiSummaryById(
   meetingId: string,
+  regenerateCount = 0,
 ): Promise<MeetingAiSummaryRecord | null> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return null;
@@ -1029,6 +1031,7 @@ export async function generateMeetingAiSummaryById(
     screen_captures: screenNotes.length,
     chat_messages: chatContents.length,
     visual_flow: generated.visual_flow,
+    regenerate_count: regenerateCount,
   };
 
   const { data: saved, error: upsertErr } = await supabase
@@ -1092,7 +1095,27 @@ export async function generateMeetingAiSummaryForUser(
     }
   }
 
-  const summary = await generateMeetingAiSummaryById(meeting.id);
+  // Enforce 1-time free regeneration cap unless user has Unlimited Monthly (₹349) or Yearly (₹899) plan
+  const { data: existingSummary } = await supabase
+    .from('meeting_ai_summaries')
+    .select('id, sources_summary')
+    .eq('meeting_id', meeting.id)
+    .maybeSingle<{ id: string; sources_summary?: { regenerate_count?: number } | null }>();
+
+  let nextRegenCount = 0;
+  if (existingSummary) {
+    const prevCount = Number(existingSummary.sources_summary?.regenerate_count ?? 0);
+    const subscription = await getUserSubscriptionStatus(userId);
+    if (!subscription.is_unlimited && prevCount >= 1) {
+      throw new HttpError(
+        402,
+        'Not enough credits. Upgrade to Pro Monthly (₹349/mo) or Pro Yearly (₹899/yr) for unlimited note regenerations.',
+      );
+    }
+    nextRegenCount = prevCount + 1;
+  }
+
+  const summary = await generateMeetingAiSummaryById(meeting.id, nextRegenCount);
   if (!summary) {
     throw new HttpError(
       500,
