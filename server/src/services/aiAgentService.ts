@@ -36,11 +36,21 @@ export interface MeetingAiSummaryRecord {
   updated_at: string;
 }
 
+export const LARGE_ROOM_AI_THRESHOLD = 8;
+
+type SpeakerAuthority = 'HOST' | 'CO-HOST' | 'PARTICIPANT';
+
 interface TranscriptRow {
   id: string;
+  speaker_id: string | null;
   speaker_name: string;
   content: string;
   created_at: string;
+}
+
+interface ParticipantRoleRow {
+  user_id: string;
+  role: string;
 }
 
 interface ScreenNoteRow {
@@ -220,6 +230,11 @@ export async function recordMeetingTranscript(
     throw new HttpError(403, 'You must be joined to record voice transcripts.');
   }
 
+  // Smart 100-person scale guard: in large rooms (>8 joined), only Host & Co-Hosts capture AI voice
+  if (meeting.joined_count > LARGE_ROOM_AI_THRESHOLD && !meeting.can_manage) {
+    return { ok: true, skipped: true };
+  }
+
   const supabase = requireSupabase();
   const profile = await getOrCreateProfile(user.id, user.email, user.fullName);
   const speakerName =
@@ -247,6 +262,11 @@ export async function transcribeAndStoreAudioChunk(
   const meeting = await getMeetingByCode(rawCode, user.id);
   if (!meeting.is_host && meeting.my_status !== 'joined') {
     throw new HttpError(403, 'You must be joined to transcribe meeting audio.');
+  }
+
+  // Smart 100-person scale guard: in large rooms (>8 joined), only Host & Co-Hosts call Gemini Audio
+  if (meeting.joined_count > LARGE_ROOM_AI_THRESHOLD && !meeting.can_manage) {
+    return { saved: false, skipped: true, usedAi: true };
   }
 
   if (!isGeminiConfigured()) {
@@ -504,8 +524,20 @@ function sanitizeVisualFlow(raw: unknown): VisualNoteStep[] {
   return cleaned.slice(0, 16);
 }
 
+function resolveSpeakerAuthority(
+  userId: string | null | undefined,
+  hostId: string,
+  roleMap: Map<string, SpeakerAuthority>,
+): SpeakerAuthority {
+  if (!userId) return 'PARTICIPANT';
+  if (userId === hostId) return 'HOST';
+  return roleMap.get(userId) ?? 'PARTICIPANT';
+}
+
 function buildFallbackSummary(params: {
   title: string;
+  hostId: string;
+  roleMap: Map<string, SpeakerAuthority>;
   transcripts: TranscriptRow[];
   screenNotes: ScreenNoteRow[];
   chatContents: string[];
@@ -527,9 +559,20 @@ function buildFallbackSummary(params: {
         !txt.startsWith('Visual screen frame captured'),
     );
 
-  const usableTranscripts = params.transcripts
+  // Prefer Host & Co-Host spoken content when present so participant chatter doesn't dominate fallback
+  const hostTranscripts = params.transcripts
+    .filter((t) => {
+      const auth = resolveSpeakerAuthority(t.speaker_id, params.hostId, params.roleMap);
+      return auth === 'HOST' || auth === 'CO-HOST';
+    })
     .map((t) => t.content.trim())
     .filter((txt) => hasRealSubstantiveContent(txt));
+
+  const allTranscripts = params.transcripts
+    .map((t) => t.content.trim())
+    .filter((txt) => hasRealSubstantiveContent(txt));
+
+  const usableTranscripts = hostTranscripts.length > 0 ? hostTranscripts : allTranscripts;
 
   const usableChats = params.chatContents
     .map((c) => c.trim())
@@ -696,10 +739,10 @@ export async function generateMeetingAiSummaryById(
 
   if (mErr || !meeting) return null;
 
-  const [transcriptsRes, screenRes, msgsRes] = await Promise.all([
+  const [transcriptsRes, screenRes, msgsRes, participantsRes] = await Promise.all([
     supabase
       .from('meeting_transcripts')
-      .select('id, speaker_name, content, created_at')
+      .select('id, speaker_id, speaker_name, content, created_at')
       .eq('meeting_id', meeting.id)
       .order('created_at', { ascending: true })
       .limit(500),
@@ -715,11 +758,43 @@ export async function generateMeetingAiSummaryById(
       .eq('meeting_id', meeting.id)
       .order('created_at', { ascending: true })
       .limit(200),
+    supabase
+      .from('meeting_participants')
+      .select('user_id, role')
+      .eq('meeting_id', meeting.id),
   ]);
 
   const transcripts = (transcriptsRes.data ?? []) as TranscriptRow[];
   const screenNotes = (screenRes.data ?? []) as ScreenNoteRow[];
   const msgRows = (msgsRes.data ?? []) as MessageRow[];
+  const participantRoles = (participantsRes.data ?? []) as ParticipantRoleRow[];
+
+  const roleMap = new Map<string, SpeakerAuthority>();
+  roleMap.set(meeting.host_id, 'HOST');
+  for (const row of participantRoles) {
+    if (row.user_id === meeting.host_id || row.role === 'host') {
+      roleMap.set(row.user_id, 'HOST');
+    } else if (row.role === 'co_host') {
+      roleMap.set(row.user_id, 'CO-HOST');
+    } else if (!roleMap.has(row.user_id)) {
+      roleMap.set(row.user_id, 'PARTICIPANT');
+    }
+  }
+
+  const formattedTranscripts = transcripts.map((t) => {
+    const auth = resolveSpeakerAuthority(t.speaker_id, meeting.host_id, roleMap);
+    const label = t.speaker_name ? `${auth} · ${t.speaker_name}` : auth;
+    return `- [${label}]: ${t.content}`;
+  });
+
+  const formattedChats = msgRows
+    .map((m) => {
+      const content = m.content.trim();
+      if (!content || content.startsWith('[Recording')) return null;
+      const auth = resolveSpeakerAuthority(m.sender_id, meeting.host_id, roleMap);
+      return `- [${auth}]: ${content}`;
+    })
+    .filter((line): line is string => Boolean(line));
 
   const chatContents = msgRows
     .map((m) => m.content.trim())
@@ -753,48 +828,52 @@ export async function generateMeetingAiSummaryById(
       'You are an expert Study Notes & Meeting Synthesizer for Meet.',
       'Your job is to combine EVERYTHING the host/speaker explained by voice AND EVERYTHING shown on the shared screen into thorough, crystal-clear, multi-page notes that anyone can study from and understand completely.',
       '',
-      'STRICT QUALITY RULES:',
-      '1. RUTHLESS NOISE & CASUAL CHAT FILTER (MOST IMPORTANT): Include ONLY genuinely important subject matter — concepts taught, formulas/equations, derivations, worked examples, code/architecture, project decisions, deadlines, or action items. STRICTLY IGNORE and NEVER include: casual friend banter, Hinglish/Hindi small talk ("pata nahi", "light band kar le", "kuch nahi karna", "hello hello"), app/UI/button testing ("full screen pe click karo", "check the code", "meeting not found"), attendance/roll call ("present sir", "roll no."), greetings, mic/screen checks, or participant counts.',
-      '2. EMPTY-SESSION GATEKEEPER: If the transcripts/chat contain ONLY casual talk, greetings, jokes, UI/app testing, or non-substantive chatter with NO real educational, technical, or work topic discussed, you MUST set "has_important_content": false, "environment_type": "no_important_content", "environment_label": "Casual Session · No Study Notes", "overview": "No important educational, technical, or business content was detected in this session. Casual conversation was automatically filtered out.", "visual_flow": [], "key_points": [], "action_items": [], and "detailed_notes_markdown": "No important notes detected." NEVER fabricate study notes or formulas out of casual chatter!',
-      '3. DEEP & COMPLETE WHEN SUBSTANTIVE (MULTI-PAGE READY): When real teaching or work discussion occurred, create clear sections in `visual_flow` (4 to 14 sections) covering every important topic, formula, and explanation thoroughly.',
-      '4. FORMULAS + EXPLANATIONS + EXAMPLES: Only use `kind: "formula"` when an actual mathematical/scientific formula, theorem, rule, or code snippet was taught. Never put casual sentences under "Formula & Explanation". Always write equations in clean, human-readable Unicode math (e.g. `T = (2u sin θ) / g`, `u²`, `√`, `θ`, `°`) — NEVER raw LaTeX commands like `\\frac`, `\\quad`, or `\\text`.',
-      '5. SELECTIVE ARROWS ONLY: Set `"show_arrow": true` ONLY when a block directly flows into or derives the very next block.',
-      '6. Only include `action_items` if actual homework, practice problems, or concrete next steps were discussed (otherwise return []).',
+      'STRICT QUALITY & SPEAKER AUTHORITY RULES:',
+      '1. HOST & CO-HOST FINAL AUTHORITY (DECISION RESOLUTION): Transcripts are ordered chronologically and tagged with [HOST], [CO-HOST], or [PARTICIPANT]. Treat [HOST] and [CO-HOST] as the PRIMARY SOURCE OF TRUTH for all concepts, formulas, final decisions, deadlines, and action items.',
+      '   - If a [PARTICIPANT] makes a wrong guess, incorrect answer, or rejected proposal and [HOST]/[CO-HOST] corrects, rejects, or overrides it, STRICTLY EXCLUDE the rejected/wrong idea and record ONLY the [HOST]/[CO-HOST] final decision.',
+      '   - If a [PARTICIPANT] raises a valid doubt or proposes an idea that [HOST]/[CO-HOST] clearly approves, confirms, or builds upon (e.g. "yes/haan sahi hai", "good idea, let us do that", "agreed", "correct"), CLEANLY SYNTHESIZE that approved idea or Q&A into the notes as a finalized point.',
+      '   - Drop unconfirmed, ignored, or off-topic [PARTICIPANT] side-comments.',
+      '2. RUTHLESS NOISE & CASUAL CHAT FILTER: Include ONLY genuinely important subject matter — concepts taught, formulas/equations, derivations, worked examples, code/architecture, project decisions, deadlines, or action items. STRICTLY IGNORE and NEVER include: casual friend banter, Hinglish/Hindi small talk ("pata nahi", "light band kar le", "kuch nahi karna", "hello hello"), app/UI/button testing ("full screen pe click karo", "check the code", "meeting not found"), attendance/roll call ("present sir", "roll no."), greetings, mic/screen checks, or participant counts.',
+      '3. EMPTY-SESSION GATEKEEPER: If the transcripts/chat contain ONLY casual talk, greetings, jokes, UI/app testing, or non-substantive chatter with NO real educational, technical, or work topic discussed, you MUST set "has_important_content": false, "environment_type": "no_important_content", "environment_label": "Casual Session · No Study Notes", "overview": "No important educational, technical, or business content was detected in this session. Casual conversation was automatically filtered out.", "visual_flow": [], "key_points": [], "action_items": [], and "detailed_notes_markdown": "No important notes detected." NEVER fabricate study notes or formulas out of casual chatter!',
+      '4. DEEP & COMPLETE WHEN SUBSTANTIVE (MULTI-PAGE READY): When real teaching or work discussion occurred, create clear sections in `visual_flow` (4 to 14 sections) covering every important topic, formula, and explanation thoroughly.',
+      '5. FORMULAS + EXPLANATIONS + EXAMPLES: Only use `kind: "formula"` when an actual mathematical/scientific formula, theorem, rule, or code snippet was taught. Never put casual sentences under "Formula & Explanation". Always write equations in clean, human-readable Unicode math (e.g. `T = (2u sin θ) / g`, `u²`, `√`, `θ`, `°`) — NEVER raw LaTeX commands like `\\frac`, `\\quad`, or `\\text`.',
+      '6. SELECTIVE ARROWS ONLY: Set `"show_arrow": true` ONLY when a block directly flows into or derives the very next block.',
+      '7. Only include `action_items` if actual homework, practice problems, or concrete next steps were confirmed by [HOST]/[CO-HOST] (otherwise return []).',
       '',
       'Return ONLY a valid JSON object matching this exact schema:',
       '{',
       '  "has_important_content": true,',
       '  "environment_type": "math_class | class_lecture | coding_session | team_meeting | interview | general | no_important_content",',
       '  "environment_label": "Short topic label e.g. Math Class · Quadratic Equations or System Design · Caching",',
-      '  "overview": "2-4 clear sentences summarizing the core subject matter and main conclusions covered",',
+      '  "overview": "2-4 clear sentences summarizing the core subject matter and main finalized conclusions",',
       '  "visual_flow": [',
       '    {',
       '      "title": "Clear section heading (3-8 words)",',
       '      "kind": "concept | formula | step | example | takeaway",',
-      '      "body": "Thorough, easy-to-understand explanation of what was taught or discussed (2-4 sentences)",',
+      '      "body": "Thorough, easy-to-understand explanation of what was taught or finalized (2-4 sentences)",',
       '      "formula": "Optional equation, theorem, or code snippet in clean Unicode math (omit if none)",',
       '      "bullets": ["Optional array of 2-6 clear sub-points, variable meanings, or worked solution steps"],',
       '      "show_arrow": true,',
       '      "arrow_label": "Only include when show_arrow is true (e.g. Worked Example, Apply Formula, Leads to)"',
       '    }',
       '  ],',
-      '  "key_points": ["4 to 8 crisp quick-revision takeaways or formulas"],',
-      '  "action_items": ["Homework, practice problems, or concrete action items discussed (empty array if none)"],',
+      '  "key_points": ["4 to 8 crisp quick-revision takeaways, formulas, or finalized decisions"],',
+      '  "action_items": ["Homework, practice problems, or concrete action items approved by Host/Co-Host (empty array if none)"],',
       '  "detailed_notes_markdown": "Complete content-only Markdown notes"',
       '}',
       '',
       `Session Topic: ${meeting.title}`,
       '',
-      '--- SPOKEN VOICE CONTENT (WHAT WAS EXPLAINED) ---',
-      transcripts.length > 0 ? transcripts.map((t) => `- ${t.content}`).join('\n') : '(None)',
+      '--- CHRONOLOGICAL SPOKEN VOICE CONTENT (WITH SPEAKER AUTHORITY ROLES) ---',
+      formattedTranscripts.length > 0 ? formattedTranscripts.join('\n') : '(None)',
       '',
       '--- SHARED SCREEN / BOARD CONTENT (WHAT WAS SHOWN) ---',
       usableScreenTexts.length > 0
         ? usableScreenTexts.map((s) => `- ${s}`).join('\n')
         : '(None)',
       '',
-      '--- CHAT NOTES ---',
-      chatContents.length > 0 ? chatContents.map((c) => `- ${c}`).join('\n') : '(None)',
+      '--- CHAT NOTES (WITH SPEAKER AUTHORITY ROLES) ---',
+      formattedChats.length > 0 ? formattedChats.join('\n') : '(None)',
     ].join('\n');
 
     const geminiSummaryRes = await callGeminiApi([{ text: prompt }], true);
@@ -873,6 +952,8 @@ export async function generateMeetingAiSummaryById(
   if (!generated) {
     generated = buildFallbackSummary({
       title: meeting.title,
+      hostId: meeting.host_id,
+      roleMap,
       transcripts,
       screenNotes,
       chatContents,

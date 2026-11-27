@@ -133,13 +133,18 @@ export function MeetingRoomPage() {
   const localParticipantMedia =
     livekit.participants.find((p) => p.isLocal) ?? null;
 
+  // Smart 100-person scale guard: in large rooms (>8 participants), only Host & Co-Hosts capture AI voice
+  const isLargeRoomNonHost = Boolean(
+    meeting && meeting.joined_count > 8 && !meeting.can_manage,
+  );
+
   const aiAgent = useMeetingAiAgent({
     meetingCode: meeting?.code ?? code,
     accessToken: session?.access_token ?? null,
     speakerName: myDisplayName,
     enabled: isAdmittedAndActive,
-    localAudioTrack: localParticipantMedia?.audioTrack ?? null,
-    screenShareTrack: activeScreenSharer?.screenShareTrack ?? null,
+    localAudioTrack: isLargeRoomNonHost ? null : (localParticipantMedia?.audioTrack ?? null),
+    screenShareTrack: isLargeRoomNonHost ? null : (activeScreenSharer?.screenShareTrack ?? null),
     screenSharerName: activeScreenSharer?.name ?? null,
   });
 
@@ -149,7 +154,9 @@ export function MeetingRoomPage() {
       void livekit.broadcastCaption(myDisplayName, text);
     },
     (finalText) => {
-      void aiAgent.saveVoiceTranscript(finalText);
+      if (!isLargeRoomNonHost) {
+        void aiAgent.saveVoiceTranscript(finalText);
+      }
     },
   );
 

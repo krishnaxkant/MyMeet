@@ -544,9 +544,13 @@ export function MeetingRoomScreen({
     nativeStageEventHandlerRef.current(event);
   }, []);
 
+  const isLargeRoomNonHost = Boolean(
+    meeting && meeting.joined_count > 8 && !meeting.can_manage,
+  );
+
   const handleAiAudioChunk = useCallback(
     (wavBase64: string, mimeType: 'audio/wav') => {
-      if (!aiNotesEnabled || aiUnavailableRef.current) return;
+      if (!aiNotesEnabled || isLargeRoomNonHost || aiUnavailableRef.current) return;
       if (!session?.access_token || !meeting?.code) return;
       void transcribeAudioChunk(
         session.access_token,
@@ -857,7 +861,7 @@ export function MeetingRoomScreen({
             initialCam={initialConfigRef.current.cam}
             localName={initialConfigRef.current.name}
             avatars={avatarsRecord}
-            aiNotesEnabled={aiNotesEnabled}
+            aiNotesEnabled={aiNotesEnabled && !isLargeRoomNonHost}
             onAiAudioChunk={handleAiAudioChunk}
             onStageEvent={stableOnNativeStageEvent}
           />
@@ -1075,9 +1079,11 @@ export function MeetingRoomScreen({
                 >
                   <Text style={styles.handEmoji}>✨</Text>
                   <Text style={[styles.moreTileLabel, { color: colors.text }]}>
-                    {aiNotesEnabled
-                      ? `AI Notes: ON${aiVoiceCount > 0 ? ` (${aiVoiceCount})` : ''}`
-                      : 'AI Notes: OFF'}
+                    {isLargeRoomNonHost
+                      ? 'AI Notes: Host Mode'
+                      : aiNotesEnabled
+                        ? `AI Notes: ON${aiVoiceCount > 0 ? ` (${aiVoiceCount})` : ''}`
+                        : 'AI Notes: OFF'}
                   </Text>
                 </Pressable>
 
