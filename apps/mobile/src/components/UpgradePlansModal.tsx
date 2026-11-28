@@ -188,7 +188,10 @@ export function UpgradePlansModal({
               <Text style={{ color: colors.textMuted, marginTop: 8 }}>Loading plans...</Text>
             </View>
           ) : (
-            <ScrollView contentContainerStyle={styles.list}>
+            <ScrollView
+              contentContainerStyle={styles.list}
+              showsVerticalScrollIndicator={false}
+            >
               {plans.map((plan) => {
                 const code = plan.code as PaidPlanCode;
                 const isBest = code === 'pro_yearly_899';
