@@ -140,6 +140,8 @@ code {
   position: sticky;
   top: 0;
   z-index: 40;
+  width: 100%;
+  max-width: 100%;
   border-bottom: 1px solid var(--border);
   background: var(--nav-bg);
   backdrop-filter: blur(20px) saturate(175%);
@@ -148,14 +150,16 @@ code {
 }
 
 .navbar-inner {
-  max-width: 1280px;
+  width: 100%;
+  max-width: 1240px;
   margin: 0 auto;
-  height: 66px;
-  padding: 0 28px;
+  height: 64px;
+  padding: 0 24px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 16px;
+  box-sizing: border-box;
 }
 
 .nav-zone-left {
@@ -163,27 +167,31 @@ code {
   align-items: center;
   justify-content: flex-start;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .nav-zone-right {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
+  flex-shrink: 0;
 }
 
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   font-weight: 800;
-  font-size: 1.18rem;
+  font-size: 1.15rem;
   letter-spacing: -0.03em;
   color: var(--text);
   text-decoration: none;
-  padding: 4px 6px 4px 0;
+  padding: 4px 4px 4px 0;
   border-radius: 12px;
+  white-space: nowrap;
+  flex-shrink: 0;
   transition: opacity 0.15s ease;
 }
 
@@ -217,25 +225,27 @@ code {
 
 /* Centered Floating Navigation Dock */
 .nav-center-dock {
+  justify-self: center;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   padding: 4px;
   border-radius: 999px;
   background: var(--surface-elevated);
   border: 1px solid var(--border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  max-width: 100%;
 }
 
 .nav-pill-link {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   color: var(--text-muted);
   text-decoration: none;
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   font-weight: 600;
-  padding: 7px 14px;
+  padding: 7px 13px;
   border-radius: 999px;
   white-space: nowrap;
   transition: color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
@@ -360,6 +370,7 @@ code {
   top: calc(100% + 10px);
   right: 0;
   width: 256px;
+  max-width: calc(100vw - 24px);
   padding: 8px;
   border-radius: 16px;
   background: var(--surface);
@@ -481,10 +492,17 @@ code {
   color: var(--accent-text);
 }
 
-@media (max-width: 920px) {
+@media (max-width: 1120px) {
+  .nav-time-chip {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
   .navbar-inner {
     grid-template-columns: auto 1fr;
-    padding: 0 18px;
+    padding: 0 16px;
+    gap: 10px;
   }
 
   .nav-center-dock {
@@ -501,9 +519,14 @@ code {
   }
 }
 
-@media (max-width: 600px) {
-  .nav-time-chip {
+@media (max-width: 520px) {
+  .brand-pro-chip {
     display: none;
+  }
+  .nav-upgrade-btn,
+  .nav-pro-status-pill {
+    padding: 5px 10px;
+    font-size: 0.72rem;
   }
 }
 
@@ -565,7 +588,7 @@ code {
 .nav-user-name {
   font-size: 0.84rem;
   font-weight: 600;
-  max-width: 120px;
+  max-width: 96px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

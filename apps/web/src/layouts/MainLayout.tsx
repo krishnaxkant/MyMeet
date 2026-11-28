@@ -104,6 +104,9 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
     (user?.user_metadata?.full_name as string | undefined) ||
     user?.email ||
     'Account';
+  const shortDisplayName = displayName.includes('@')
+    ? displayName.split('@')[0]
+    : displayName.split(/\s+/)[0];
 
   const navItems = [
     { to: '/', label: 'Home', icon: HomeIcon, active: location.pathname === '/' },
@@ -201,8 +204,8 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
                 <span>
                   {isPro
                     ? subscription?.is_unlimited
-                      ? 'PRO · Unlimited'
-                      : `PRO · ${subscription?.credits_remaining ?? 0} left`
+                      ? 'PRO'
+                      : `PRO · ${subscription?.credits_remaining ?? 0}`
                     : 'Upgrade'}
                 </span>
               </button>
@@ -240,7 +243,7 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
                       getInitials(displayName)
                     )}
                   </span>
-                  <span className="nav-user-name">{displayName}</span>
+                  <span className="nav-user-name">{shortDisplayName}</span>
                   <span className={`nav-chevron ${accountOpen ? 'rotated' : ''}`}>
                     <ChevronDownIcon size={13} />
                   </span>
