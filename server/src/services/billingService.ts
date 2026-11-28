@@ -471,6 +471,14 @@ export async function createCheckoutOrder(
     throw new HttpError(400, 'Please select a valid Pro plan.');
   }
 
+  const currentStatus = await getUserSubscriptionStatus(userId);
+  if (currentStatus.is_unlimited && !plan.is_unlimited) {
+    throw new HttpError(
+      400,
+      'You already have an active Unlimited Pro subscription — credit packs are not needed.',
+    );
+  }
+
   if (!isRazorpayConfigured()) {
     throw new HttpError(
       503,
@@ -648,12 +656,15 @@ export async function verifyCheckoutOrder(
         await sendSubscriptionWelcomeEmail({
           to: prof.email,
           userName: prof.full_name || prof.email.split('@')[0],
+          planCode: order.plan_code,
           planName: planDef.name,
           priceInr: planDef.price_inr,
-          isUnlimited: subscription.is_unlimited,
-          mcqEnabled: subscription.mcq_enabled,
+          isUnlimited: planDef.is_unlimited,
+          mcqEnabled: planDef.mcq_enabled,
+          creditsIncluded: planDef.credits ?? 0,
           creditsRemaining: subscription.credits_remaining,
-          expiresAt: subscription.expires_at,
+          expiresAt: planDef.is_unlimited ? subscription.expires_at : null,
+          paymentId,
           highlights: planDef.highlights,
         });
       }

@@ -46,6 +46,51 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
+function getPublicBaseUrl(): string {
+  return (env.webAppUrl || 'https://mymeet-live.vercel.app').replace(/\/$/, '');
+}
+
+function renderBrandHeader(): string {
+  const logoUrl = `${getPublicBaseUrl()}/mymeet-mark.png?v=2`;
+  return `
+    <table role="presentation" style="border-collapse: collapse; margin-bottom: 18px;">
+      <tr>
+        <td style="padding-right: 10px; vertical-align: middle;">
+          <img src="${logoUrl}" alt="MyMeet" width="32" height="32" style="display: block; border: 0; border-radius: 6px;" />
+        </td>
+        <td style="vertical-align: middle;">
+          <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1;">
+            <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Connect. Collaborate. Together.</div>
+        </td>
+      </tr>
+    </table>
+  `;
+}
+
+function renderEmailFooter(note?: string): string {
+  const base = getPublicBaseUrl();
+  return `
+    <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
+      ${note ? `<div style="margin-bottom: 6px;">${note}</div>` : ''}
+      <div>
+        <strong style="color: #64748b;">MyMeet</strong> · Connect. Collaborate. Together.
+      </div>
+      <div style="margin-top: 4px;">
+        <a href="${base}/pricing" style="color: #64748b; text-decoration: none;">Pricing</a> ·
+        <a href="${base}/refund" style="color: #64748b; text-decoration: none;">Refund Policy</a> ·
+        <a href="${base}/privacy" style="color: #64748b; text-decoration: none;">Privacy</a> ·
+        <a href="${base}/contact" style="color: #64748b; text-decoration: none;">Contact Support</a>
+      </div>
+    </div>
+  `;
+}
+
+/* ==========================================================================
+   1. MEETING INVITATION EMAIL
+   ========================================================================== */
+
 export async function sendMeetingInviteEmail(params: {
   to: string;
   inviterName: string;
@@ -57,11 +102,12 @@ export async function sendMeetingInviteEmail(params: {
     return {
       sent: false,
       status: 'not_configured',
-      message: 'In-app invite sent. Configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env to deliver emails.',
+      message:
+        'In-app invite sent. Configure SMTP_HOST, SMTP_USER, and SMTP_PASS in .env to deliver emails.',
     };
   }
 
-  const joinUrl = `${env.webAppUrl}/meet/${params.meetingCode}`;
+  const joinUrl = `${getPublicBaseUrl()}/meet/${params.meetingCode}`;
   const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
 
   const safeInviter = escapeHtml(params.inviterName);
@@ -69,26 +115,36 @@ export async function sendMeetingInviteEmail(params: {
   const safeCode = escapeHtml(params.meetingCode);
 
   const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background: #f6f8fc; border-radius: 14px;">
-      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px;">
-        <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
-          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
-        </div>
-        <div style="font-size: 11px; color: #64748b; margin-bottom: 14px;">Connect. Collaborate. Together.</div>
-        <h2 style="margin: 0 0 8px; color: #0f172a; font-size: 20px;">You're invited to a meeting</h2>
-        <p style="margin: 0 0 18px; color: #475569; font-size: 15px;">
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 16px; padding: 28px;">
+        ${renderBrandHeader()}
+
+        <h1 style="margin: 0 0 8px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
+          You're invited to a MyMeet session
+        </h1>
+        <p style="margin: 0 0 18px; color: #475569; font-size: 15px; line-height: 1.6;">
           <strong>${safeInviter}</strong> invited you to join <strong>${safeTitle}</strong>.
         </p>
-        <div style="background: #f1f5f9; border-radius: 10px; padding: 14px; margin-bottom: 20px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Meeting Code</div>
-          <div style="font-size: 20px; font-weight: 800; color: #0f172a; margin-top: 4px; font-family: monospace;">${safeCode}</div>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em;">
+            Meeting Code
+          </div>
+          <div style="font-size: 22px; font-weight: 800; color: #0f172a; margin-top: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.04em;">
+            ${safeCode}
+          </div>
         </div>
-        <a href="${joinUrl}" style="display: inline-block; background: linear-gradient(90deg, #00a8ff, #2563eb, #7c3aed); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 22px; border-radius: 10px; font-size: 15px;">
-          Join MyMeet
+
+        <a href="${joinUrl}" style="display: inline-block; background: linear-gradient(135deg, #00a8ff 0%, #2563eb 55%, #4f46e5 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 15px;">
+          Join MyMeet →
         </a>
-        <p style="margin: 18px 0 0; color: #64748b; font-size: 12px;">
-          Or open this link in your browser: <a href="${joinUrl}" style="color: #2563eb;">${joinUrl}</a>
+
+        <p style="margin: 18px 0 0; color: #64748b; font-size: 12.5px; word-break: break-all;">
+          Or open directly in your browser:<br/>
+          <a href="${joinUrl}" style="color: #2563eb;">${escapeHtml(joinUrl)}</a>
         </p>
+
+        ${renderEmailFooter()}
       </div>
     </div>
   `;
@@ -126,15 +182,22 @@ export async function sendMeetingInviteEmail(params: {
   }
 }
 
+/* ==========================================================================
+   2. SUBSCRIPTION / PRO PACK PURCHASE CONFIRMATION EMAIL (PLAN-ACCURATE!)
+   ========================================================================== */
+
 export async function sendSubscriptionWelcomeEmail(params: {
   to: string;
   userName: string;
+  planCode: 'single_9' | 'pack_49' | 'pro_monthly_349' | 'pro_yearly_899';
   planName: string;
   priceInr: number;
   isUnlimited: boolean;
   mcqEnabled: boolean;
+  creditsIncluded: number;
   creditsRemaining: number;
   expiresAt: string | null;
+  paymentId?: string | null;
   highlights: string[];
 }): Promise<EmailSendResult> {
   const mailer = getTransporter();
@@ -149,14 +212,91 @@ export async function sendSubscriptionWelcomeEmail(params: {
   const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
   const safeName = escapeHtml(params.userName || 'there');
   const safePlan = escapeHtml(params.planName);
-  const dashboardUrl = `${env.webAppUrl}/history`;
-  const validTill = params.expiresAt
-    ? new Date(params.expiresAt).toLocaleDateString('en-IN', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      })
-    : 'Active';
+  const dashboardUrl = `${getPublicBaseUrl()}/history`;
+  const hasProThemeAndBadge = params.planCode !== 'single_9';
+
+  const validTill =
+    params.isUnlimited && params.expiresAt
+      ? new Date(params.expiresAt).toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })
+      : null;
+
+  // Plan-accurate badge, headline, subject & intro paragraph (ZERO false claims!)
+  let badgeText = '✦ MYMEET PRO ACTIVATED';
+  let headlineText = `Welcome to MyMeet Pro, ${safeName}!`;
+  let introHtml = `Thank you for upgrading to <strong>${safePlan}</strong>. Unlimited Pro Master Notes, Quick 20-MCQ Session Revision Tests, your luxury PRO workspace theme, and gold profile badge are now live across both Web and Android.`;
+  let subjectLine = `MyMeet Pro Activated — ${params.planName} (₹${params.priceInr})`;
+  let accentBorder = '#f59e0b';
+
+  if (params.planCode === 'single_9') {
+    badgeText = '✦ PRO NOTE PASS UNLOCKED';
+    headlineText = `Your ${safePlan} is ready, ${safeName}!`;
+    introHtml = `Thank you for purchasing <strong>${safePlan} (₹${params.priceInr})</strong>. You now have <strong>1 Pro Master Notes credit</strong> ready to unlock deep AI study notes, code blocks, derivations, and HD PDF export for any 1 class or meeting across Web and Android.`;
+    subjectLine = `MyMeet Receipt — ${params.planName} (₹${params.priceInr}) Ready`;
+    accentBorder = '#7c3aed';
+  } else if (params.planCode === 'pack_49') {
+    badgeText = '✦ 15 PRO NOTES PACK ACTIVATED';
+    headlineText = `Your ${safePlan} is active, ${safeName}!`;
+    introHtml = `Thank you for purchasing <strong>${safePlan} (₹${params.priceInr})</strong>. Your <strong>15 Pro Master Notes credits</strong>, premium PRO workspace theme, and gold profile badge are now live across both Web and Android.`;
+    subjectLine = `MyMeet Receipt — ${params.planName} (₹${params.priceInr}) Activated`;
+    accentBorder = '#7c3aed';
+  }
+
+  const notesValue = params.isUnlimited
+    ? '∞ Unlimited (Every class &amp; meeting)'
+    : params.creditsRemaining > params.creditsIncluded
+      ? `${params.creditsIncluded} Credit${params.creditsIncluded === 1 ? '' : 's'} added (${params.creditsRemaining} total active)`
+      : `${params.creditsIncluded} Class Credit${params.creditsIncluded === 1 ? '' : 's'}`;
+
+  const summaryRows: Array<{ label: string; valueHtml: string }> = [
+    {
+      label: 'Plan Purchased',
+      valueHtml: `<span style="color: #0f172a; font-weight: 700;">${safePlan} (₹${params.priceInr})</span>`,
+    },
+    {
+      label: 'Pro Master Notes',
+      valueHtml: `<span style="color: #0f172a; font-weight: 700;">${notesValue}</span>`,
+    },
+    {
+      label: 'Quick 20-MCQ Revision Tests',
+      valueHtml: params.mcqEnabled
+        ? `<span style="color: #15803d; font-weight: 700;">✓ Unlocked</span>`
+        : `<span style="color: #64748b; font-weight: 600;">✕ Not included (Pro Monthly / Yearly only)</span>`,
+    },
+    {
+      label: 'PRO Theme &amp; Gold Badge',
+      valueHtml: hasProThemeAndBadge
+        ? `<span style="color: #15803d; font-weight: 700;">✓ Included</span>`
+        : `<span style="color: #64748b; font-weight: 600;">✕ Not included in Single Pass</span>`,
+    },
+  ];
+
+  if (validTill) {
+    summaryRows.push({
+      label: 'Valid Till',
+      valueHtml: `<span style="color: #0f172a; font-weight: 700;">${escapeHtml(validTill)}</span>`,
+    });
+  }
+
+  if (params.paymentId) {
+    summaryRows.push({
+      label: 'Payment Receipt ID',
+      valueHtml: `<span style="color: #334155; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; font-weight: 600;">${escapeHtml(params.paymentId)}</span>`,
+    });
+  }
+
+  const summaryTableHtml = summaryRows
+    .map(
+      (row) => `
+      <tr>
+        <td style="padding: 6px 0; color: #64748b; border-bottom: 1px solid #eef2f6;">${row.label}</td>
+        <td style="padding: 6px 0; text-align: right; border-bottom: 1px solid #eef2f6;">${row.valueHtml}</td>
+      </tr>`,
+    )
+    .join('');
 
   const benefitItems = params.highlights
     .map(
@@ -166,43 +306,26 @@ export async function sendSubscriptionWelcomeEmail(params: {
     .join('');
 
   const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
-      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #f59e0b; border-radius: 16px; padding: 28px;">
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid ${accentBorder}; border-radius: 16px; padding: 28px;">
+        ${renderBrandHeader()}
+
         <div style="display: inline-block; padding: 4px 12px; border-radius: 999px; background: linear-gradient(135deg, #f59e0b, #7c3aed); color: #ffffff; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 14px;">
-          ✦ MYMEET PRO ACTIVATED
+          ${badgeText}
         </div>
-        <h1 style="margin: 0 0 8px; color: #0f172a; font-size: 24px; letter-spacing: -0.02em;">
-          Welcome to MyMeet Pro, ${safeName}!
+        <h1 style="margin: 0 0 8px; color: #0f172a; font-size: 23px; letter-spacing: -0.02em;">
+          ${headlineText}
         </h1>
         <p style="margin: 0 0 20px; color: #475569; font-size: 15px; line-height: 1.6;">
-          Thank you for upgrading to <strong>${safePlan}</strong>. Your premium MyMeet workspace, gold profile badge, and Pro study tools are now live across both Web and Android.
+          ${introHtml}
         </p>
 
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 20px;">
-          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;">
-            Subscription Summary
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;">
+            Order &amp; Plan Summary
           </div>
-          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-            <tr>
-              <td style="padding: 5px 0; color: #64748b;">Plan</td>
-              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${safePlan} (₹${params.priceInr})</td>
-            </tr>
-            <tr>
-              <td style="padding: 5px 0; color: #64748b;">Pro Master Notes</td>
-              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${
-                params.isUnlimited ? '∞ Unlimited' : `${params.creditsRemaining} Credit${params.creditsRemaining === 1 ? '' : 's'} Active`
-              }</td>
-            </tr>
-            <tr>
-              <td style="padding: 5px 0; color: #64748b;">Quick 20-MCQ Revision Tests</td>
-              <td style="padding: 5px 0; color: ${params.mcqEnabled ? '#15803d' : '#b45309'}; font-weight: 700; text-align: right;">${
-                params.mcqEnabled ? '✓ Unlocked' : 'Not included in credit packs'
-              }</td>
-            </tr>
-            <tr>
-              <td style="padding: 5px 0; color: #64748b;">Valid Till</td>
-              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${escapeHtml(validTill)}</td>
-            </tr>
+          <table style="width: 100%; border-collapse: collapse; font-size: 13.5px;">
+            ${summaryTableHtml}
           </table>
         </div>
 
@@ -211,35 +334,34 @@ export async function sendSubscriptionWelcomeEmail(params: {
           <ul style="list-style: none; padding: 0; margin: 0;">${benefitItems}</ul>
         </div>
 
-        <a href="${dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
+        <a href="${dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
           Open MyMeet Pro Notes →
         </a>
 
-        <p style="margin: 22px 0 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
-          MyMeet · Connect. Collaborate. Together.<br/>
-          Questions? Simply reply to this email and our team will help you out.
-        </p>
+        ${renderEmailFooter('Questions about your order? Simply reply to this email and our team will help you out.')}
       </div>
     </div>
   `;
 
-  const text = [
-    `Welcome to MyMeet Pro, ${params.userName || 'there'}!`,
+  const textLines = [
+    headlineText,
     '',
-    `Your ${params.planName} (₹${params.priceInr}) plan is now active.`,
-    `Pro Master Notes: ${params.isUnlimited ? 'Unlimited' : `${params.creditsRemaining} credits`}`,
-    `Quick 20-MCQ Revision Tests: ${params.mcqEnabled ? 'Unlocked' : 'Not included in credit packs'}`,
-    `Valid Till: ${validTill}`,
+    `Plan: ${params.planName} (₹${params.priceInr})`,
+    `Pro Master Notes: ${params.isUnlimited ? 'Unlimited' : `${params.creditsIncluded} class credit(s) (${params.creditsRemaining} total active)`}`,
+    `Quick 20-MCQ Revision Tests: ${params.mcqEnabled ? 'Unlocked' : 'Not included (Pro Monthly / Yearly only)'}`,
+    `PRO Theme & Gold Badge: ${hasProThemeAndBadge ? 'Included' : 'Not included in Single Pass'}`,
+    ...(validTill ? [`Valid Till: ${validTill}`] : []),
+    ...(params.paymentId ? [`Payment Receipt ID: ${params.paymentId}`] : []),
     '',
     `Open your notes: ${dashboardUrl}`,
-  ].join('\n');
+  ];
 
   try {
     await mailer.sendMail({
       from: fromAddress,
       to: params.to,
-      subject: `Welcome to MyMeet Pro — ${params.planName} Activated!`,
-      text,
+      subject: subjectLine,
+      text: textLines.join('\n'),
       html,
     });
     onEmailSentHook?.();
@@ -259,6 +381,10 @@ export async function sendSubscriptionWelcomeEmail(params: {
   }
 }
 
+/* ==========================================================================
+   3. SIGNUP EMAIL VERIFICATION
+   ========================================================================== */
+
 export async function sendEmailVerificationEmail(params: {
   to: string;
   fullName: string;
@@ -277,12 +403,9 @@ export async function sendEmailVerificationEmail(params: {
   const safeName = escapeHtml(params.fullName || 'there');
 
   const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 16px; padding: 28px;">
-        <div style="font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
-          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
-        </div>
-        <div style="font-size: 11.5px; color: #64748b; margin-bottom: 18px;">Connect. Collaborate. Together.</div>
+        ${renderBrandHeader()}
 
         <h1 style="margin: 0 0 10px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
           Verify your email address
@@ -299,9 +422,8 @@ export async function sendEmailVerificationEmail(params: {
           If the button doesn't work, copy and paste this link into your browser:<br/>
           <a href="${params.verifyUrl}" style="color: #2563eb;">${escapeHtml(params.verifyUrl)}</a>
         </p>
-        <p style="margin: 16px 0 0; color: #94a3b8; font-size: 12px;">
-          If you didn't create a MyMeet account, you can safely ignore this email.
-        </p>
+
+        ${renderEmailFooter("If you didn't create a MyMeet account, you can safely ignore this email.")}
       </div>
     </div>
   `;
@@ -340,6 +462,10 @@ export async function sendEmailVerificationEmail(params: {
   }
 }
 
+/* ==========================================================================
+   4. SUBSCRIPTION EXPIRY / CREDITS COMPLETED EMAIL
+   ========================================================================== */
+
 export async function sendSubscriptionExpiredEmail(params: {
   to: string;
   userName: string;
@@ -358,25 +484,27 @@ export async function sendSubscriptionExpiredEmail(params: {
   const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
   const safeName = escapeHtml(params.userName || 'there');
   const safePlan = escapeHtml(params.previousPlanName);
-  const renewUrl = `${env.webAppUrl.replace(/\/$/, '')}/profile?upgrade=pro_monthly_349`;
+  const renewUrl = `${getPublicBaseUrl()}/pricing`;
 
-  const headline =
-    params.reason === 'credits_used'
-      ? `Your ${safePlan} credits have been used`
-      : `Your ${safePlan} subscription has ended`;
+  const isCreditsUsed = params.reason === 'credits_used';
+  const headline = isCreditsUsed
+    ? `Your ${safePlan} credits are complete`
+    : `Your ${safePlan} subscription has ended`;
 
-  const bodyCopy =
-    params.reason === 'credits_used'
-      ? `You have used all Pro Master Notes credits in your <strong>${safePlan}</strong> pack. Your account has now switched back to the <strong>MyMeet Basic</strong> dashboard.`
-      : `Your <strong>${safePlan}</strong> plan has expired and your account has now switched back to the <strong>MyMeet Basic</strong> dashboard.`;
+  const bodyCopy = isCreditsUsed
+    ? `You've used all Pro Master Notes credits from your <strong>${safePlan}</strong>. Your account is now back on the free <strong>MyMeet Basic</strong> tier with zero recurring charges.`
+    : `Your <strong>${safePlan}</strong> subscription period has ended and your account has automatically returned to the free <strong>MyMeet Basic</strong> tier with zero auto-debit charges.`;
+
+  const nextStepNote = isCreditsUsed
+    ? 'Grab another pass anytime starting at ₹9, or upgrade to Pro Monthly / Yearly for Unlimited Pro Master Notes &amp; Quick 20-MCQ Session Revision Tests.'
+    : 'Renew anytime to restore Unlimited Pro Master Notes, Quick 20-MCQ Session Revision Tests, and your luxury MyMeet Pro workspace.';
+
+  const ctaLabel = isCreditsUsed ? 'View Pro Plans →' : 'Renew MyMeet Pro →';
 
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #6366f1; border-radius: 16px; padding: 28px;">
-        <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
-          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
-        </div>
-        <div style="font-size: 11px; color: #64748b; margin-bottom: 18px;">Connect. Collaborate. Together.</div>
+        ${renderBrandHeader()}
 
         <h1 style="margin: 0 0 10px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
           ${headline}
@@ -387,16 +515,14 @@ export async function sendSubscriptionExpiredEmail(params: {
 
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; font-size: 13.5px; color: #334155; line-height: 1.6;">
           <strong>Good news:</strong> Every Pro Master Note you already unlocked remains permanently saved in your MyMeet History.<br/>
-          Renew anytime to restore Unlimited Pro Master Notes, Quick 20-MCQ Session Revision Tests, and your MyMeet Pro workspace.
+          ${nextStepNote}
         </div>
 
-        <a href="${renewUrl}" style="display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
-          Renew MyMeet Pro →
+        <a href="${renewUrl}" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
+          ${ctaLabel}
         </a>
 
-        <p style="margin: 22px 0 0; color: #94a3b8; font-size: 12px;">
-          MyMeet · Connect. Collaborate. Together.
-        </p>
+        ${renderEmailFooter()}
       </div>
     </div>
   `;
@@ -404,22 +530,21 @@ export async function sendSubscriptionExpiredEmail(params: {
   const text = [
     `Hi ${params.userName || 'there'},`,
     '',
-    params.reason === 'credits_used'
-      ? `All Pro credits in your ${params.previousPlanName} pack have been used. Your account is now back on MyMeet Basic.`
-      : `Your ${params.previousPlanName} subscription has expired. Your account is now back on MyMeet Basic.`,
+    isCreditsUsed
+      ? `All Pro credits in your ${params.previousPlanName} have been used. Your account is now back on MyMeet Basic with zero recurring charges.`
+      : `Your ${params.previousPlanName} subscription has ended. Your account is now back on MyMeet Basic with zero auto-debit charges.`,
     '',
-    'All Pro Master Notes you already unlocked remain permanently saved in your History.',
-    `Renew anytime: ${renewUrl}`,
+    'Every Pro Master Note you already unlocked remains permanently saved in your History.',
+    `View plans: ${renewUrl}`,
   ].join('\n');
 
   try {
     await mailer.sendMail({
       from: fromAddress,
       to: params.to,
-      subject:
-        params.reason === 'credits_used'
-          ? `MyMeet: Your ${params.previousPlanName} credits are complete`
-          : `MyMeet: Your ${params.previousPlanName} subscription has expired`,
+      subject: isCreditsUsed
+        ? `MyMeet: Your ${params.previousPlanName} credits are complete`
+        : `MyMeet: Your ${params.previousPlanName} subscription has ended`,
       text,
       html,
     });
@@ -439,6 +564,10 @@ export async function sendSubscriptionExpiredEmail(params: {
     };
   }
 }
+
+/* ==========================================================================
+   5. FOUNDER OPS / SYSTEM SCALING ALERT EMAIL
+   ========================================================================== */
 
 export async function sendFounderAlertEmail(params: {
   to: string;
@@ -475,8 +604,8 @@ export async function sendFounderAlertEmail(params: {
     .map(
       (m) => `
       <tr>
-        <td style="padding: 6px 0; color: #64748b; font-size: 13.5px;">${escapeHtml(m.label)}</td>
-        <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 13.5px; text-align: right;">${escapeHtml(m.value)}</td>
+        <td style="padding: 6px 0; color: #64748b; font-size: 13.5px; border-bottom: 1px solid #eef2f6;">${escapeHtml(m.label)}</td>
+        <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 13.5px; text-align: right; border-bottom: 1px solid #eef2f6;">${escapeHtml(m.value)}</td>
       </tr>`,
     )
     .join('');
@@ -491,6 +620,8 @@ export async function sendFounderAlertEmail(params: {
   const html = `
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; background: #f8fafc;">
       <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid ${accent}; border-radius: 16px; padding: 26px;">
+        ${renderBrandHeader()}
+
         <div style="display: inline-block; padding: 4px 10px; border-radius: 999px; background: ${accent}; color: #ffffff; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 12px;">
           MYMEET OPS · ${badgeLabel}
         </div>
@@ -513,10 +644,7 @@ export async function sendFounderAlertEmail(params: {
           <ol style="list-style: none; padding: 0; margin: 0;">${stepsHtml}</ol>
         </div>
 
-        <p style="margin: 18px 0 0; color: #94a3b8; font-size: 12px;">
-          Automated alert from MyMeet Backend Monitor (max 1 alert per issue every 4 hours).<br/>
-          Health Dashboard: <a href="${env.webAppUrl}" style="color: #2563eb;">${escapeHtml(env.webAppUrl)}</a>
-        </p>
+        ${renderEmailFooter('Automated alert from MyMeet Backend Monitor (max 1 alert per issue every 4 hours).')}
       </div>
     </div>
   `;
