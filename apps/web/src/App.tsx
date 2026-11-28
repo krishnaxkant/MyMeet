@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { InteractiveGridBackground } from './components/InteractiveGridBackground';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './hooks/useAuth';
 import { useBackendHealth } from './hooks/useBackendHealth';
@@ -20,7 +21,9 @@ function AppRoutes() {
   const { data, loading } = useBackendHealth();
 
   return (
-    <Routes>
+    <>
+      <InteractiveGridBackground />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -88,6 +91,7 @@ function AppRoutes() {
       />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </>
   );
 }
 

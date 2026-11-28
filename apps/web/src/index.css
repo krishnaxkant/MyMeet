@@ -5579,3 +5579,91 @@ body,
   color: var(--text-subtle);
   border-color: var(--border-strong);
 }
+
+
+/* ============================================================================
+   INTERACTIVE CURSOR-REVEALED ARCHITECTURAL BACKGROUND GRID
+   (Invisible at rest; illuminates cleanly under pointer across every Web page)
+   ============================================================================ */
+
+.layout,
+.auth-split {
+  position: relative;
+  z-index: 1;
+}
+
+.interactive-grid-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  --mx: -999px;
+  --my: -999px;
+  --grid-alpha: 0;
+  --grid-line: rgba(37, 99, 235, 0.22);
+  --grid-dot: rgba(37, 99, 235, 0.36);
+  --grid-glow: rgba(37, 99, 235, 0.11);
+}
+
+[data-theme='dark'] .interactive-grid-layer {
+  --grid-line: rgba(96, 165, 250, 0.24);
+  --grid-dot: rgba(147, 197, 253, 0.42);
+  --grid-glow: rgba(59, 130, 246, 0.14);
+}
+
+/* Luxury Champagne-Gold / Royal-Violet grid for Pro subscribers */
+[data-tier='pro'] .interactive-grid-layer {
+  --grid-line: rgba(217, 119, 6, 0.24);
+  --grid-dot: rgba(124, 58, 237, 0.42);
+  --grid-glow: rgba(245, 158, 11, 0.12);
+}
+
+[data-theme='dark'][data-tier='pro'] .interactive-grid-layer {
+  --grid-line: rgba(251, 191, 36, 0.25);
+  --grid-dot: rgba(167, 139, 250, 0.46);
+  --grid-glow: rgba(245, 158, 11, 0.15);
+}
+
+.interactive-grid-mesh {
+  position: absolute;
+  inset: 0;
+  opacity: var(--grid-alpha);
+  transition: opacity 0.28s ease;
+  background-image:
+    radial-gradient(circle, var(--grid-dot) 1.25px, transparent 1.25px),
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 40px 40px, 40px 40px, 40px 40px;
+  background-position: -1px -1px, 0 0, 0 0;
+  mask-image: radial-gradient(
+    260px circle at var(--mx) var(--my),
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.55) 44%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    260px circle at var(--mx) var(--my),
+    rgba(0, 0, 0, 1) 0%,
+    rgba(0, 0, 0, 0.55) 44%,
+    transparent 100%
+  );
+}
+
+.interactive-grid-glow {
+  position: absolute;
+  inset: 0;
+  opacity: var(--grid-alpha);
+  transition: opacity 0.32s ease;
+  background: radial-gradient(
+    320px circle at var(--mx) var(--my),
+    var(--grid-glow) 0%,
+    transparent 72%
+  );
+}
+
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .interactive-grid-layer {
+    display: none;
+  }
+}
