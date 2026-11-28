@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 
 // Load root .env first, then allow server/.env overrides
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env'), override: true });
 
 const parsePort = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
