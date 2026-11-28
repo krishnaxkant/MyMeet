@@ -471,41 +471,43 @@ export async function createCheckoutOrder(
     throw new HttpError(400, 'Please select a valid Pro plan.');
   }
 
+  if (!isRazorpayConfigured()) {
+    throw new HttpError(
+      503,
+      'Online UPI & Card payments are being enabled shortly. Please try again in a moment.',
+    );
+  }
+
   const supabase = requireSupabase();
   const amountPaise = plan.price_inr * 100;
-  let provider: 'razorpay' | 'demo' = 'demo';
-  let providerOrderId = `demo_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-
-  if (isRazorpayConfigured()) {
-    const auth = Buffer.from(`${env.razorpayKeyId}:${env.razorpayKeySecret}`).toString('base64');
-    const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Basic ${auth}`,
+  const auth = Buffer.from(`${env.razorpayKeyId}:${env.razorpayKeySecret}`).toString('base64');
+  const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Basic ${auth}`,
+    },
+    body: JSON.stringify({
+      amount: amountPaise,
+      currency: 'INR',
+      receipt: `mm_${Date.now()}`,
+      notes: {
+        user_id: userId,
+        plan_code: planCode,
+        ...(meetingCode ? { meeting_code: meetingCode } : {}),
       },
-      body: JSON.stringify({
-        amount: amountPaise,
-        currency: 'INR',
-        receipt: `mm_${Date.now()}`,
-        notes: {
-          user_id: userId,
-          plan_code: planCode,
-          ...(meetingCode ? { meeting_code: meetingCode } : {}),
-        },
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
 
-    if (!rzpRes.ok) {
-      const errText = await rzpRes.text().catch(() => '');
-      throw new HttpError(502, `Razorpay order creation failed: ${errText.slice(0, 180)}`);
-    }
-
-    const rzpData = (await rzpRes.json()) as { id: string };
-    provider = 'razorpay';
-    providerOrderId = rzpData.id;
+  if (!rzpRes.ok) {
+    const errText = await rzpRes.text().catch(() => '');
+    throw new HttpError(502, `Razorpay order creation failed: ${errText.slice(0, 180)}`);
   }
+
+  const rzpData = (await rzpRes.json()) as { id: string };
+  const provider: 'razorpay' = 'razorpay';
+  const providerOrderId = rzpData.id;
 
   const { data: orderRow, error } = await supabase
     .from('payment_orders')
@@ -576,28 +578,29 @@ export async function verifyCheckoutOrder(
     };
   }
 
-  let paymentId = `demo_pay_${Date.now()}`;
-  if (order.provider === 'razorpay') {
-    if (!input.razorpay_order_id || !input.razorpay_payment_id || !input.razorpay_signature) {
-      throw new HttpError(400, 'Missing Razorpay payment verification signature.');
-    }
-    if (input.razorpay_order_id !== order.provider_order_id) {
-      throw new HttpError(400, 'Razorpay order ID mismatch.');
-    }
-    const expectedSig = crypto
-      .createHmac('sha256', env.razorpayKeySecret)
-      .update(`${input.razorpay_order_id}|${input.razorpay_payment_id}`)
-      .digest('hex');
-
-    if (expectedSig !== input.razorpay_signature) {
-      await supabase
-        .from('payment_orders')
-        .update({ status: 'failed' })
-        .eq('id', order.id);
-      throw new HttpError(400, 'Invalid Razorpay payment signature.');
-    }
-    paymentId = input.razorpay_payment_id;
+  if (order.provider !== 'razorpay' || !isRazorpayConfigured()) {
+    throw new HttpError(400, 'Verified Razorpay payment is required to activate a Pro plan.');
   }
+
+  if (!input.razorpay_order_id || !input.razorpay_payment_id || !input.razorpay_signature) {
+    throw new HttpError(400, 'Missing Razorpay payment verification signature.');
+  }
+  if (input.razorpay_order_id !== order.provider_order_id) {
+    throw new HttpError(400, 'Razorpay order ID mismatch.');
+  }
+  const expectedSig = crypto
+    .createHmac('sha256', env.razorpayKeySecret)
+    .update(`${input.razorpay_order_id}|${input.razorpay_payment_id}`)
+    .digest('hex');
+
+  if (expectedSig !== input.razorpay_signature) {
+    await supabase
+      .from('payment_orders')
+      .update({ status: 'failed' })
+      .eq('id', order.id);
+    throw new HttpError(400, 'Invalid Razorpay payment signature.');
+  }
+  const paymentId = input.razorpay_payment_id;
 
   await supabase
     .from('payment_orders')

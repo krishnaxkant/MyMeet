@@ -175,11 +175,7 @@ export function UpgradeModal({
         return;
       }
 
-      // Test / Demo Instant Activation when Razorpay keys are not yet configured on backend
-      const verified = await verifyBillingPayment(accessToken, { order_id: order.order_id });
-      onActivated(verified.subscription, verified.plan_code);
-      onClose();
-      setBusyPlan(null);
+      throw new Error('Payment gateway is not ready yet. Please try again shortly.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to start checkout.');
       setBusyPlan(null);

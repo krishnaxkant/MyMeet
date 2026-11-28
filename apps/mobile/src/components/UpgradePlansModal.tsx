@@ -13,7 +13,6 @@ import { useTheme } from '../hooks/useTheme';
 import {
   createBillingOrder,
   getBillingStatus,
-  verifyBillingPayment,
   WEB_APP_URL,
   type PaidPlanCode,
   type PlanDefinition,
@@ -118,9 +117,7 @@ export function UpgradePlansModal({
         return;
       }
 
-      const verified = await verifyBillingPayment(accessToken, { order_id: order.order_id });
-      onActivated(verified.subscription, verified.plan_code);
-      onClose();
+      throw new Error('Payment gateway is not ready yet. Please try again shortly.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to activate plan.');
     } finally {
