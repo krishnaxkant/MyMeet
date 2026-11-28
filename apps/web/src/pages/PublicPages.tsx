@@ -44,8 +44,7 @@ export function LegalFooterLinks({ compact = false }: { compact?: boolean }) {
           ))}
         </nav>
         <div className="legal-footer-copy">
-          © {new Date().getFullYear()} MyMeet · Operated by Krishna Kant · Payments secured by
-          Razorpay
+          © {new Date().getFullYear()} MyMeet · Payments secured by Razorpay
         </div>
       </footer>
     );
@@ -91,7 +90,7 @@ export function LegalFooterLinks({ compact = false }: { compact?: boolean }) {
       </div>
 
       <div className="pub-footer-bottom">
-        <span>© {new Date().getFullYear()} MyMeet. Operated by Krishna Kant (India).</span>
+        <span>© {new Date().getFullYear()} MyMeet. Built in India.</span>
         <span>All prices in INR · Instant digital delivery</span>
       </div>
     </footer>
@@ -525,7 +524,7 @@ function LegalDocLayout({
       eyebrow={eyebrow}
       title={title}
       subtitle={subtitle}
-      metaPills={[`Effective: ${LAST_UPDATED}`, 'Jurisdiction: India', 'Operator: Krishna Kant']}
+      metaPills={[`Effective: ${LAST_UPDATED}`, 'Jurisdiction: India', 'Platform: MyMeet']}
     >
       <div className="pub-legal-grid">
         {/* Sticky Left Rail */}
@@ -585,9 +584,9 @@ export function TermsPage() {
       content: (
         <p>
           MyMeet (<strong>{WEBSITE_URL}</strong>) is a cross-platform HD video conferencing and
-          AI-powered study notes platform available on Web and Android, operated by{' '}
-          <strong>Krishna Kant</strong> (India). By creating an account, joining a meeting, or
-          purchasing a Pro plan, you agree to be bound by these Terms &amp; Conditions.
+          AI-powered study notes platform available on Web and Android, operating from India. By
+          creating an account, joining a meeting, or purchasing a Pro plan, you agree to be bound by
+          these Terms &amp; Conditions.
         </p>
       ),
     },
@@ -688,7 +687,7 @@ export function TermsPage() {
       subtitle="Clear ground rules governing your use of MyMeet Web, MyMeet Android, and MyMeet Pro digital subscriptions."
       summaryTitle="Key Highlights"
       summaryPoints={[
-        'Operated by Krishna Kant (India)',
+        'Cross-platform Web & Android SaaS (India)',
         'Prepaid INR digital plans via Razorpay',
         'Instant online activation — zero shipping',
         'Governed by the laws of India',
@@ -977,8 +976,8 @@ export function ContactPage() {
           <span className="pub-highlight-icon">
             <ShieldIcon size={18} />
           </span>
-          <div className="pub-highlight-meta">Merchant &amp; Operator</div>
-          <div className="pub-highlight-value">MyMeet · Krishna Kant</div>
+          <div className="pub-highlight-meta">Platform &amp; Billing</div>
+          <div className="pub-highlight-value">MyMeet Official</div>
           <p className="pub-highlight-sub">Verified digital SaaS platform operating from India.</p>
         </div>
       </div>
@@ -987,7 +986,7 @@ export function ContactPage() {
       <div className="pub-contact-split">
         <article className="pub-panel">
           <div className="pub-panel-head">
-            <h2>Merchant &amp; Compliance Details</h2>
+            <h2>Platform &amp; Compliance Details</h2>
             <p className="muted">Official contact information for users and payment partners.</p>
           </div>
           <dl className="pub-kv-list">
@@ -996,8 +995,8 @@ export function ContactPage() {
               <dd>MyMeet — Connect. Collaborate. Together.</dd>
             </div>
             <div>
-              <dt>Legal Operator</dt>
-              <dd>Krishna Kant</dd>
+              <dt>Support Team</dt>
+              <dd>MyMeet Official Support</dd>
             </div>
             <div>
               <dt>Support Email</dt>
