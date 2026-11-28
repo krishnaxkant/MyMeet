@@ -665,3 +665,25 @@ export function CrossIcon({ size = 14 }: { size?: number }) {
     </svg>
   );
 }
+
+export function MonitorIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect
+        x="3"
+        y="4"
+        width="18"
+        height="12.5"
+        rx="2.5"
+        stroke="currentColor"
+        strokeWidth="1.9"
+      />
+      <path
+        d="M8.5 20H15.5M12 16.5V20"
+        stroke="currentColor"
+        strokeWidth="1.9"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

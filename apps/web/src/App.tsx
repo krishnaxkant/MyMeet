@@ -1,7 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { InteractiveGridBackground } from './components/InteractiveGridBackground';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { AuthProvider } from './hooks/useAuth';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 import { useBackendHealth } from './hooks/useBackendHealth';
 import { SubscriptionProvider } from './hooks/useSubscription';
 import { ThemeProvider } from './hooks/useTheme';
@@ -9,6 +9,7 @@ import { MainLayout } from './layouts/MainLayout';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { HistoryPage } from './pages/HistoryPage';
 import { HomePage } from './pages/HomePage';
+import { LandingPage } from './pages/LandingPage';
 import { LoginPage } from './pages/LoginPage';
 import { MeetingLobbyPage } from './pages/MeetingLobbyPage';
 import { MeetingRoomPage } from './pages/MeetingRoomPage';
@@ -24,6 +25,33 @@ import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { SignUpPage } from './pages/SignUpPage';
 
+function RootEntry({ backendConnected, healthLoading }: { backendConnected: boolean; healthLoading: boolean }) {
+  const { user, loading } = useAuth();
+
+  // If returning from OAuth (hash/code in URL) while session resolves, hold briefly before deciding
+  const hasAuthCallback =
+    typeof window !== 'undefined' &&
+    (window.location.hash.includes('access_token=') || window.location.search.includes('code='));
+
+  if (loading && hasAuthCallback) {
+    return (
+      <div className="centered-page">
+        <div className="spinner" aria-label="Signing in" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return (
+      <MainLayout backendConnected={backendConnected} loading={healthLoading}>
+        <HomePage />
+      </MainLayout>
+    );
+  }
+
+  return <LandingPage backendConnected={backendConnected} healthLoading={healthLoading} />;
+}
+
 function AppRoutes() {
   const { data, loading } = useBackendHealth();
 
@@ -35,6 +63,10 @@ function AppRoutes() {
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      <Route
+        path="/welcome"
+        element={<LandingPage backendConnected={Boolean(data)} healthLoading={loading} />}
+      />
 
       {/* Public Razorpay-compliant Pricing & Legal Policy Pages */}
       <Route path="/pricing" element={<PricingPage />} />
@@ -50,13 +82,7 @@ function AppRoutes() {
 
       <Route
         path="/"
-        element={
-          <ProtectedRoute>
-            <MainLayout backendConnected={Boolean(data)} loading={loading}>
-              <HomePage />
-            </MainLayout>
-          </ProtectedRoute>
-        }
+        element={<RootEntry backendConnected={Boolean(data)} healthLoading={loading} />}
       />
       <Route
         path="/profile"
