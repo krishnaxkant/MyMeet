@@ -2,6 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { env } from './config/env.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
+import authRoutes from './routes/authRoutes.js';
 import billingRoutes from './routes/billingRoutes.js';
 import deviceRoutes from './routes/deviceRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
@@ -48,6 +49,7 @@ export const createApp = () => {
   });
 
   app.use('/api/health', healthRoutes);
+  app.use('/api/auth', authRoutes);
   app.use('/api/me', profileRoutes);
   app.use('/api/meetings', meetingRoutes);
   app.use('/api/invitations', invitationRoutes);

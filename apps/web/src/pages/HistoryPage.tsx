@@ -18,6 +18,7 @@ import {
   getHistoryDetail,
   getOrGenerateMeetingMcqs,
   listHistory,
+  recordMeetingMcqAttempt,
   upgradeMeetingProNotes,
   type MeetingHistoryDetail,
   type MeetingHistoryItem,
@@ -968,39 +969,71 @@ export function HistoryPage() {
             </section>
           )}
 
-          {/* HOST-ONLY Meeting Participants History */}
+          {/* HOST-ONLY Meeting Participants History & Revision MCQ Scorecard */}
           {selected && isHost && (
             <section className="card">
-              <div className="card-header" style={{ marginBottom: 12 }}>
+              <div className="card-header" style={{ marginBottom: 14 }}>
                 <h2 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <UsersIcon size={17} />
-                  <span>Meeting Participants History ({selected.participants.length})</span>
+                  <span>
+                    Participants &amp; Revision MCQ Scores ({selected.participants.length})
+                  </span>
                 </h2>
-                <span className="badge badge-neutral">Host Only</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-xs"
+                    onClick={() => void handleInspect(selected.code)}
+                  >
+                    <RefreshIcon size={12} />
+                    <span>Refresh</span>
+                  </button>
+                  <span className="badge badge-neutral">Host Only</span>
+                </div>
               </div>
 
               {selected.participants.length === 0 ? (
                 <p className="status-item-desc">No participants recorded for this meeting.</p>
               ) : (
                 <div className="roster-list">
-                  {selected.participants.map((p) => (
-                    <div key={p.id} className="roster-row">
-                      <div className="roster-info">
-                        <div className="roster-name">{p.full_name || p.email}</div>
-                        <div className="roster-sub">
-                          Joined {formatExactTime(p.joined_at)}
-                          {p.left_at ? ` · Left ${formatExactTime(p.left_at)}` : ''}
+                  {selected.participants.map((p) => {
+                    const prog = p.mcq_progress;
+                    return (
+                      <div key={p.id} className="roster-row roster-row-mcq">
+                        <div className="roster-info">
+                          <div className="roster-name-line">
+                            <span className="roster-name">{p.full_name || p.email}</span>
+                            <span
+                              className={`badge ${
+                                p.role === 'host' ? 'badge-success' : 'badge-neutral'
+                              }`}
+                            >
+                              {p.role}
+                            </span>
+                          </div>
+                          <div className="roster-sub">
+                            Joined {formatExactTime(p.joined_at)}
+                            {p.left_at ? ` · Left ${formatExactTime(p.left_at)}` : ''}
+                          </div>
                         </div>
+
+                        {prog && (
+                          <span
+                            className={`mcq-roster-pill mcq-roster-${prog.status}`}
+                            title={prog.label}
+                          >
+                            {prog.status === 'completed'
+                              ? `✓ ${prog.label}`
+                              : prog.status === 'left_in_between'
+                                ? `◷ ${prog.label}`
+                                : prog.status === 'not_attempted'
+                                  ? 'Not Attempted'
+                                  : 'Not Eligible (No Subscription)'}
+                          </span>
+                        )}
                       </div>
-                      <span
-                        className={`badge ${
-                          p.role === 'host' ? 'badge-success' : 'badge-neutral'
-                        }`}
-                      >
-                        {p.role}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </section>
@@ -1100,7 +1133,18 @@ export function HistoryPage() {
         open={quizOpen}
         quiz={activeQuiz}
         meetingTitle={selected?.title ?? 'Session'}
-        onClose={() => setQuizOpen(false)}
+        onProgress={(payload) => {
+          if (!session?.access_token || !selected) return;
+          void recordMeetingMcqAttempt(session.access_token, selected.code, payload).catch(
+            () => {},
+          );
+        }}
+        onClose={() => {
+          setQuizOpen(false);
+          if (selected && isHost) {
+            void handleInspect(selected.code);
+          }
+        }}
       />
     </div>
   );

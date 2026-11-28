@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
+import { sendSubscriptionWelcomeEmail } from './emailService.js';
 import { HttpError } from './meetingService.js';
 
 export type PlanCode = 'free' | 'single_9' | 'pack_49' | 'pro_monthly_349' | 'pro_yearly_899';
@@ -511,6 +512,34 @@ export async function verifyCheckoutOrder(
     .eq('id', order.id);
 
   const subscription = await activatePlanForUser(userId, order.plan_code);
+
+  // Fire-and-forget branded MyMeet Pro subscription greeting & info email
+  void (async () => {
+    try {
+      const { data: prof } = await supabase
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', userId)
+        .maybeSingle<{ email: string; full_name: string | null }>();
+      const planDef = PLAN_CATALOG[order.plan_code];
+      if (prof?.email && planDef) {
+        await sendSubscriptionWelcomeEmail({
+          to: prof.email,
+          userName: prof.full_name || prof.email.split('@')[0],
+          planName: planDef.name,
+          priceInr: planDef.price_inr,
+          isUnlimited: subscription.is_unlimited,
+          mcqEnabled: subscription.mcq_enabled,
+          creditsRemaining: subscription.credits_remaining,
+          expiresAt: subscription.expires_at,
+          highlights: planDef.highlights,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('[billing] Subscription email error:', mailErr);
+    }
+  })();
+
   return {
     subscription,
     plan_code: order.plan_code,

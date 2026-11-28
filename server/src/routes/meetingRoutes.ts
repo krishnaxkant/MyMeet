@@ -3,6 +3,7 @@ import {
   analyzeScreenFrameHandler,
   generateAiSummaryHandler,
   generateMeetingMcqsHandler,
+  recordMeetingMcqAttemptHandler,
   recordTranscriptHandler,
   transcribeAudioChunkHandler,
   upgradeProNotesHandler,
@@ -63,6 +64,7 @@ router.post('/:code/ai/screen-frame', analyzeScreenFrameHandler);
 router.post('/:code/ai/summary', generateAiSummaryHandler);
 router.post('/:code/ai/pro-notes', upgradeProNotesHandler);
 router.post('/:code/ai/mcqs', generateMeetingMcqsHandler);
+router.post('/:code/ai/mcqs/attempt', recordMeetingMcqAttemptHandler);
 
 router.post('/:code/end', endMeetingHandler);
 

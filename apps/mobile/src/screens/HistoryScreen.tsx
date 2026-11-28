@@ -24,6 +24,7 @@ import {
   getHistoryDetail,
   getOrGenerateMeetingMcqs,
   listHistory,
+  recordMeetingMcqAttempt,
   upgradeMeetingProNotes,
   type MeetingAiSummary,
   type MeetingHistoryDetail,
@@ -934,14 +935,14 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
               </View>
             )}
 
-            {/* HOST-ONLY Participants History */}
+            {/* HOST-ONLY Participants History & Revision MCQ Scores */}
             {isHost && (
               <View
                 style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
                 <View style={styles.itemRowHeader}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Participants History ({selected.participants.length})
+                  <Text style={[styles.sectionTitle, { color: colors.text, flex: 1 }]}>
+                    Participants &amp; MCQ Scores ({selected.participants.length})
                   </Text>
                   <StatusBadge label="Host Only" tone="success" />
                 </View>
@@ -951,29 +952,59 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                     No participants recorded for this meeting.
                   </Text>
                 ) : (
-                  selected.participants.map((p) => (
-                    <View
-                      key={p.id}
-                      style={[
-                        styles.rosterRow,
-                        { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                      ]}
-                    >
-                      <View style={styles.flex1}>
-                        <Text style={[styles.itemTitle, { color: colors.text }]}>
-                          {p.full_name || p.email}
-                        </Text>
-                        <Text style={[styles.subText, { color: colors.textMuted }]}>
-                          Joined {formatExactTime(p.joined_at)}
-                          {p.left_at ? ` · Left ${formatExactTime(p.left_at)}` : ''}
-                        </Text>
+                  selected.participants.map((p) => {
+                    const prog = p.mcq_progress;
+                    const pillColors =
+                      prog?.status === 'completed'
+                        ? { bg: 'rgba(22, 163, 74, 0.14)', border: 'rgba(22, 163, 74, 0.4)', text: '#16a34a' }
+                        : prog?.status === 'left_in_between'
+                          ? { bg: 'rgba(245, 158, 11, 0.14)', border: 'rgba(245, 158, 11, 0.45)', text: '#d97706' }
+                          : prog?.status === 'not_attempted'
+                            ? { bg: 'rgba(99, 102, 241, 0.14)', border: 'rgba(99, 102, 241, 0.38)', text: '#6366f1' }
+                            : { bg: colors.surface, border: colors.borderStrong, text: colors.textMuted };
+
+                    return (
+                      <View
+                        key={p.id}
+                        style={[
+                          styles.rosterRowCol,
+                          { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                        ]}
+                      >
+                        <View style={styles.itemRowHeader}>
+                          <View style={styles.flex1}>
+                            <Text style={[styles.itemTitle, { color: colors.text }]}>
+                              {p.full_name || p.email}
+                            </Text>
+                            <Text style={[styles.subText, { color: colors.textMuted }]}>
+                              Joined {formatExactTime(p.joined_at)}
+                              {p.left_at ? ` · Left ${formatExactTime(p.left_at)}` : ''}
+                            </Text>
+                          </View>
+                          <StatusBadge
+                            label={p.role}
+                            tone={p.role === 'host' ? 'success' : 'warning'}
+                          />
+                        </View>
+                        {prog && (
+                          <View
+                            style={[
+                              styles.mcqScorePill,
+                              { backgroundColor: pillColors.bg, borderColor: pillColors.border },
+                            ]}
+                          >
+                            <Text style={[styles.mcqScorePillText, { color: pillColors.text }]}>
+                              {prog.status === 'completed'
+                                ? `✓ ${prog.label}`
+                                : prog.status === 'left_in_between'
+                                  ? `◷ ${prog.label}`
+                                  : prog.label}
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      <StatusBadge
-                        label={p.role}
-                        tone={p.role === 'host' ? 'success' : 'warning'}
-                      />
-                    </View>
-                  ))
+                    );
+                  })
                 )}
               </View>
             )}
@@ -1075,7 +1106,18 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
         visible={quizOpen}
         quiz={activeQuiz}
         meetingTitle={selected?.title ?? 'Session'}
-        onClose={() => setQuizOpen(false)}
+        onProgress={(payload) => {
+          if (!session?.access_token || !selected) return;
+          void recordMeetingMcqAttempt(session.access_token, selected.code, payload).catch(
+            () => {},
+          );
+        }}
+        onClose={() => {
+          setQuizOpen(false);
+          if (selected && isHost) {
+            void handleInspect(selected.code);
+          }
+        }}
       />
     </>
   );
@@ -1102,6 +1144,23 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     borderWidth: 1,
     gap: 8,
+  },
+  rosterRowCol: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  mcqScorePill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  mcqScorePillText: {
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   itemRowHeader: {
     flexDirection: 'row',

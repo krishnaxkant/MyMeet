@@ -3,6 +3,7 @@ import {
   analyzeAndStoreScreenFrame,
   generateMeetingAiSummaryForUser,
   getOrGenerateMeetingMcqsForUser,
+  recordMeetingMcqAttemptForUser,
   recordMeetingTranscript,
   transcribeAndStoreAudioChunk,
   upgradeMeetingToProNotesForUser,
@@ -153,6 +154,35 @@ export const generateMeetingMcqsHandler = async (
       req.user.id,
     );
     res.json({ quiz });
+  } catch (err) {
+    handleErr(err, res, next);
+  }
+};
+
+export const recordMeetingMcqAttemptHandler = async (
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Unauthorized', message: 'Not authenticated.' });
+      return;
+    }
+
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const status = body.status === 'completed' ? 'completed' : 'in_progress';
+    const attemptedCount = typeof body.attempted_count === 'number' ? body.attempted_count : 0;
+    const correctCount = typeof body.correct_count === 'number' ? body.correct_count : 0;
+    const totalQuestions = typeof body.total_questions === 'number' ? body.total_questions : 20;
+
+    const result = await recordMeetingMcqAttemptForUser(String(req.params.code ?? ''), req.user.id, {
+      status,
+      attempted_count: attemptedCount,
+      correct_count: correctCount,
+      total_questions: totalQuestions,
+    });
+    res.json(result);
   } catch (err) {
     handleErr(err, res, next);
   }

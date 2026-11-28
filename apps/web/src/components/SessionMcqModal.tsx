@@ -2,16 +2,30 @@ import { useState } from 'react';
 import { CheckIcon, SparklesIcon } from './Icons';
 import type { MeetingMcqQuiz } from '../services/api';
 
+interface McqProgressPayload {
+  status: 'in_progress' | 'completed';
+  attempted_count: number;
+  correct_count: number;
+  total_questions: number;
+}
+
 interface SessionMcqModalProps {
   open: boolean;
   quiz: MeetingMcqQuiz | null;
   meetingTitle: string;
+  onProgress?: (payload: McqProgressPayload) => void;
   onClose: () => void;
 }
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D'];
 
-export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMcqModalProps) {
+export function SessionMcqModal({
+  open,
+  quiz,
+  meetingTitle,
+  onProgress,
+  onClose,
+}: SessionMcqModalProps) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [showSummary, setShowSummary] = useState(false);
@@ -37,7 +51,29 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
 
   const handleSelectOption = (idx: number) => {
     if (hasAnsweredCurrent) return;
-    setAnswers((prev) => ({ ...prev, [question.id]: idx }));
+    const nextAnswers = { ...answers, [question.id]: idx };
+    setAnswers(nextAnswers);
+    const nextAttempted = Object.keys(nextAnswers).length;
+    const nextCorrect = quiz.questions.reduce(
+      (acc, qItem) => acc + (nextAnswers[qItem.id] === qItem.correct_index ? 1 : 0),
+      0,
+    );
+    onProgress?.({
+      status: 'in_progress',
+      attempted_count: nextAttempted,
+      correct_count: nextCorrect,
+      total_questions: total,
+    });
+  };
+
+  const handleFinishQuiz = () => {
+    setShowSummary(true);
+    onProgress?.({
+      status: 'completed',
+      attempted_count: answeredCount,
+      correct_count: correctCount,
+      total_questions: total,
+    });
   };
 
   const handleRetake = () => {
@@ -259,7 +295,7 @@ export function SessionMcqModal({ open, quiz, meetingTitle, onClose }: SessionMc
                   type="button"
                   className="btn btn-pro-gold btn-sm"
                   disabled={!hasAnsweredCurrent}
-                  onClick={() => setShowSummary(true)}
+                  onClick={handleFinishQuiz}
                 >
                   View Mastery Score →
                 </button>

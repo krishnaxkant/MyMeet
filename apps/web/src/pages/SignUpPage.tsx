@@ -5,13 +5,15 @@ import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 export function SignUpPage() {
-  const { user, loading, isConfigured, signUp } = useAuth();
+  const { user, loading, isConfigured, signUp, resendVerification } = useAuth();
   const navigate = useNavigate();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -33,8 +35,10 @@ export function SignUpPage() {
     try {
       const result = await signUp(email, password, fullName);
       if (result.needsEmailConfirmation) {
+        setPendingEmail(email.trim());
         setSuccessMessage(
-          'Account created! Check your inbox to confirm your email address, then sign in.',
+          result.message ||
+            'Account created! Check your inbox to verify your email address, then sign in.',
         );
       } else {
         navigate('/', { replace: true });
@@ -43,6 +47,21 @@ export function SignUpPage() {
       setError(err instanceof Error ? err.message : 'Unable to create account.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    const targetEmail = pendingEmail || email.trim();
+    if (!targetEmail) return;
+    setResending(true);
+    setError(null);
+    try {
+      const msg = await resendVerification(targetEmail);
+      setSuccessMessage(msg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to resend verification email.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -64,7 +83,22 @@ export function SignUpPage() {
         )}
 
         {error && <div className="alert alert-danger">{error}</div>}
-        {successMessage && <div className="alert alert-success">{successMessage}</div>}
+        {successMessage && (
+          <div className="alert alert-success">
+            <div>{successMessage}</div>
+            {pendingEmail && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                style={{ marginTop: 10 }}
+                disabled={resending}
+                onClick={() => void handleResend()}
+              >
+                {resending ? 'Sending...' : 'Resend Verification Email'}
+              </button>
+            )}
+          </div>
+        )}
 
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">

@@ -119,3 +119,215 @@ export async function sendMeetingInviteEmail(params: {
     };
   }
 }
+
+export async function sendSubscriptionWelcomeEmail(params: {
+  to: string;
+  userName: string;
+  planName: string;
+  priceInr: number;
+  isUnlimited: boolean;
+  mcqEnabled: boolean;
+  creditsRemaining: number;
+  expiresAt: string | null;
+  highlights: string[];
+}): Promise<EmailSendResult> {
+  const mailer = getTransporter();
+  if (!mailer) {
+    return {
+      sent: false,
+      status: 'not_configured',
+      message: 'SMTP not configured; skipping subscription confirmation email.',
+    };
+  }
+
+  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const safeName = escapeHtml(params.userName || 'there');
+  const safePlan = escapeHtml(params.planName);
+  const dashboardUrl = `${env.webAppUrl}/history`;
+  const validTill = params.expiresAt
+    ? new Date(params.expiresAt).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Active';
+
+  const benefitItems = params.highlights
+    .map(
+      (item) =>
+        `<li style="margin: 6px 0; color: #334155; font-size: 14px; line-height: 1.5;">✓ ${escapeHtml(item)}</li>`,
+    )
+    .join('');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #f59e0b; border-radius: 16px; padding: 28px;">
+        <div style="display: inline-block; padding: 4px 12px; border-radius: 999px; background: linear-gradient(135deg, #f59e0b, #7c3aed); color: #ffffff; font-size: 11px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 14px;">
+          ✦ MYMEET PRO ACTIVATED
+        </div>
+        <h1 style="margin: 0 0 8px; color: #0f172a; font-size: 24px; letter-spacing: -0.02em;">
+          Welcome to MyMeet Pro, ${safeName}!
+        </h1>
+        <p style="margin: 0 0 20px; color: #475569; font-size: 15px; line-height: 1.6;">
+          Thank you for upgrading to <strong>${safePlan}</strong>. Your premium MyMeet workspace, gold profile badge, and Pro study tools are now live across both Web and Android.
+        </p>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; margin-bottom: 20px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px;">
+            Subscription Summary
+          </div>
+          <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <tr>
+              <td style="padding: 5px 0; color: #64748b;">Plan</td>
+              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${safePlan} (₹${params.priceInr})</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #64748b;">Pro Master Notes</td>
+              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${
+                params.isUnlimited ? '∞ Unlimited' : `${params.creditsRemaining} Credit${params.creditsRemaining === 1 ? '' : 's'} Active`
+              }</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #64748b;">Quick 20-MCQ Revision Tests</td>
+              <td style="padding: 5px 0; color: ${params.mcqEnabled ? '#15803d' : '#b45309'}; font-weight: 700; text-align: right;">${
+                params.mcqEnabled ? '✓ Unlocked' : 'Not included in credit packs'
+              }</td>
+            </tr>
+            <tr>
+              <td style="padding: 5px 0; color: #64748b;">Valid Till</td>
+              <td style="padding: 5px 0; color: #0f172a; font-weight: 700; text-align: right;">${escapeHtml(validTill)}</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-bottom: 22px;">
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">What's included in your plan:</div>
+          <ul style="list-style: none; padding: 0; margin: 0;">${benefitItems}</ul>
+        </div>
+
+        <a href="${dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
+          Open MyMeet Pro Notes →
+        </a>
+
+        <p style="margin: 22px 0 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+          MyMeet · Connect. Collaborate. Together.<br/>
+          Questions? Simply reply to this email and our team will help you out.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const text = [
+    `Welcome to MyMeet Pro, ${params.userName || 'there'}!`,
+    '',
+    `Your ${params.planName} (₹${params.priceInr}) plan is now active.`,
+    `Pro Master Notes: ${params.isUnlimited ? 'Unlimited' : `${params.creditsRemaining} credits`}`,
+    `Quick 20-MCQ Revision Tests: ${params.mcqEnabled ? 'Unlocked' : 'Not included in credit packs'}`,
+    `Valid Till: ${validTill}`,
+    '',
+    `Open your notes: ${dashboardUrl}`,
+  ].join('\n');
+
+  try {
+    await mailer.sendMail({
+      from: fromAddress,
+      to: params.to,
+      subject: `Welcome to MyMeet Pro — ${params.planName} Activated!`,
+      text,
+      html,
+    });
+    return {
+      sent: true,
+      status: 'sent',
+      message: `Subscription confirmation email sent to ${params.to}.`,
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'SMTP error';
+    console.warn('[email] Failed to send subscription welcome email:', reason);
+    return {
+      sent: false,
+      status: 'failed',
+      message: `Subscription activated, but email failed: ${reason}`,
+    };
+  }
+}
+
+export async function sendEmailVerificationEmail(params: {
+  to: string;
+  fullName: string;
+  verifyUrl: string;
+}): Promise<EmailSendResult> {
+  const mailer = getTransporter();
+  if (!mailer) {
+    return {
+      sent: false,
+      status: 'not_configured',
+      message: 'SMTP is not configured on backend.',
+    };
+  }
+
+  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const safeName = escapeHtml(params.fullName || 'there');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 540px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 16px; padding: 28px;">
+        <div style="font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
+          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
+        </div>
+        <div style="font-size: 11.5px; color: #64748b; margin-bottom: 18px;">Connect. Collaborate. Together.</div>
+
+        <h1 style="margin: 0 0 10px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
+          Verify your email address
+        </h1>
+        <p style="margin: 0 0 20px; color: #475569; font-size: 15px; line-height: 1.6;">
+          Hi <strong>${safeName}</strong>, welcome to MyMeet! Click the button below to confirm your email address and activate your account across Web and Android.
+        </p>
+
+        <a href="${params.verifyUrl}" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 13px 26px; border-radius: 10px; font-size: 15px;">
+          Verify My Email →
+        </a>
+
+        <p style="margin: 20px 0 0; color: #64748b; font-size: 12.5px; line-height: 1.55; word-break: break-all;">
+          If the button doesn't work, copy and paste this link into your browser:<br/>
+          <a href="${params.verifyUrl}" style="color: #2563eb;">${escapeHtml(params.verifyUrl)}</a>
+        </p>
+        <p style="margin: 16px 0 0; color: #94a3b8; font-size: 12px;">
+          If you didn't create a MyMeet account, you can safely ignore this email.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const text = [
+    `Hi ${params.fullName || 'there'},`,
+    '',
+    'Welcome to MyMeet! Please verify your email address by opening this link:',
+    params.verifyUrl,
+    '',
+    'Once verified, you can sign in on both MyMeet Web and Android.',
+  ].join('\n');
+
+  try {
+    await mailer.sendMail({
+      from: fromAddress,
+      to: params.to,
+      subject: 'Verify your MyMeet account email',
+      text,
+      html,
+    });
+    return {
+      sent: true,
+      status: 'sent',
+      message: `Verification email sent to ${params.to}.`,
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'SMTP error';
+    console.warn('[email] Failed to send verification email:', reason);
+    return {
+      sent: false,
+      status: 'failed',
+      message: `Unable to send verification email: ${reason}`,
+    };
+  }
+}

@@ -5,15 +5,20 @@ import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
 
 export function LoginPage() {
-  const { user, loading, isConfigured, signIn } = useAuth();
+  const { user, loading, isConfigured, signIn, resendVerification } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
+  const isVerifiedRedirect = new URLSearchParams(location.search).get('verified') === '1';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(
+    isVerifiedRedirect ? '✓ Email verified! You can sign in to MyMeet now.' : null,
+  );
 
   if (!loading && user) {
     return <Navigate to={from} replace />;
@@ -34,6 +39,22 @@ export function LoginPage() {
     }
   };
 
+  const handleResend = async () => {
+    if (!email.trim()) return;
+    setResending(true);
+    setError(null);
+    try {
+      const msg = await resendVerification(email.trim());
+      setNotice(msg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to resend verification email.');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const needsVerifyPrompt = Boolean(error && /confirm|verif/i.test(error));
+
   return (
     <AuthShell>
       <div className="card auth-card">
@@ -51,7 +72,23 @@ export function LoginPage() {
           </div>
         )}
 
-        {error && <div className="alert alert-danger">{error}</div>}
+        {notice && <div className="alert alert-success">{notice}</div>}
+        {error && (
+          <div className="alert alert-danger">
+            <div>{error}</div>
+            {needsVerifyPrompt && email.trim() && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-xs"
+                style={{ marginTop: 10 }}
+                disabled={resending}
+                onClick={() => void handleResend()}
+              >
+                {resending ? 'Sending...' : 'Resend Verification Email'}
+              </button>
+            )}
+          </div>
+        )}
 
         <form className="form" onSubmit={handleSubmit}>
           <label className="field">

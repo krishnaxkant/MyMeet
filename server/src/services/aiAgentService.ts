@@ -1730,3 +1730,84 @@ export async function getOrGenerateMeetingMcqsForUser(
 
   return saved;
 }
+
+export interface MeetingMcqAttemptRecord {
+  id: string;
+  meeting_id: string;
+  user_id: string;
+  status: 'in_progress' | 'completed';
+  attempted_count: number;
+  correct_count: number;
+  total_questions: number;
+  completed_at: string | null;
+  updated_at: string;
+}
+
+export async function recordMeetingMcqAttemptForUser(
+  rawCode: string,
+  userId: string,
+  payload: {
+    status: 'in_progress' | 'completed';
+    attempted_count: number;
+    correct_count: number;
+    total_questions: number;
+  },
+): Promise<{ saved: boolean; attempt: MeetingMcqAttemptRecord | null }> {
+  const code = normalizeMeetingCode(rawCode);
+  const supabase = requireSupabase();
+
+  const { data: meeting, error: mErr } = await supabase
+    .from('meetings')
+    .select('id, host_id')
+    .eq('code', code)
+    .maybeSingle<{ id: string; host_id: string }>();
+
+  if (mErr || !meeting) {
+    throw new HttpError(404, 'Meeting not found.');
+  }
+
+  // Verify user belongs to this meeting
+  if (meeting.host_id !== userId) {
+    const { data: part } = await supabase
+      .from('meeting_participants')
+      .select('id')
+      .eq('meeting_id', meeting.id)
+      .eq('user_id', userId)
+      .maybeSingle<{ id: string }>();
+    if (!part) {
+      throw new HttpError(403, 'You do not have access to this meeting quiz.');
+    }
+  }
+
+  const total = Math.max(1, Math.min(100, Math.round(payload.total_questions || 20)));
+  const attempted = Math.max(0, Math.min(total, Math.round(payload.attempted_count || 0)));
+  const correct = Math.max(0, Math.min(attempted, Math.round(payload.correct_count || 0)));
+  const status: 'in_progress' | 'completed' =
+    payload.status === 'completed' ? 'completed' : 'in_progress';
+  const nowIso = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('meeting_mcq_attempts')
+    .upsert(
+      {
+        meeting_id: meeting.id,
+        user_id: userId,
+        status,
+        attempted_count: attempted,
+        correct_count: correct,
+        total_questions: total,
+        completed_at: status === 'completed' ? nowIso : null,
+        updated_at: nowIso,
+      },
+      { onConflict: 'meeting_id,user_id' },
+    )
+    .select('*')
+    .single<MeetingMcqAttemptRecord>();
+
+  if (error) {
+    console.warn('[ai-agent] Could not save meeting_mcq_attempts:', error.message);
+    return { saved: false, attempt: null };
+  }
+
+  return { saved: true, attempt: data ?? null };
+}

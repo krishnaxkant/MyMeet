@@ -267,8 +267,21 @@ export interface MeetingMcqQuiz {
   created_at: string;
 }
 
+export interface ParticipantMcqProgress {
+  status: 'completed' | 'left_in_between' | 'not_attempted' | 'not_eligible';
+  label: string;
+  score?: number;
+  total?: number;
+  attempted?: number;
+  percent?: number;
+}
+
+export interface MeetingHistoryParticipant extends MeetingParticipant {
+  mcq_progress?: ParticipantMcqProgress;
+}
+
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
-  participants: MeetingParticipant[];
+  participants: MeetingHistoryParticipant[];
   messages: MeetingMessage[];
   ai_summary: MeetingAiSummary | null;
   pro_notes?: MeetingProNotes | null;
@@ -884,4 +897,63 @@ export async function getOrGenerateMeetingMcqs(
     { method: 'POST' },
   );
   return payload.quiz;
+}
+
+export async function recordMeetingMcqAttempt(
+  accessToken: string,
+  code: string,
+  payload: {
+    status: 'in_progress' | 'completed';
+    attempted_count: number;
+    correct_count: number;
+    total_questions: number;
+  },
+): Promise<{ saved: boolean }> {
+  return authFetch<{ saved: boolean }>(
+    `/api/meetings/${encodeURIComponent(code)}/ai/mcqs/attempt`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function registerAccountWithVerification(payload: {
+  email: string;
+  password: string;
+  full_name: string;
+}): Promise<{ status: 'verification_sent' | 'fallback_client_signup'; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    status?: 'verification_sent' | 'fallback_client_signup';
+    message?: string;
+  };
+  if (!res.ok) {
+    throw new Error(data.message || 'Unable to create account.');
+  }
+  return {
+    status: data.status || 'fallback_client_signup',
+    message: data.message || '',
+  };
+}
+
+export async function resendVerificationEmail(email: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { status?: string; message?: string };
+  if (!res.ok) {
+    throw new Error(data.message || 'Unable to resend verification email.');
+  }
+  return {
+    status: data.status || 'verification_sent',
+    message: data.message || 'Verification email sent!',
+  };
 }

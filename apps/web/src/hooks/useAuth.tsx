@@ -11,6 +11,8 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import {
   fetchProfile,
+  registerAccountWithVerification,
+  resendVerificationEmail,
   updateProfile,
   type UpdateProfilePayload,
   type UserProfile,
@@ -19,6 +21,7 @@ import { isWebSupabaseConfigured, supabase } from '../services/supabase';
 
 interface SignUpResult {
   needsEmailConfirmation: boolean;
+  message?: string;
 }
 
 interface AuthContextValue {
@@ -30,6 +33,7 @@ interface AuthContextValue {
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<SignUpResult>;
+  resendVerification: (email: string) => Promise<string>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -123,6 +127,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.');
       }
 
+      // Use branded MyMeet SMTP verification endpoint first (no 2/hr rate limit!)
+      try {
+        const reg = await registerAccountWithVerification({
+          email: email.trim(),
+          password,
+          full_name: fullName.trim(),
+        });
+        if (reg.status === 'verification_sent') {
+          return {
+            needsEmailConfirmation: true,
+            message: reg.message,
+          };
+        }
+      } catch (regErr) {
+        // Re-throw real validation / duplicate email errors directly to the user
+        const msg = regErr instanceof Error ? regErr.message : '';
+        if (msg && !/failed to fetch|networkerror|load failed/i.test(msg)) {
+          throw regErr;
+        }
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -130,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data: {
             full_name: fullName.trim(),
           },
-          emailRedirectTo: `${window.location.origin}/login`,
+          emailRedirectTo: `${window.location.origin}/login?verified=1`,
         },
       });
 
@@ -144,6 +169,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const resendVerification = useCallback(async (email: string): Promise<string> => {
+    const res = await resendVerificationEmail(email.trim());
+    return res.message;
+  }, []);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -208,6 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isConfigured: isWebSupabaseConfigured,
       signIn,
       signUp,
+      resendVerification,
       signOut,
       sendPasswordReset,
       updatePassword,
@@ -221,6 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       signIn,
       signUp,
+      resendVerification,
       signOut,
       sendPasswordReset,
       updatePassword,

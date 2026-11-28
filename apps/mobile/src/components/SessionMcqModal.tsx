@@ -3,16 +3,30 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useTheme } from '../hooks/useTheme';
 import type { MeetingMcqQuiz } from '../services/api';
 
+interface McqProgressPayload {
+  status: 'in_progress' | 'completed';
+  attempted_count: number;
+  correct_count: number;
+  total_questions: number;
+}
+
 interface SessionMcqModalProps {
   visible: boolean;
   quiz: MeetingMcqQuiz | null;
   meetingTitle: string;
+  onProgress?: (payload: McqProgressPayload) => void;
   onClose: () => void;
 }
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
-export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: SessionMcqModalProps) {
+export function SessionMcqModal({
+  visible,
+  quiz,
+  meetingTitle,
+  onProgress,
+  onClose,
+}: SessionMcqModalProps) {
   const { colors } = useTheme();
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -209,7 +223,22 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                       key={oi}
                       style={[styles.optBtn, { backgroundColor: bg, borderColor }]}
                       onPress={() => {
-                        if (!answered) setAnswers((prev) => ({ ...prev, [q.id]: oi }));
+                        if (!answered) {
+                          const nextAnswers = { ...answers, [q.id]: oi };
+                          setAnswers(nextAnswers);
+                          const nextAttempted = Object.keys(nextAnswers).length;
+                          const nextCorrect = quiz.questions.reduce(
+                            (acc, item) =>
+                              acc + (nextAnswers[item.id] === item.correct_index ? 1 : 0),
+                            0,
+                          );
+                          onProgress?.({
+                            status: 'in_progress',
+                            attempted_count: nextAttempted,
+                            correct_count: nextCorrect,
+                            total_questions: total,
+                          });
+                        }
                       }}
                     >
                       <View
@@ -281,8 +310,17 @@ export function SessionMcqModal({ visible, quiz, meetingTitle, onClose }: Sessio
                     ]}
                     disabled={!answered}
                     onPress={() => {
-                      if (idx < total - 1) setIdx((i) => i + 1);
-                      else setDone(true);
+                      if (idx < total - 1) {
+                        setIdx((i) => i + 1);
+                      } else {
+                        setDone(true);
+                        onProgress?.({
+                          status: 'completed',
+                          attempted_count: Object.keys(answers).length,
+                          correct_count: score,
+                          total_questions: total,
+                        });
+                      }
                     }}
                   >
                     <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>

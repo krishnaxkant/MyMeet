@@ -17,13 +17,15 @@ import { useTheme } from '../hooks/useTheme';
 type AuthMode = 'login' | 'signup' | 'forgot';
 
 export function AuthScreen() {
-  const { isConfigured, signIn, signUp, sendPasswordReset } = useAuth();
+  const { isConfigured, signIn, signUp, resendVerification, sendPasswordReset } = useAuth();
   const { colors } = useTheme();
   const [mode, setMode] = useState<AuthMode>('login');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -59,7 +61,10 @@ export function AuthScreen() {
       } else if (mode === 'signup') {
         const result = await signUp(email, password, fullName);
         if (result.needsEmailConfirmation) {
-          setNotice('Account created! Confirm your email from your inbox, then sign in.');
+          setPendingVerifyEmail(email.trim());
+          setNotice(
+            result.message || 'Account created! Verify your email from your inbox, then sign in.',
+          );
           setMode('login');
         }
       } else {
@@ -67,9 +72,28 @@ export function AuthScreen() {
         setNotice('Password recovery email sent! Check your inbox.');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed.');
+      const msg = err instanceof Error ? err.message : 'Authentication failed.';
+      setError(msg);
+      if (/confirm|verif/i.test(msg) && email.trim()) {
+        setPendingVerifyEmail(email.trim());
+      }
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    const target = pendingVerifyEmail || email.trim();
+    if (!target) return;
+    setResending(true);
+    setError(null);
+    try {
+      const msg = await resendVerification(target);
+      setNotice(msg);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to resend verification email.');
+    } finally {
+      setResending(false);
     }
   };
 
@@ -182,6 +206,18 @@ export function AuthScreen() {
             >
               <Text style={[styles.alertText, { color: colors.successText }]}>{notice}</Text>
             </View>
+          )}
+
+          {pendingVerifyEmail && (
+            <Pressable
+              style={[styles.linkButton, { marginTop: -6 }]}
+              disabled={resending}
+              onPress={() => void handleResendVerification()}
+            >
+              <Text style={[styles.linkText, { color: colors.accentText }]}>
+                {resending ? 'Sending verification email...' : 'Resend Verification Email'}
+              </Text>
+            </Pressable>
           )}
 
           {mode === 'signup' && (

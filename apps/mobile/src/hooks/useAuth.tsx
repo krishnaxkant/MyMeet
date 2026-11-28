@@ -11,6 +11,8 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import {
   fetchProfile,
+  registerAccountWithVerification,
+  resendVerificationEmail,
   updateProfile,
   type UpdateProfilePayload,
   type UserProfile,
@@ -19,6 +21,7 @@ import { isMobileSupabaseConfigured, supabase } from '../services/supabase';
 
 interface SignUpResult {
   needsEmailConfirmation: boolean;
+  message?: string;
 }
 
 interface AuthContextValue {
@@ -30,6 +33,7 @@ interface AuthContextValue {
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<SignUpResult>;
+  resendVerification: (email: string) => Promise<string>;
   signOut: () => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -122,6 +126,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error('Supabase is not configured. Check your root .env file and restart Expo.');
       }
 
+      try {
+        const reg = await registerAccountWithVerification({
+          email: email.trim(),
+          password,
+          full_name: fullName.trim(),
+        });
+        if (reg.status === 'verification_sent') {
+          return {
+            needsEmailConfirmation: true,
+            message: reg.message,
+          };
+        }
+      } catch (regErr) {
+        const msg = regErr instanceof Error ? regErr.message : '';
+        if (msg && !/failed to fetch|network request failed/i.test(msg)) {
+          throw regErr;
+        }
+      }
+
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -142,6 +165,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  const resendVerification = useCallback(async (email: string): Promise<string> => {
+    const res = await resendVerificationEmail(email.trim());
+    return res.message;
+  }, []);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -192,6 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isConfigured: isMobileSupabaseConfigured,
       signIn,
       signUp,
+      resendVerification,
       signOut,
       sendPasswordReset,
       refreshProfile,
@@ -204,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       signIn,
       signUp,
+      resendVerification,
       signOut,
       sendPasswordReset,
       refreshProfile,

@@ -31,8 +31,21 @@ export interface MeetingHistoryItem {
   message_count: number;
 }
 
+export interface ParticipantMcqProgress {
+  status: 'completed' | 'left_in_between' | 'not_attempted' | 'not_eligible';
+  label: string;
+  score?: number;
+  total?: number;
+  attempted?: number;
+  percent?: number;
+}
+
+export interface MeetingHistoryParticipant extends MeetingParticipantInfo {
+  mcq_progress?: ParticipantMcqProgress;
+}
+
 export interface MeetingHistoryDetail extends MeetingHistoryItem {
-  participants: MeetingParticipantInfo[];
+  participants: MeetingHistoryParticipant[];
   messages: MeetingMessageInfo[];
   ai_summary: MeetingAiSummaryRecord | null;
   pro_notes: MeetingProNotesRecord | null;
@@ -271,18 +284,112 @@ export async function getMeetingHistoryDetail(
   const host = profileMap.get(meeting.host_id);
   const isHost = meeting.host_id === userId;
 
-  // Only the meeting host receives participant attendance history; participants see ONLY summary notes
-  const participants: MeetingParticipantInfo[] = isHost
-    ? partRows.map((row) => {
-        const prof = profileMap.get(row.user_id);
-        return {
-          ...row,
-          full_name: prof?.full_name ?? null,
-          email: prof?.email ?? '',
-          avatar_url: prof?.avatar_url ?? null,
+  // Host-only: load per-participant MCQ attempts & active subscriptions so Host can see Revision MCQ scores!
+  let participants: MeetingHistoryParticipant[] = [];
+  if (isHost) {
+    const participantUserIds = Array.from(new Set(partRows.map((p) => p.user_id)));
+    const [attemptsRes, subsRes] =
+      participantUserIds.length > 0
+        ? await Promise.all([
+            supabase
+              .from('meeting_mcq_attempts')
+              .select('user_id, status, attempted_count, correct_count, total_questions')
+              .eq('meeting_id', meeting.id),
+            supabase
+              .from('user_subscriptions')
+              .select('user_id, plan_code, mcq_enabled, expires_at')
+              .in('user_id', participantUserIds),
+          ])
+        : [{ data: null, error: null }, { data: null, error: null }];
+
+    const attemptMap = new Map<
+      string,
+      {
+        status: 'in_progress' | 'completed';
+        attempted_count: number;
+        correct_count: number;
+        total_questions: number;
+      }
+    >();
+    if (!attemptsRes.error && attemptsRes.data) {
+      for (const a of attemptsRes.data as Array<{
+        user_id: string;
+        status: 'in_progress' | 'completed';
+        attempted_count: number;
+        correct_count: number;
+        total_questions: number;
+      }>) {
+        attemptMap.set(a.user_id, a);
+      }
+    }
+
+    const mcqEligibleSet = new Set<string>();
+    const nowMs = Date.now();
+    if (!subsRes.error && subsRes.data) {
+      for (const s of subsRes.data as Array<{
+        user_id: string;
+        plan_code: string;
+        mcq_enabled: boolean;
+        expires_at: string | null;
+      }>) {
+        const notExpired = !s.expires_at || new Date(s.expires_at).getTime() > nowMs;
+        const hasMcqSub =
+          Boolean(s.mcq_enabled) ||
+          s.plan_code === 'pro_monthly_349' ||
+          s.plan_code === 'pro_yearly_899';
+        if (hasMcqSub && notExpired) {
+          mcqEligibleSet.add(s.user_id);
+        }
+      }
+    }
+
+    participants = partRows.map((row) => {
+      const prof = profileMap.get(row.user_id);
+      const attempt = attemptMap.get(row.user_id);
+      const eligible = mcqEligibleSet.has(row.user_id);
+
+      let mcq_progress: ParticipantMcqProgress;
+      if (attempt && attempt.status === 'completed') {
+        const total = Math.max(1, attempt.total_questions || 20);
+        const pct = Math.round((attempt.correct_count / total) * 100);
+        mcq_progress = {
+          status: 'completed',
+          label: `Score: ${attempt.correct_count}/${total} (${pct}%)`,
+          score: attempt.correct_count,
+          total,
+          attempted: attempt.attempted_count,
+          percent: pct,
         };
-      })
-    : [];
+      } else if (attempt && attempt.attempted_count > 0) {
+        const total = Math.max(1, attempt.total_questions || 20);
+        mcq_progress = {
+          status: 'left_in_between',
+          label: `Left in Between (${attempt.attempted_count}/${total})`,
+          score: attempt.correct_count,
+          total,
+          attempted: attempt.attempted_count,
+        };
+      } else if (eligible) {
+        mcq_progress = {
+          status: 'not_attempted',
+          label: 'Not Attempted',
+        };
+      } else {
+        mcq_progress = {
+          status: 'not_eligible',
+          label: 'Not Eligible (No Subscription)',
+        };
+      }
+
+      return {
+        ...row,
+        full_name: prof?.full_name ?? null,
+        email: prof?.email ?? '',
+        avatar_url: prof?.avatar_url ?? null,
+        mcq_progress,
+      };
+    });
+  }
 
   const messages: MeetingMessageInfo[] = msgRows.map((row) => {
     const author = profileMap.get(row.sender_id);
