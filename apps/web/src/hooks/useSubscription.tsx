@@ -70,8 +70,37 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     void refreshSubscription();
   }, [user, session?.access_token, refreshSubscription]);
 
-  const isPro = Boolean(subscription?.is_pro);
-  const isUnlimited = Boolean(subscription?.is_unlimited);
+  const isPro = Boolean(
+    subscription?.is_pro &&
+      !subscription.is_expired &&
+      (!subscription.expires_at || new Date(subscription.expires_at).getTime() > Date.now()),
+  );
+  const isUnlimited = Boolean(isPro && subscription?.is_unlimited);
+
+  // Automatically re-sync right when an active Pro subscription expires or when user returns to tab
+  useEffect(() => {
+    if (!user || !session?.access_token) return;
+    const handleFocus = () => {
+      void refreshSubscription();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    let expiryTimer: number | null = null;
+    if (subscription?.is_pro && subscription.expires_at) {
+      const msUntilExpiry = new Date(subscription.expires_at).getTime() - Date.now();
+      // setTimeout caps cleanly around 24.8 days (2^31 - 1 ms)
+      if (msUntilExpiry > 0 && msUntilExpiry < 2_000_000_000) {
+        expiryTimer = window.setTimeout(() => {
+          void refreshSubscription();
+        }, msUntilExpiry + 1500);
+      }
+    }
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      if (expiryTimer !== null) window.clearTimeout(expiryTimer);
+    };
+  }, [user, session?.access_token, subscription?.is_pro, subscription?.expires_at, refreshSubscription]);
 
   // Sync tier attribute on <html> so CSS theme tokens adapt globally between Basic & Pro
   useEffect(() => {

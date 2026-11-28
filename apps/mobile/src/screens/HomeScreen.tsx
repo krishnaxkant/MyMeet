@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { AppState, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { BrandLogo } from '../components/BrandLogo';
 import { StatusBadge } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
@@ -33,7 +33,7 @@ const FEATURE_SPOTLIGHTS = [
   {
     id: 'rooms',
     tag: 'INSTANT HD ROOMS',
-    title: 'Full-stage screen share & 100-user calls',
+    title: 'Full-stage screen share & crystal-clear HD calls',
     copy: 'Share screen full-stage with Host PiP, Waiting Room security & crisp live audio.',
     accent: '#2563EB',
     pro: false,
@@ -144,6 +144,16 @@ export function HomeScreen({
 
   useEffect(() => {
     void loadDashboard();
+  }, [loadDashboard]);
+
+  // Re-check subscription & meetings when app returns to foreground so expired Pro reverts immediately
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void loadDashboard();
+      }
+    });
+    return () => sub.remove();
   }, [loadDashboard]);
 
   const handleCreateMeeting = async () => {

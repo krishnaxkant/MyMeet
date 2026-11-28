@@ -1,7 +1,10 @@
 import crypto from 'node:crypto';
 import { env } from '../config/env.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
-import { sendSubscriptionWelcomeEmail } from './emailService.js';
+import {
+  sendSubscriptionExpiredEmail,
+  sendSubscriptionWelcomeEmail,
+} from './emailService.js';
 import { HttpError } from './meetingService.js';
 
 export type PlanCode = 'free' | 'single_9' | 'pack_49' | 'pro_monthly_349' | 'pro_yearly_899';
@@ -189,6 +192,100 @@ function buildFreeStatus(isExpired = false): UserSubscriptionStatus {
   };
 }
 
+async function downgradeExpiredSubscriptionAndNotify(
+  userId: string,
+  previousPlanCode: PlanCode,
+  reason: 'expired' | 'credits_used',
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase || previousPlanCode === 'free') return;
+
+  // Atomic conditional flip from paid -> 'free' guarantees the expiry email is sent EXACTLY ONCE!
+  const { data: flipped, error } = await supabase
+    .from('user_subscriptions')
+    .update({
+      plan_code: 'free',
+      credits_remaining: 0,
+      credits_total: 0,
+      is_unlimited: false,
+      mcq_enabled: false,
+      expires_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('user_id', userId)
+    .neq('plan_code', 'free')
+    .select('user_id');
+
+  if (error || !flipped || flipped.length === 0) {
+    return;
+  }
+
+  try {
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', userId)
+      .maybeSingle<{ email: string; full_name: string | null }>();
+
+    if (prof?.email) {
+      const planDef = PLAN_CATALOG[previousPlanCode] ?? PLAN_CATALOG.free;
+      await sendSubscriptionExpiredEmail({
+        to: prof.email,
+        userName: prof.full_name || prof.email.split('@')[0],
+        previousPlanName: planDef.name,
+        reason,
+      });
+    }
+  } catch (err) {
+    console.warn('[billing] Failed to dispatch expiry notification email:', err);
+  }
+}
+
+export async function processExpiredSubscriptions(): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return 0;
+
+  const nowIso = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('user_subscriptions')
+    .select('user_id, plan_code, expires_at')
+    .neq('plan_code', 'free')
+    .not('expires_at', 'is', null)
+    .lte('expires_at', nowIso)
+    .limit(100);
+
+  if (error || !data || data.length === 0) return 0;
+
+  let count = 0;
+  for (const row of data as Array<{ user_id: string; plan_code: PlanCode }>) {
+    await downgradeExpiredSubscriptionAndNotify(row.user_id, row.plan_code, 'expired');
+    count += 1;
+  }
+  return count;
+}
+
+let expiryWatcherStarted = false;
+
+export function startSubscriptionExpiryWatcher(): void {
+  if (expiryWatcherStarted) return;
+  expiryWatcherStarted = true;
+
+  // Initial check 15s after boot, then sweep every 5 minutes so offline users get expiry email promptly
+  setTimeout(() => {
+    void processExpiredSubscriptions().catch((err) => {
+      console.warn('[billing] Initial expiry sweep error:', err);
+    });
+  }, 15_000);
+
+  const timer = setInterval(() => {
+    void processExpiredSubscriptions().catch((err) => {
+      console.warn('[billing] Periodic expiry sweep error:', err);
+    });
+  }, 5 * 60 * 1000);
+
+  timer.unref?.();
+}
+
 export async function getUserSubscriptionStatus(userId: string): Promise<UserSubscriptionStatus> {
   const supabase = getSupabaseAdmin();
   if (!supabase) return buildFreeStatus(false);
@@ -210,24 +307,18 @@ export async function getUserSubscriptionStatus(userId: string): Promise<UserSub
 
   if (expired || data.plan_code === 'free') {
     if (expired && data.plan_code !== 'free') {
-      // Automatically clear expired credits so unused monthly credits never linger
-      void supabase
-        .from('user_subscriptions')
-        .update({
-          plan_code: 'free',
-          credits_remaining: 0,
-          credits_total: 0,
-          is_unlimited: false,
-          mcq_enabled: false,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('user_id', userId);
+      void downgradeExpiredSubscriptionAndNotify(userId, data.plan_code, 'expired');
     }
     return buildFreeStatus(expired);
   }
 
   const def = PLAN_CATALOG[data.plan_code] ?? PLAN_CATALOG.free;
   const hasActiveEntitlement = data.is_unlimited || data.credits_remaining > 0;
+
+  if (!hasActiveEntitlement) {
+    void downgradeExpiredSubscriptionAndNotify(userId, data.plan_code, 'credits_used');
+    return buildFreeStatus(true);
+  }
 
   return {
     plan_code: hasActiveEntitlement ? data.plan_code : 'free',
@@ -339,6 +430,12 @@ export async function consumeOneProCreditIfNeeded(
 
   const supabase = requireSupabase();
   const nextRemaining = Math.max(0, status.credits_remaining - 1);
+  if (nextRemaining === 0) {
+    await downgradeExpiredSubscriptionAndNotify(userId, status.plan_code, 'credits_used');
+    const updatedStatus = await getUserSubscriptionStatus(userId);
+    return { unlockSource: status.plan_code, updatedStatus };
+  }
+
   const { error } = await supabase
     .from('user_subscriptions')
     .update({

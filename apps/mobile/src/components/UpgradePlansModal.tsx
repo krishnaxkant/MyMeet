@@ -145,9 +145,6 @@ export function UpgradePlansModal({
               <Text style={[styles.title, { color: colors.text }]}>
                 {highlightMcq ? 'Unlock Pro Notes + 20-MCQ Tests' : 'Compare MyMeet Pro Plans'}
               </Text>
-              {subscription && !subscription.razorpay_live && (
-                <Text style={styles.testTag}>Test Mode · Instant Free Preview</Text>
-              )}
             </View>
             <Pressable
               style={[
@@ -317,7 +314,7 @@ export function UpgradePlansModal({
                           ? 'Activating...'
                           : subscription?.razorpay_live
                             ? `Pay ₹${plan.price_inr} via UPI`
-                            : `Activate ₹${plan.price_inr} (Test)`}
+                            : `Get Started · ₹${plan.price_inr}`}
                       </Text>
                     </Pressable>
                   </View>

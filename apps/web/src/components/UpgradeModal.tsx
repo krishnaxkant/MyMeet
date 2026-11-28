@@ -203,9 +203,6 @@ export function UpgradeModal({
               <span className="pro-pill-badge">
                 <CrownIcon size={12} /> MYMEET PRO
               </span>
-              {subscription && !subscription.razorpay_live && (
-                <span className="badge badge-warning">Test Mode · Instant Free Preview</span>
-              )}
               {subscription?.is_pro && (
                 <span className="badge badge-success">
                   Active: {subscription.plan_name}
@@ -343,7 +340,7 @@ export function UpgradeModal({
                           ? `Extend ${plan.name} (₹${plan.price_inr})`
                           : subscription?.razorpay_live
                             ? `Pay ₹${plan.price_inr} · UPI / Card`
-                            : `Activate ₹${plan.price_inr} (Test)`}
+                            : `Get Started · ₹${plan.price_inr}`}
                     </button>
                   </div>
                 );

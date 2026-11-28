@@ -331,3 +331,102 @@ export async function sendEmailVerificationEmail(params: {
     };
   }
 }
+
+export async function sendSubscriptionExpiredEmail(params: {
+  to: string;
+  userName: string;
+  previousPlanName: string;
+  reason: 'expired' | 'credits_used';
+}): Promise<EmailSendResult> {
+  const mailer = getTransporter();
+  if (!mailer) {
+    return {
+      sent: false,
+      status: 'not_configured',
+      message: 'SMTP not configured; skipping subscription expiry email.',
+    };
+  }
+
+  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const safeName = escapeHtml(params.userName || 'there');
+  const safePlan = escapeHtml(params.previousPlanName);
+  const renewUrl = `${env.webAppUrl.replace(/\/$/, '')}/profile?upgrade=pro_monthly_349`;
+
+  const headline =
+    params.reason === 'credits_used'
+      ? `Your ${safePlan} credits have been used`
+      : `Your ${safePlan} subscription has ended`;
+
+  const bodyCopy =
+    params.reason === 'credits_used'
+      ? `You have used all Pro Master Notes credits in your <strong>${safePlan}</strong> pack. Your account has now switched back to the <strong>MyMeet Basic</strong> dashboard.`
+      : `Your <strong>${safePlan}</strong> plan has expired and your account has now switched back to the <strong>MyMeet Basic</strong> dashboard.`;
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #6366f1; border-radius: 16px; padding: 28px;">
+        <div style="font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 2px;">
+          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
+        </div>
+        <div style="font-size: 11px; color: #64748b; margin-bottom: 18px;">Connect. Collaborate. Together.</div>
+
+        <h1 style="margin: 0 0 10px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
+          ${headline}
+        </h1>
+        <p style="margin: 0 0 16px; color: #475569; font-size: 15px; line-height: 1.6;">
+          Hi <strong>${safeName}</strong>, ${bodyCopy}
+        </p>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px; font-size: 13.5px; color: #334155; line-height: 1.6;">
+          <strong>Good news:</strong> Every Pro Master Note you already unlocked remains permanently saved in your MyMeet History.<br/>
+          Renew anytime to restore Unlimited Pro Master Notes, Quick 20-MCQ Session Revision Tests, and your MyMeet Pro workspace.
+        </div>
+
+        <a href="${renewUrl}" style="display: inline-block; background: linear-gradient(135deg, #f59e0b 0%, #7c3aed 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 12px 24px; border-radius: 10px; font-size: 14.5px;">
+          Renew MyMeet Pro →
+        </a>
+
+        <p style="margin: 22px 0 0; color: #94a3b8; font-size: 12px;">
+          MyMeet · Connect. Collaborate. Together.
+        </p>
+      </div>
+    </div>
+  `;
+
+  const text = [
+    `Hi ${params.userName || 'there'},`,
+    '',
+    params.reason === 'credits_used'
+      ? `All Pro credits in your ${params.previousPlanName} pack have been used. Your account is now back on MyMeet Basic.`
+      : `Your ${params.previousPlanName} subscription has expired. Your account is now back on MyMeet Basic.`,
+    '',
+    'All Pro Master Notes you already unlocked remain permanently saved in your History.',
+    `Renew anytime: ${renewUrl}`,
+  ].join('\n');
+
+  try {
+    await mailer.sendMail({
+      from: fromAddress,
+      to: params.to,
+      subject:
+        params.reason === 'credits_used'
+          ? `MyMeet: Your ${params.previousPlanName} credits are complete`
+          : `MyMeet: Your ${params.previousPlanName} subscription has expired`,
+      text,
+      html,
+    });
+    return {
+      sent: true,
+      status: 'sent',
+      message: `Expiry email sent to ${params.to}.`,
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'SMTP error';
+    console.warn('[email] Failed to send subscription expiry email:', reason);
+    return {
+      sent: false,
+      status: 'failed',
+      message: `Subscription expired, but email failed: ${reason}`,
+    };
+  }
+}

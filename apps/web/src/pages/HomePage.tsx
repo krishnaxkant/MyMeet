@@ -53,8 +53,8 @@ const SPOTLIGHT_SLIDES: SpotlightSlide[] = [
     badge: 'Instant HD Rooms',
     theme: 'ocean',
     title: 'Launch encrypted meetings in seconds',
-    copy: 'Generate a room link with one click, preview your camera in the lobby, share your screen full-stage with Host PiP, and scale smoothly up to 100 participants.',
-    chips: ['Full-Stage Screen Share', 'Waiting Room', '100-User Ready'],
+    copy: 'Generate a room link in one click, preview your camera in the lobby, share your screen full-stage with Host PiP, and run crystal-clear live sessions.',
+    chips: ['Full-Stage Screen Share', 'Waiting Room', 'HD Video & Audio'],
   },
   {
     id: 'free-ai-notes',

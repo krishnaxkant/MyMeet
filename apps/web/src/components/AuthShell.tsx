@@ -51,7 +51,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         <div className="auth-showcase-footer">
           <span>Encrypted meeting codes</span>
           <span>·</span>
-          <span>LiveKit SFU media</span>
+          <span>Ultra-low latency HD media</span>
           <span>·</span>
           <span>Light & Dark studio</span>
         </div>
