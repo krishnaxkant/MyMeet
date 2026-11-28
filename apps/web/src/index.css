@@ -500,8 +500,11 @@ code {
 
 @media (max-width: 980px) {
   .navbar-inner {
-    grid-template-columns: auto 1fr;
-    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 58px;
+    padding: 0 14px;
     gap: 10px;
   }
 
@@ -516,17 +519,6 @@ code {
   .nav-mobile-drawer {
     display: flex;
     flex-direction: column;
-  }
-}
-
-@media (max-width: 520px) {
-  .brand-pro-chip {
-    display: none;
-  }
-  .nav-upgrade-btn,
-  .nav-pro-status-pill {
-    padding: 5px 10px;
-    font-size: 0.72rem;
   }
 }
 
@@ -4622,6 +4614,83 @@ body,
   font-family: var(--font-body);
   text-align: left;
   width: 100%;
+}
+
+/* Authoritative Mobile & Compact Navbar Polish (placed AFTER Pro navbar base rules) */
+@media (max-width: 680px) {
+  .nav-user-name,
+  .nav-chevron {
+    display: none;
+  }
+
+  .nav-account-trigger {
+    padding: 3px;
+    gap: 0;
+  }
+
+  .nav-avatar-sm {
+    width: 28px;
+    height: 28px;
+  }
+
+  .nav-zone-right {
+    gap: 7px;
+  }
+
+  .nav-icon-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+  }
+
+  .nav-pro-status-pill,
+  .nav-upgrade-btn {
+    padding: 5px 10px;
+    font-size: 0.73rem;
+    gap: 4px;
+    height: 32px;
+  }
+}
+
+@media (max-width: 420px) {
+  .navbar-inner {
+    padding: 0 12px;
+    gap: 6px;
+  }
+
+  .navbar .mymeet-brand-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .navbar .mymeet-brand-sm .mymeet-wordmark {
+    font-size: 1.04rem;
+  }
+
+  .brand-status-dot {
+    display: none;
+  }
+
+  .nav-zone-right {
+    gap: 5px;
+  }
+
+  .nav-pro-status-pill,
+  .nav-upgrade-btn {
+    padding: 4px 9px;
+    font-size: 0.7rem;
+    height: 30px;
+  }
+
+  .nav-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .nav-avatar-sm {
+    width: 26px;
+    height: 26px;
+  }
 }
 
 /* Pro Active Nav Pill Indicator */

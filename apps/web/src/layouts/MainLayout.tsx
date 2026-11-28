@@ -147,11 +147,6 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
           <div className="nav-zone-left">
             <Link to="/" className="brand">
               <BrandLogo size="sm" />
-              {isPro && (
-                <span className="brand-pro-chip" title={`MyMeet Pro — ${subscription?.plan_name}`}>
-                  <CrownIcon size={10} /> PRO
-                </span>
-              )}
               <span
                 className={`brand-status-dot dot-${statusTone}`}
                 title={statusLabel}
