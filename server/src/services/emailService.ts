@@ -16,6 +16,11 @@ export function isSmtpConfigured(): boolean {
 }
 
 let transporter: Transporter | null = null;
+let onEmailSentHook: (() => void) | null = null;
+
+export function registerEmailSentHook(fn: () => void): void {
+  onEmailSentHook = fn;
+}
 
 function getTransporter(): Transporter | null {
   if (!isSmtpConfigured()) return null;
@@ -103,6 +108,7 @@ export async function sendMeetingInviteEmail(params: {
       text,
       html,
     });
+    onEmailSentHook?.();
 
     return {
       sent: true,
@@ -236,6 +242,7 @@ export async function sendSubscriptionWelcomeEmail(params: {
       text,
       html,
     });
+    onEmailSentHook?.();
     return {
       sent: true,
       status: 'sent',
@@ -316,6 +323,7 @@ export async function sendEmailVerificationEmail(params: {
       text,
       html,
     });
+    onEmailSentHook?.();
     return {
       sent: true,
       status: 'sent',
@@ -415,6 +423,7 @@ export async function sendSubscriptionExpiredEmail(params: {
       text,
       html,
     });
+    onEmailSentHook?.();
     return {
       sent: true,
       status: 'sent',
@@ -427,6 +436,123 @@ export async function sendSubscriptionExpiredEmail(params: {
       sent: false,
       status: 'failed',
       message: `Subscription expired, but email failed: ${reason}`,
+    };
+  }
+}
+
+export async function sendFounderAlertEmail(params: {
+  to: string;
+  severity: 'critical' | 'warning' | 'info';
+  title: string;
+  summary: string;
+  metrics: Array<{ label: string; value: string }>;
+  actionSteps: string[];
+}): Promise<EmailSendResult> {
+  const mailer = getTransporter();
+  if (!mailer || !params.to) {
+    return {
+      sent: false,
+      status: 'not_configured',
+      message: 'SMTP or admin alert email not configured.',
+    };
+  }
+
+  const fromAddress = env.smtpFrom || `MyMeet Ops <${env.smtpUser}>`;
+  const accent =
+    params.severity === 'critical'
+      ? '#dc2626'
+      : params.severity === 'warning'
+        ? '#d97706'
+        : '#2563eb';
+  const badgeLabel =
+    params.severity === 'critical'
+      ? 'CRITICAL ALERT'
+      : params.severity === 'warning'
+        ? 'SCALING WARNING'
+        : 'GROWTH ALERT';
+
+  const metricsRows = params.metrics
+    .map(
+      (m) => `
+      <tr>
+        <td style="padding: 6px 0; color: #64748b; font-size: 13.5px;">${escapeHtml(m.label)}</td>
+        <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 13.5px; text-align: right;">${escapeHtml(m.value)}</td>
+      </tr>`,
+    )
+    .join('');
+
+  const stepsHtml = params.actionSteps
+    .map(
+      (s, i) =>
+        `<li style="margin: 7px 0; color: #1e293b; font-size: 14px; line-height: 1.55;"><strong>${i + 1}.</strong> ${escapeHtml(s)}</li>`,
+    )
+    .join('');
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 580px; margin: 0 auto; padding: 24px; background: #f8fafc;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid ${accent}; border-radius: 16px; padding: 26px;">
+        <div style="display: inline-block; padding: 4px 10px; border-radius: 999px; background: ${accent}; color: #ffffff; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; margin-bottom: 12px;">
+          MYMEET OPS · ${badgeLabel}
+        </div>
+        <h1 style="margin: 0 0 8px; color: #0f172a; font-size: 21px; letter-spacing: -0.02em;">
+          ${escapeHtml(params.title)}
+        </h1>
+        <p style="margin: 0 0 18px; color: #475569; font-size: 14.5px; line-height: 1.6;">
+          ${escapeHtml(params.summary)}
+        </p>
+
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; margin-bottom: 18px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px;">
+            Live Server Snapshot
+          </div>
+          <table style="width: 100%; border-collapse: collapse;">${metricsRows}</table>
+        </div>
+
+        <div style="margin-bottom: 18px;">
+          <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">Recommended Action:</div>
+          <ol style="list-style: none; padding: 0; margin: 0;">${stepsHtml}</ol>
+        </div>
+
+        <p style="margin: 18px 0 0; color: #94a3b8; font-size: 12px;">
+          Automated alert from MyMeet Backend Monitor (max 1 alert per issue every 4 hours).<br/>
+          Health Dashboard: <a href="${env.webAppUrl}" style="color: #2563eb;">${escapeHtml(env.webAppUrl)}</a>
+        </p>
+      </div>
+    </div>
+  `;
+
+  const text = [
+    `[MyMeet ${badgeLabel}] ${params.title}`,
+    '',
+    params.summary,
+    '',
+    'Metrics:',
+    ...params.metrics.map((m) => `- ${m.label}: ${m.value}`),
+    '',
+    'Recommended Actions:',
+    ...params.actionSteps.map((s, i) => `${i + 1}. ${s}`),
+  ].join('\n');
+
+  try {
+    await mailer.sendMail({
+      from: fromAddress,
+      to: params.to,
+      subject: `[MyMeet ${badgeLabel}] ${params.title}`,
+      text,
+      html,
+    });
+    return {
+      sent: true,
+      status: 'sent',
+      message: `Founder alert sent to ${params.to}.`,
+    };
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'SMTP error';
+    console.warn('[monitor] Failed to send founder alert email:', reason);
+    return {
+      sent: false,
+      status: 'failed',
+      message: reason,
     };
   }
 }

@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { startSubscriptionExpiryWatcher } from './services/billingService.js';
+import { startSystemMonitor } from './services/systemMonitorService.js';
 
 const app = createApp();
 
@@ -9,4 +10,5 @@ app.listen(env.port, '0.0.0.0', () => {
   console.log(`[meet-backend] LAN access enabled on 0.0.0.0:${env.port}`);
   console.log(`[meet-backend] Health check: http://localhost:${env.port}/api/health`);
   startSubscriptionExpiryWatcher();
+  startSystemMonitor();
 });

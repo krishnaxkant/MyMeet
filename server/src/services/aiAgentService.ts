@@ -6,6 +6,7 @@ import {
   getUserSubscriptionStatus,
   type UserSubscriptionStatus,
 } from './billingService.js';
+import { recordGeminiRateLimitHit } from './systemMonitorService.js';
 import { getMeetingByCode, HttpError, normalizeMeetingCode } from './meetingService.js';
 import { getOrCreateProfile } from './profileService.js';
 
@@ -236,6 +237,9 @@ async function callGeminiApi(
         if (!response.ok) {
           const errText = await response.text().catch(() => '');
           const retrySameModel = response.status === 500 || response.status === 502 || response.status === 504;
+          if (response.status === 429) {
+            recordGeminiRateLimitHit(model);
+          }
           console.warn(
             `[ai-agent] Gemini (${model}) HTTP ${response.status} (attempt ${attempt}/2):`,
             errText.slice(0, 200),

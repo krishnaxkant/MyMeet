@@ -11,6 +11,7 @@ import invitationRoutes from './routes/invitationRoutes.js';
 import meetingRoutes from './routes/meetingRoutes.js';
 import profileRoutes from './routes/profileRoutes.js';
 import scheduleRoutes from './routes/scheduleRoutes.js';
+import { recordApiRequest } from './services/systemMonitorService.js';
 
 export const createApp = () => {
   const app = express();
@@ -33,6 +34,10 @@ export const createApp = () => {
     }),
   );
   app.use(express.json({ limit: '5mb' }));
+  app.use((_req, _res, next) => {
+    recordApiRequest();
+    next();
+  });
 
   app.get('/', (_req, res) => {
     res.json({

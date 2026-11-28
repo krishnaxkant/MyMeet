@@ -3,6 +3,7 @@ import { env } from '../config/env.js';
 import { getLiveKitHealth } from '../config/livekit.js';
 import { checkSupabaseConnection } from '../config/supabase.js';
 import { isGeminiConfigured } from '../services/aiAgentService.js';
+import { getSystemTelemetrySnapshot } from '../services/systemMonitorService.js';
 
 export const getHealth = async (
   _req: Request,
@@ -28,6 +29,7 @@ export const getHealth = async (
       supabase,
       livekit,
       gemini,
+      system: getSystemTelemetrySnapshot(),
     });
   } catch (error) {
     next(error);
