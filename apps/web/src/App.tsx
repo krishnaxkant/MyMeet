@@ -13,6 +13,13 @@ import { LoginPage } from './pages/LoginPage';
 import { MeetingLobbyPage } from './pages/MeetingLobbyPage';
 import { MeetingRoomPage } from './pages/MeetingRoomPage';
 import { ProfilePage } from './pages/ProfilePage';
+import {
+  ContactPage,
+  PricingPage,
+  PrivacyPage,
+  RefundPage,
+  TermsPage,
+} from './pages/PublicPages';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { SchedulePage } from './pages/SchedulePage';
 import { SignUpPage } from './pages/SignUpPage';
@@ -28,6 +35,18 @@ function AppRoutes() {
       <Route path="/signup" element={<SignUpPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+      {/* Public Razorpay-compliant Pricing & Legal Policy Pages */}
+      <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/terms-and-conditions" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+      <Route path="/privacy-policy" element={<PrivacyPage />} />
+      <Route path="/refund" element={<RefundPage />} />
+      <Route path="/refund-policy" element={<RefundPage />} />
+      <Route path="/cancellation-refund" element={<RefundPage />} />
+      <Route path="/contact" element={<ContactPage />} />
+      <Route path="/contact-us" element={<ContactPage />} />
 
       <Route
         path="/"

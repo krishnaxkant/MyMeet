@@ -16,6 +16,7 @@ import {
 } from '../components/Icons';
 import { BrandLogo } from '../components/BrandLogo';
 import { UpgradeModal } from '../components/UpgradeModal';
+import { LegalFooterLinks } from '../pages/PublicPages';
 import { useAuth } from '../hooks/useAuth';
 import { useSubscription } from '../hooks/useSubscription';
 import { useTheme } from '../hooks/useTheme';
@@ -377,7 +378,10 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
         )}
       </header>
 
-      <main className="container">{children}</main>
+      <main className="container">
+        {children}
+        <LegalFooterLinks compact />
+      </main>
 
       {/* Global Upgrade Modal triggered from Navbar, Home, or any screen */}
       <UpgradeModal

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { LegalFooterLinks } from '../pages/PublicPages';
 import { BrandLogo } from './BrandLogo';
 import { ShieldIcon } from './Icons';
 import { ThemeToggle } from './ThemeToggle';
@@ -57,7 +58,10 @@ export function AuthShell({ children }: { children: ReactNode }) {
         </div>
       </aside>
 
-      <main className="auth-form-pane">{children}</main>
+      <main className="auth-form-pane">
+        {children}
+        <LegalFooterLinks compact />
+      </main>
     </div>
   );
 }
