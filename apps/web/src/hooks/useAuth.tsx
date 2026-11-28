@@ -32,6 +32,7 @@ interface AuthContextValue {
   profileLoading: boolean;
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<SignUpResult>;
   resendVerification: (email: string) => Promise<string>;
   signOut: () => Promise<void>;
@@ -115,6 +116,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
+    });
+    if (error) {
+      throw new Error(error.message);
+    }
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    if (!supabase) {
+      throw new Error('Supabase is not configured. Check your .env file and restart Vite.');
+    }
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
     });
     if (error) {
       throw new Error(error.message);
@@ -237,6 +256,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       isConfigured: isWebSupabaseConfigured,
       signIn,
+      signInWithGoogle,
       signUp,
       resendVerification,
       signOut,
@@ -251,6 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       profileLoading,
       signIn,
+      signInWithGoogle,
       signUp,
       resendVerification,
       signOut,

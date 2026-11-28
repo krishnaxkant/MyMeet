@@ -17,13 +17,15 @@ import { useTheme } from '../hooks/useTheme';
 type AuthMode = 'login' | 'signup' | 'forgot';
 
 export function AuthScreen() {
-  const { isConfigured, signIn, signUp, resendVerification, sendPasswordReset } = useAuth();
+  const { isConfigured, signIn, signInWithGoogle, signUp, resendVerification, sendPasswordReset } =
+    useAuth();
   const { colors } = useTheme();
   const [mode, setMode] = useState<AuthMode>('login');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [resending, setResending] = useState(false);
   const [pendingVerifyEmail, setPendingVerifyEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +96,19 @@ export function AuthScreen() {
       setError(err instanceof Error ? err.message : 'Unable to resend verification email.');
     } finally {
       setResending(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setNotice(null);
+    setGoogleBusy(true);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in with Google.');
+    } finally {
+      setGoogleBusy(false);
     }
   };
 
@@ -218,6 +233,38 @@ export function AuthScreen() {
                 {resending ? 'Sending verification email...' : 'Resend Verification Email'}
               </Text>
             </Pressable>
+          )}
+
+          {mode !== 'forgot' && (
+            <>
+              <Pressable
+                style={[
+                  styles.googleButton,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    borderColor: colors.borderStrong,
+                  },
+                  (googleBusy || submitting || !isConfigured) && styles.buttonDisabled,
+                ]}
+                disabled={googleBusy || submitting || !isConfigured}
+                onPress={() => void handleGoogleSignIn()}
+              >
+                <View style={styles.googleBadge}>
+                  <Text style={styles.googleBadgeText}>G</Text>
+                </View>
+                <Text style={[styles.googleButtonText, { color: colors.text }]}>
+                  {googleBusy ? 'Opening Google...' : 'Continue with Google'}
+                </Text>
+              </Pressable>
+
+              <View style={styles.dividerRow}>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+                <Text style={[styles.dividerText, { color: colors.textMuted }]}>
+                  or continue with email
+                </Text>
+                <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              </View>
+            </>
           )}
 
           {mode === 'signup' && (
@@ -447,5 +494,48 @@ const styles = StyleSheet.create({
   },
   alertText: {
     fontSize: 13,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  googleBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(15, 23, 42, 0.12)',
+  },
+  googleBadgeText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#4285F4',
+  },
+  googleButtonText: {
+    fontSize: 14.5,
+    fontWeight: '700',
+  },
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 2,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

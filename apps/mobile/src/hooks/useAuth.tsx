@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Linking } from 'react-native';
 import type { Session, User } from '@supabase/supabase-js';
 import {
   fetchProfile,
@@ -32,6 +33,7 @@ interface AuthContextValue {
   profileLoading: boolean;
   isConfigured: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<void>;
   signUp: (email: string, password: string, fullName: string) => Promise<SignUpResult>;
   resendVerification: (email: string) => Promise<string>;
   signOut: () => Promise<void>;
@@ -101,9 +103,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       void loadProfileForSession(nextSession ?? null);
     });
 
+    const handleOAuthRedirectUrl = async (url: string | null | undefined) => {
+      if (!url || !supabase || !url.includes('auth-callback')) return;
+      try {
+        const queryPart = url.split('?')[1]?.split('#')[0] ?? '';
+        const hashPart = url.split('#')[1] ?? '';
+        const queryParams = new URLSearchParams(queryPart);
+        const hashParams = new URLSearchParams(hashPart);
+
+        const code = queryParams.get('code');
+        if (code) {
+          await supabase.auth.exchangeCodeForSession(code);
+          return;
+        }
+
+        const accessToken = hashParams.get('access_token') || queryParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token') || queryParams.get('refresh_token');
+        if (accessToken && refreshToken) {
+          await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+        }
+      } catch (err) {
+        console.warn('[mobile auth] OAuth callback handling failed:', err);
+      }
+    };
+
+    void Linking.getInitialURL().then((initialUrl) => {
+      if (mounted) void handleOAuthRedirectUrl(initialUrl);
+    });
+    const urlSub = Linking.addEventListener('url', ({ url }) => {
+      if (mounted) void handleOAuthRedirectUrl(url);
+    });
+
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      urlSub.remove();
     };
   }, [loadProfileForSession]);
 
@@ -118,6 +155,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       throw new Error(error.message);
     }
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    if (!supabase) {
+      throw new Error('Supabase is not configured. Check your root .env file and restart Expo.');
+    }
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: 'mymeet://auth-callback',
+        skipBrowserRedirect: true,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+    if (error || !data?.url) {
+      throw new Error(error?.message || 'Unable to start Google sign-in.');
+    }
+    await Linking.openURL(data.url);
   }, []);
 
   const signUp = useCallback(
@@ -219,6 +276,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileLoading,
       isConfigured: isMobileSupabaseConfigured,
       signIn,
+      signInWithGoogle,
       signUp,
       resendVerification,
       signOut,
@@ -232,6 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loading,
       profileLoading,
       signIn,
+      signInWithGoogle,
       signUp,
       resendVerification,
       signOut,
