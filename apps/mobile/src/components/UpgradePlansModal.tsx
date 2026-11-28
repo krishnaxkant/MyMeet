@@ -39,7 +39,7 @@ const MOBILE_PLAN_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: MobileP
   single_9: {
     subtitle: 'Try Pro Master Notes on 1 important class or lecture only.',
     rows: [
-      { text: 'Pro Master Notes for ONLY 1 class / meeting (valid 30 days)', included: true, bold: true },
+      { text: 'Pro Master Notes for ONLY 1 class / meeting', included: true, bold: true },
       { text: 'Deep code, derivations, comparison table & exam traps', included: true },
       { text: '1-min cheat sheet + HD PDF export & permanent access', included: true },
       { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
@@ -49,7 +49,7 @@ const MOBILE_PLAN_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: MobileP
   pack_49: {
     subtitle: 'Smart bundle for regular classes — ~₹3.2 per class.',
     rows: [
-      { text: 'Pro Master Notes for 15 classes / meetings (valid 30 days)', included: true, bold: true },
+      { text: 'Pro Master Notes for 15 classes / meetings', included: true, bold: true },
       { text: 'Deep code, derivations, comparison table & exam traps', included: true },
       { text: 'Premium PRO UI theme & gold profile badge', included: true },
       { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
@@ -59,7 +59,7 @@ const MOBILE_PLAN_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: MobileP
   pro_monthly_349: {
     subtitle: 'Full all-access subscription for daily lectures & exam prep.',
     rows: [
-      { text: 'Unlimited Pro Master Notes for 30 days (every class)', included: true, bold: true },
+      { text: 'Unlimited Pro Master Notes every month (every class)', included: true, bold: true },
       { text: 'Quick 20-MCQ Session Revision Test after every meeting', included: true, bold: true },
       { text: 'Unlimited regenerations + HD PDF export', included: true },
       { text: 'Auto-builds Pro Notes (no Basic Notes clutter)', included: true },
@@ -246,10 +246,10 @@ export function UpgradePlansModal({
                         {code === 'pro_yearly_899'
                           ? '/ year (~₹75/mo)'
                           : code === 'pro_monthly_349'
-                            ? '/ month · 30d'
+                            ? '/ month'
                             : code === 'pack_49'
-                              ? '/ 15 classes · 30d'
-                              : '/ 1 class only · 30d'}
+                              ? '/ 15 classes'
+                              : '/ 1 class only'}
                       </Text>
                     </View>
 

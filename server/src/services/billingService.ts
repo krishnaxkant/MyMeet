@@ -86,12 +86,12 @@ export const PLAN_CATALOG: Record<PlanCode, PlanDefinition> = {
     credits: 1,
     is_unlimited: false,
     mcq_enabled: false,
-    tagline: '1 Pro Note credit · valid for 30 days',
+    tagline: '1 Pro Note credit · 1 class only',
     highlights: [
       '1 Pro Master Notes credit (1 class/meeting)',
       'Deep derivations, code blocks & comparison tables',
       'Exam & interview traps + 1-min cheat sheet + PDF',
-      'Unused credit expires in 30 days',
+      'Permanent access to your unlocked class note',
     ],
   },
   pack_49: {
@@ -103,12 +103,12 @@ export const PLAN_CATALOG: Record<PlanCode, PlanDefinition> = {
     credits: 15,
     is_unlimited: false,
     mcq_enabled: false,
-    tagline: '15 Pro Note credits · valid for 30 days',
+    tagline: '15 Pro Note credits · 15 classes',
     highlights: [
-      '15 Pro Master Notes credits (15 classes/month)',
+      '15 Pro Master Notes credits (15 classes)',
       'Save 64% compared to single ₹9 credits',
       'PRO badge on your profile + HD PDF export',
-      'Unused monthly credits expire after 30 days',
+      'Permanent access to all unlocked class notes',
     ],
   },
   pro_monthly_349: {
@@ -122,7 +122,7 @@ export const PLAN_CATALOG: Record<PlanCode, PlanDefinition> = {
     mcq_enabled: true,
     tagline: 'Unlimited Pro Notes + Session MCQ Tests / month',
     highlights: [
-      'Unlimited Pro Master Notes for 30 days',
+      'Unlimited Pro Master Notes every month',
       'Interactive Session MCQ Test after every meeting',
       'Instant grading + concept explanations + retake',
       'Premium PRO profile badge + HD PDF export',

@@ -723,7 +723,7 @@ export function HomePage() {
                   <span className="home-mini-tag">Try Once</span>
                 </div>
                 <div className="home-mini-line yes">
-                  <CheckIcon size={12} /> <span>1 class Pro Master Notes only (30d)</span>
+                  <CheckIcon size={12} /> <span>1 class Pro Master Notes only</span>
                 </div>
                 <div className="home-mini-line no">
                   <CrossIcon size={11} /> <span>No Quick 20-MCQ revision test</span>
