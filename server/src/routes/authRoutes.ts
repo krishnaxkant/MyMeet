@@ -1,9 +1,16 @@
+import { createClient } from '@supabase/supabase-js';
 import { Router } from 'express';
 import { env } from '../config/env.js';
 import { getSupabaseAdmin } from '../config/supabase.js';
 import { isSmtpConfigured, sendEmailVerificationEmail } from '../services/emailService.js';
 
 const router = Router();
+
+function buildDirectVerifyUrl(hashedToken: string | undefined, type: 'signup' | 'magiclink', fallbackUrl: string): string {
+  if (!hashedToken) return fallbackUrl;
+  const base = env.webAppUrl.replace(/\/$/, '');
+  return `${base}/login?token_hash=${encodeURIComponent(hashedToken)}&type=${encodeURIComponent(type)}`;
+}
 
 /**
  * POST /api/auth/register
@@ -55,10 +62,16 @@ router.post('/register', async (req, res, next) => {
       return;
     }
 
+    const verifyUrl = buildDirectVerifyUrl(
+      data.properties.hashed_token,
+      'signup',
+      data.properties.action_link,
+    );
+
     const mailResult = await sendEmailVerificationEmail({
       to: email,
       fullName: fullName || email.split('@')[0],
-      verifyUrl: data.properties.action_link,
+      verifyUrl,
     });
 
     if (!mailResult.sent) {
@@ -136,10 +149,16 @@ router.post('/resend-verification', async (req, res, next) => {
       return;
     }
 
+    const verifyUrl = buildDirectVerifyUrl(
+      data.properties.hashed_token,
+      'magiclink',
+      data.properties.action_link,
+    );
+
     const mailResult = await sendEmailVerificationEmail({
       to: email,
       fullName: prof?.full_name || email.split('@')[0],
-      verifyUrl: data.properties.action_link,
+      verifyUrl,
     });
 
     if (!mailResult.sent) {
@@ -150,6 +169,62 @@ router.post('/resend-verification', async (req, res, next) => {
     res.json({
       status: 'verification_sent',
       message: `Verification link re-sent to ${email}. Please check your inbox and spam folder.`,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/confirm
+ * Confirms an email verification token_hash directly so users always land on mymeet-live.vercel.app
+ * instead of Supabase's default localhost Site URL.
+ */
+router.post('/confirm', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const tokenHash = typeof body.token_hash === 'string' ? body.token_hash.trim() : '';
+    const rawType = typeof body.type === 'string' ? body.type.trim() : 'signup';
+    const allowedTypes = new Set(['signup', 'magiclink', 'email', 'invite', 'recovery', 'email_change']);
+    const type = (allowedTypes.has(rawType) ? rawType : 'signup') as
+      | 'signup'
+      | 'magiclink'
+      | 'email'
+      | 'invite'
+      | 'recovery'
+      | 'email_change';
+
+    if (!tokenHash) {
+      res.status(400).json({ error: 'Bad Request', message: 'Missing verification token.' });
+      return;
+    }
+
+    if (!env.supabaseUrl || !env.supabaseAnonKey) {
+      res.status(503).json({ error: 'Unavailable', message: 'Supabase is not configured.' });
+      return;
+    }
+
+    // Isolated client with persistSession: false so we never mutate shared admin state
+    const verifier = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const { error } = await verifier.auth.verifyOtp({
+      token_hash: tokenHash,
+      type,
+    });
+
+    if (error) {
+      res.status(400).json({
+        error: 'Verification Failed',
+        message: error.message || 'Verification link is invalid or has expired. Please request a new one.',
+      });
+      return;
+    }
+
+    res.json({
+      verified: true,
+      message: 'Email verified successfully! You can sign in to MyMeet now.',
     });
   } catch (err) {
     next(err);

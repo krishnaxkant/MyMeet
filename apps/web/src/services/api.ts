@@ -918,3 +918,22 @@ export async function resendVerificationEmail(email: string): Promise<{ status: 
     message: data.message || 'Verification email sent!',
   };
 }
+
+export async function confirmEmailVerification(
+  tokenHash: string,
+  type: string,
+): Promise<{ verified: boolean; message: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token_hash: tokenHash, type }),
+  });
+  const data = (await res.json().catch(() => ({}))) as { verified?: boolean; message?: string };
+  if (!res.ok) {
+    throw new Error(data.message || 'Verification link is invalid or has expired.');
+  }
+  return {
+    verified: Boolean(data.verified),
+    message: data.message || 'Email verified! You can sign in to MyMeet now.',
+  };
+}

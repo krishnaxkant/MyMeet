@@ -1,15 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthShell } from '../components/AuthShell';
 import { BrandLogo } from '../components/BrandLogo';
 import { useAuth } from '../hooks/useAuth';
+import { confirmEmailVerification } from '../services/api';
 
 export function LoginPage() {
   const { user, loading, isConfigured, signIn, resendVerification } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname || '/';
-  const isVerifiedRedirect = new URLSearchParams(location.search).get('verified') === '1';
+  const searchParams = new URLSearchParams(location.search);
+  const isVerifiedRedirect = searchParams.get('verified') === '1';
+  const tokenHash = searchParams.get('token_hash');
+  const tokenType = searchParams.get('type') || 'signup';
+  const confirmedRef = useRef(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -17,8 +22,32 @@ export function LoginPage() {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(
-    isVerifiedRedirect ? '✓ Email verified! You can sign in to MyMeet now.' : null,
+    isVerifiedRedirect
+      ? '✓ Email verified! You can sign in to MyMeet now.'
+      : tokenHash
+        ? 'Verifying your email address...'
+        : null,
   );
+
+  useEffect(() => {
+    if (!tokenHash || confirmedRef.current) return;
+    confirmedRef.current = true;
+    setError(null);
+    setNotice('Verifying your email address...');
+    void confirmEmailVerification(tokenHash, tokenType)
+      .then((res) => {
+        setNotice(`✓ ${res.message}`);
+        navigate('/login?verified=1', { replace: true });
+      })
+      .catch((err) => {
+        setNotice(null);
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Verification link expired or already used. You can sign in or request a new link.',
+        );
+      });
+  }, [tokenHash, tokenType, navigate]);
 
   if (!loading && user) {
     return <Navigate to={from} replace />;

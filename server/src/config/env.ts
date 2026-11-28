@@ -14,11 +14,20 @@ const parsePort = (value: string | undefined, fallback: number): number => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
 
+const rawWebAppUrl = (process.env.WEB_APP_URL || '').trim().replace(/\/$/, '');
+const isProd = (process.env.NODE_ENV || 'development') === 'production';
+const resolvedWebAppUrl =
+  !rawWebAppUrl || (isProd && /localhost|127\.0\.0\.1/i.test(rawWebAppUrl))
+    ? isProd
+      ? 'https://mymeet-live.vercel.app'
+      : 'http://localhost:5173'
+    : rawWebAppUrl;
+
 export const env = {
   port: parsePort(process.env.PORT, 4000),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  webAppUrl: (process.env.WEB_APP_URL || 'http://localhost:5173').replace(/\/$/, ''),
+  webAppUrl: resolvedWebAppUrl,
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',

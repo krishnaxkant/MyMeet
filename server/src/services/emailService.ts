@@ -50,6 +50,19 @@ function getPublicBaseUrl(): string {
   return (env.webAppUrl || 'https://mymeet-live.vercel.app').replace(/\/$/, '');
 }
 
+/**
+ * Ensures From address always aligns with SMTP_USER (critical for Gmail SPF/DKIM pass
+ * and avoiding Gmail Spam folder when sending via Gmail SMTP).
+ */
+function getAlignedFromAddress(displayName = 'MyMeet'): string {
+  const user = env.smtpUser.trim();
+  const rawFrom = env.smtpFrom.trim();
+  if (rawFrom && user && rawFrom.toLowerCase().includes(user.toLowerCase())) {
+    return rawFrom;
+  }
+  return user ? `${displayName} <${user}>` : rawFrom || 'MyMeet <noreply@mymeet.app>';
+}
+
 function renderBrandHeader(): string {
   const logoUrl = `${getPublicBaseUrl()}/mymeet-mark.png?v=2`;
   return `
@@ -108,7 +121,7 @@ export async function sendMeetingInviteEmail(params: {
   }
 
   const joinUrl = `${getPublicBaseUrl()}/meet/${params.meetingCode}`;
-  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const fromAddress = getAlignedFromAddress('MyMeet');
 
   const safeInviter = escapeHtml(params.inviterName);
   const safeTitle = escapeHtml(params.meetingTitle);
@@ -209,7 +222,7 @@ export async function sendSubscriptionWelcomeEmail(params: {
     };
   }
 
-  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const fromAddress = getAlignedFromAddress('MyMeet');
   const safeName = escapeHtml(params.userName || 'there');
   const safePlan = escapeHtml(params.planName);
   const dashboardUrl = `${getPublicBaseUrl()}/history`;
@@ -399,31 +412,39 @@ export async function sendEmailVerificationEmail(params: {
     };
   }
 
-  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const fromAddress = getAlignedFromAddress('MyMeet');
   const safeName = escapeHtml(params.fullName || 'there');
 
+  // Ultra-clean transactional email (low HTML weight, single primary domain link, zero external image trackers)
+  // to maximize Gmail Primary Inbox placement.
   const html = `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 24px; background: #f8fafc;">
-      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: 4px solid #2563eb; border-radius: 16px; padding: 28px;">
-        ${renderBrandHeader()}
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 20px; color: #0f172a;">
+      <div style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 26px;">
+        <div style="font-size: 19px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 18px;">
+          <span style="color: #0b132b;">My</span><span style="color: #2563eb;">Meet</span>
+        </div>
 
-        <h1 style="margin: 0 0 10px; color: #0f172a; font-size: 22px; letter-spacing: -0.02em;">
-          Verify your email address
-        </h1>
-        <p style="margin: 0 0 20px; color: #475569; font-size: 15px; line-height: 1.6;">
-          Hi <strong>${safeName}</strong>, welcome to MyMeet! Click the button below to confirm your email address and activate your account across Web and Android.
+        <p style="margin: 0 0 12px; font-size: 15px; line-height: 1.6; color: #1e293b;">
+          Hi ${safeName},
+        </p>
+        <p style="margin: 0 0 20px; font-size: 15px; line-height: 1.6; color: #475569;">
+          Thanks for signing up for MyMeet. Please confirm your email address to activate your account on Web and Android.
         </p>
 
-        <a href="${params.verifyUrl}" style="display: inline-block; background: linear-gradient(135deg, #2563eb 0%, #4f46e5 100%); color: #ffffff; text-decoration: none; font-weight: 700; padding: 13px 26px; border-radius: 10px; font-size: 15px;">
-          Verify My Email →
-        </a>
+        <p style="margin: 0 0 22px;">
+          <a href="${params.verifyUrl}" style="display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; padding: 12px 22px; border-radius: 8px; font-size: 14.5px;">
+            Verify Email Address
+          </a>
+        </p>
 
-        <p style="margin: 20px 0 0; color: #64748b; font-size: 12.5px; line-height: 1.55; word-break: break-all;">
-          If the button doesn't work, copy and paste this link into your browser:<br/>
+        <p style="margin: 0 0 14px; color: #64748b; font-size: 12.5px; line-height: 1.5; word-break: break-all;">
+          Or open this link directly:<br/>
           <a href="${params.verifyUrl}" style="color: #2563eb;">${escapeHtml(params.verifyUrl)}</a>
         </p>
 
-        ${renderEmailFooter("If you didn't create a MyMeet account, you can safely ignore this email.")}
+        <p style="margin: 18px 0 0; padding-top: 14px; border-top: 1px solid #f1f5f9; color: #94a3b8; font-size: 12px;">
+          If you did not create a MyMeet account, you can ignore this message.
+        </p>
       </div>
     </div>
   `;
@@ -431,17 +452,20 @@ export async function sendEmailVerificationEmail(params: {
   const text = [
     `Hi ${params.fullName || 'there'},`,
     '',
-    'Welcome to MyMeet! Please verify your email address by opening this link:',
+    'Thanks for signing up for MyMeet. Please confirm your email address by opening this link:',
     params.verifyUrl,
     '',
-    'Once verified, you can sign in on both MyMeet Web and Android.',
+    'Once confirmed, you can sign in on both MyMeet Web and Android.',
+    '',
+    'If you did not create a MyMeet account, you can ignore this message.',
   ].join('\n');
 
   try {
     await mailer.sendMail({
       from: fromAddress,
+      replyTo: env.smtpUser || undefined,
       to: params.to,
-      subject: 'Verify your MyMeet account email',
+      subject: 'Confirm your email for MyMeet',
       text,
       html,
     });
@@ -481,7 +505,7 @@ export async function sendSubscriptionExpiredEmail(params: {
     };
   }
 
-  const fromAddress = env.smtpFrom || `MyMeet <${env.smtpUser}>`;
+  const fromAddress = getAlignedFromAddress('MyMeet');
   const safeName = escapeHtml(params.userName || 'there');
   const safePlan = escapeHtml(params.previousPlanName);
   const renewUrl = `${getPublicBaseUrl()}/pricing`;
@@ -586,7 +610,7 @@ export async function sendFounderAlertEmail(params: {
     };
   }
 
-  const fromAddress = env.smtpFrom || `MyMeet Ops <${env.smtpUser}>`;
+  const fromAddress = getAlignedFromAddress('MyMeet Ops');
   const accent =
     params.severity === 'critical'
       ? '#dc2626'
