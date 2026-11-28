@@ -3,12 +3,14 @@ import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View
 import { BrandLogo } from '../components/BrandLogo';
 import { StatusBadge } from '../components/StatusBadge';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { UpgradePlansModal } from '../components/UpgradePlansModal';
 import { useAuth } from '../hooks/useAuth';
 import { useBackendHealth } from '../hooks/useBackendHealth';
 import { useTheme } from '../hooks/useTheme';
 import {
   createMeeting,
   extractMeetingCode,
+  getBillingStatus,
   listMeetings,
   listMyInvitations,
   listSchedules,
@@ -17,6 +19,7 @@ import {
   type MeetingInvitation,
   type MeetingSummary,
   type ScheduledMeeting,
+  type UserSubscriptionStatus,
 } from '../services/api';
 
 interface HomeScreenProps {
@@ -25,6 +28,41 @@ interface HomeScreenProps {
   onOpenSchedule: () => void;
   onOpenHistory: (code?: string) => void;
 }
+
+const FEATURE_SPOTLIGHTS = [
+  {
+    id: 'rooms',
+    tag: 'INSTANT HD ROOMS',
+    title: 'Full-stage screen share & 100-user calls',
+    copy: 'Share screen full-stage with Host PiP, Waiting Room security & crisp live audio.',
+    accent: '#2563EB',
+    pro: false,
+  },
+  {
+    id: 'free-notes',
+    tag: 'AI VISUAL NOTES · FREE',
+    title: 'Auto black-canvas study slides',
+    copy: 'Included free on every session — key takeaways, PDF & PNG downloads.',
+    accent: '#0D9488',
+    pro: false,
+  },
+  {
+    id: 'pro-notes',
+    tag: 'PRO MASTER NOTES · FROM ₹9',
+    title: 'Code, derivations, traps & cheat sheet',
+    copy: '₹9 unlocks 1 class only (no MCQs). ₹49 unlocks 15 classes. HD printable PDF!',
+    accent: '#7C3AED',
+    pro: true,
+  },
+  {
+    id: 'pro-mcqs',
+    tag: 'PRO UNLIMITED · ₹349/MO+',
+    title: '20-Question Session Mastery MCQs',
+    copy: 'Sequential Easy → Hard exam quiz with instant explanations + Unlimited Pro Notes.',
+    accent: '#D97706',
+    pro: true,
+  },
+];
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -60,6 +98,9 @@ export function HomeScreen({
   const [meetings, setMeetings] = useState<MeetingSummary[]>([]);
   const [schedules, setSchedules] = useState<ScheduledMeeting[]>([]);
   const [invitations, setInvitations] = useState<MeetingInvitation[]>([]);
+  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [upgradeForMcq, setUpgradeForMcq] = useState(false);
   const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
   const [clockText, setClockText] = useState(() =>
@@ -84,14 +125,16 @@ export function HomeScreen({
     if (!session?.access_token) return;
     setMeetingsLoading(true);
     try {
-      const [list, invites, upcoming] = await Promise.all([
+      const [list, invites, upcoming, billing] = await Promise.all([
         listMeetings(session.access_token),
         listMyInvitations(session.access_token).catch(() => []),
         listSchedules(session.access_token).catch(() => []),
+        getBillingStatus(session.access_token).catch(() => null),
       ]);
       setMeetings(list);
       setInvitations(invites);
       setSchedules(upcoming);
+      if (billing?.subscription) setSubscription(billing.subscription);
     } catch (err) {
       console.warn('[mobile meetings] Failed to load dashboard:', err);
     } finally {
@@ -166,231 +209,423 @@ export function HomeScreen({
     (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
   );
   const nextSchedule = schedules.find((s) => s.meeting_status !== 'ended') ?? null;
+  const isPro = Boolean(subscription?.is_pro);
+  const isUnlimited = Boolean(subscription?.is_unlimited);
 
   return (
-    <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <View style={styles.brandHeaderRow}>
-        <BrandLogo size="sm" />
-        <ThemeToggle />
-      </View>
-
-      <View style={styles.topBar}>
-        <Pressable style={styles.brandRow} onPress={onOpenProfile}>
-          <View style={[styles.avatar, { backgroundColor: colors.accent, overflow: 'hidden' }]}>
-            {profile?.avatar_url ? (
-              <Image
-                source={{ uri: profile.avatar_url }}
-                style={{ width: '100%', height: '100%' }}
-              />
-            ) : (
-              <Text style={styles.avatarText}>{getInitials(firstName)}</Text>
+    <>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <View style={styles.brandHeaderRow}>
+          <View style={styles.brandLeftCluster}>
+            <BrandLogo size="sm" />
+            {isPro && (
+              <View style={styles.brandProChip}>
+                <Text style={styles.brandProChipText}>✦ PRO</Text>
+              </View>
             )}
           </View>
-          <View style={styles.headerText}>
-            <Text style={[styles.greetingSmall, { color: colors.textMuted }]}>
-              {getGreeting()} · {clockText}
-            </Text>
-            <View style={styles.nameStatusRow}>
-              <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-                {firstName}
+          <View style={styles.brandRightCluster}>
+            <Pressable
+              style={[
+                styles.navUpgradePill,
+                isPro ? styles.navProStatusPill : styles.navBasicUpgradePill,
+              ]}
+              onPress={() => {
+                setUpgradeForMcq(false);
+                setUpgradeOpen(true);
+              }}
+            >
+              <Text style={isPro ? styles.navProStatusText : styles.navBasicUpgradeText}>
+                {isPro
+                  ? isUnlimited
+                    ? '✦ PRO · Unlimited'
+                    : `✦ PRO · ${subscription?.credits_remaining ?? 0} left`
+                  : '✦ Upgrade'}
               </Text>
-              <View
-                style={[
-                  styles.statusDot,
-                  {
-                    backgroundColor: healthLoading
-                      ? '#f59e0b'
-                      : healthData
-                        ? '#22c55e'
-                        : '#ef4444',
-                  },
-                ]}
-              />
-            </View>
+            </Pressable>
+            <ThemeToggle />
           </View>
-        </Pressable>
-      </View>
+        </View>
 
-      <View
-        style={[
-          styles.heroCard,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            shadowColor: colors.shadowColor,
-          },
-        ]}
-      >
-        <Text style={[styles.heroTitle, { color: colors.text }]}>
-          Connect. Collaborate. Together.
-        </Text>
-        <Text style={[styles.heroSub, { color: colors.textMuted }]}>
-          Start an instant MyMeet room, plan ahead with your team, or enter a meeting code.
-        </Text>
-
-        <View style={styles.primaryActionsRow}>
-          <Pressable
-            style={[styles.primaryButton, { backgroundColor: colors.accent }]}
-            onPress={() => setShowCreateForm((prev) => !prev)}
-            disabled={creating}
-          >
-            <Text style={styles.primaryButtonText}>
-              {showCreateForm ? 'Close' : '+ New Meeting'}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={[
-              styles.secondaryActionBtn,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
-            ]}
-            onPress={onOpenSchedule}
-          >
-            <Text style={[styles.secondaryActionText, { color: colors.text }]}>Schedule</Text>
+        <View style={styles.topBar}>
+          <Pressable style={styles.brandRow} onPress={onOpenProfile}>
+            <View
+              style={[
+                styles.avatar,
+                {
+                  backgroundColor: isPro ? '#7C3AED' : colors.accent,
+                  borderWidth: isPro ? 2.5 : 0,
+                  borderColor: isPro ? '#F59E0B' : 'transparent',
+                  overflow: 'hidden',
+                },
+              ]}
+            >
+              {profile?.avatar_url ? (
+                <Image
+                  source={{ uri: profile.avatar_url }}
+                  style={{ width: '100%', height: '100%' }}
+                />
+              ) : (
+                <Text style={styles.avatarText}>{getInitials(firstName)}</Text>
+              )}
+            </View>
+            <View style={styles.headerText}>
+              <Text style={[styles.greetingSmall, { color: isPro ? '#F59E0B' : colors.textMuted }]}>
+                {isPro
+                  ? `MYMEET PRO · ${subscription?.plan_name}`
+                  : `${getGreeting()} · ${clockText}`}
+              </Text>
+              <View style={styles.nameStatusRow}>
+                <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+                  {firstName}
+                </Text>
+                <View
+                  style={[
+                    styles.statusDot,
+                    {
+                      backgroundColor: healthLoading
+                        ? '#f59e0b'
+                        : healthData
+                          ? '#22c55e'
+                          : '#ef4444',
+                    },
+                  ]}
+                />
+              </View>
+            </View>
           </Pressable>
         </View>
 
-        {showCreateForm && (
-          <View
-            style={[
-              styles.createBox,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-            ]}
-          >
-            <TextInput
-              style={[
-                styles.codeInput,
-                {
-                  backgroundColor: colors.surface,
-                  borderColor: colors.borderStrong,
-                  color: colors.text,
-                },
-              ]}
-              value={newTitle}
-              onChangeText={setNewTitle}
-              placeholder={`${firstName}'s Meeting`}
-              placeholderTextColor={colors.placeholder}
-            />
+        <View
+          style={[
+            styles.heroCard,
+            {
+              backgroundColor: colors.surface,
+              borderColor: isPro ? 'rgba(245, 158, 11, 0.5)' : colors.border,
+              borderWidth: isPro ? 1.5 : 1,
+              shadowColor: colors.shadowColor,
+            },
+          ]}
+        >
+          <Text style={[styles.heroTitle, { color: colors.text }]}>
+            {isPro ? 'Your Pro Studio is Ready.' : 'Connect. Collaborate. Together.'}
+          </Text>
+          <Text style={[styles.heroSub, { color: colors.textMuted }]}>
+            {isPro
+              ? isUnlimited
+                ? 'Host HD meetings with automatic Pro Master Notes & 20-MCQ Session Tests unlocked.'
+                : `Host HD meetings and unlock deep Master Notes (${subscription?.credits_remaining ?? 0} credits active).`
+              : 'Start an instant MyMeet room, plan ahead with your team, or enter a meeting code.'}
+          </Text>
 
-            <View style={styles.switchRow}>
-              <View style={styles.rowText}>
-                <Text style={[styles.rowTitle, { color: colors.text }]}>Waiting Room</Text>
-                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                  Approve guests before they enter
-                </Text>
-              </View>
-              <Switch value={waitingRoom} onValueChange={setWaitingRoom} />
-            </View>
-
+          <View style={styles.primaryActionsRow}>
             <Pressable
-              style={[
-                styles.primaryButton,
-                { backgroundColor: colors.accent },
-                creating && styles.buttonDisabled,
-              ]}
-              onPress={() => void handleCreateMeeting()}
+              style={[styles.primaryButton, { backgroundColor: colors.accent }]}
+              onPress={() => setShowCreateForm((prev) => !prev)}
               disabled={creating}
             >
               <Text style={styles.primaryButtonText}>
-                {creating ? 'Creating room...' : 'Create & Open Lobby'}
+                {showCreateForm ? 'Close' : '+ New Meeting'}
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.secondaryActionBtn,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+              ]}
+              onPress={onOpenSchedule}
+            >
+              <Text style={[styles.secondaryActionText, { color: colors.text }]}>Schedule</Text>
+            </Pressable>
+          </View>
+
+          {showCreateForm && (
+            <View
+              style={[
+                styles.createBox,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+            >
+              <TextInput
+                style={[
+                  styles.codeInput,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.borderStrong,
+                    color: colors.text,
+                  },
+                ]}
+                value={newTitle}
+                onChangeText={setNewTitle}
+                placeholder={`${firstName}'s Meeting`}
+                placeholderTextColor={colors.placeholder}
+              />
+
+              <View style={styles.switchRow}>
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>Waiting Room</Text>
+                  <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                    Approve guests before they enter
+                  </Text>
+                </View>
+                <Switch value={waitingRoom} onValueChange={setWaitingRoom} />
+              </View>
+
+              <Pressable
+                style={[
+                  styles.primaryButton,
+                  { backgroundColor: colors.accent },
+                  creating && styles.buttonDisabled,
+                ]}
+                onPress={() => void handleCreateMeeting()}
+                disabled={creating}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {creating ? 'Creating room...' : 'Create & Open Lobby'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          <View
+            style={[
+              styles.joinCapsule,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
+            ]}
+          >
+            <TextInput
+              style={[styles.joinCapsuleInput, { color: colors.text }]}
+              value={meetingCode}
+              onChangeText={setMeetingCode}
+              placeholder="Enter meeting code or link"
+              placeholderTextColor={colors.placeholder}
+              autoCapitalize="none"
+            />
+            <Pressable
+              style={[
+                styles.joinButton,
+                { backgroundColor: colors.accentSoft },
+                !meetingCode.trim() && styles.buttonDisabled,
+              ]}
+              disabled={!meetingCode.trim()}
+              onPress={handleJoinByCode}
+            >
+              <Text style={[styles.joinButtonText, { color: colors.accentText }]}>Join</Text>
+            </Pressable>
+          </View>
+
+          {actionError && (
+            <View
+              style={[
+                styles.noticeBox,
+                { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+              ]}
+            >
+              <Text style={[styles.noticeText, { color: colors.dangerText }]}>{actionError}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Horizontal Feature Showcase Carousel (Includes Subscription Pro Features!) */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.spotlightScroll}
+        >
+          {FEATURE_SPOTLIGHTS.map((item) => (
+            <Pressable
+              key={item.id}
+              style={[
+                styles.spotlightTile,
+                {
+                  backgroundColor: item.accent,
+                  borderColor: item.pro ? 'rgba(251, 191, 36, 0.55)' : 'rgba(255,255,255,0.16)',
+                },
+              ]}
+              onPress={() => {
+                if (item.id === 'pro-mcqs') {
+                  setUpgradeForMcq(true);
+                  setUpgradeOpen(true);
+                } else if (item.pro) {
+                  setUpgradeForMcq(false);
+                  setUpgradeOpen(true);
+                } else if (item.id === 'free-notes') {
+                  onOpenHistory();
+                }
+              }}
+            >
+              <View style={styles.spotlightTagPill}>
+                <Text style={styles.spotlightTagText}>{item.tag}</Text>
+              </View>
+              <Text style={styles.spotlightTileTitle}>{item.title}</Text>
+              <Text style={styles.spotlightTileCopy}>{item.copy}</Text>
+              {item.pro && (
+                <Text style={styles.spotlightTileCta}>Tap to compare plans →</Text>
+              )}
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Transparent Home Upgrade Card for Basic / Credit-pack Users */}
+        {!isUnlimited && (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.surface,
+                borderColor: 'rgba(245, 158, 11, 0.45)',
+                shadowColor: colors.shadowColor,
+              },
+            ]}
+          >
+            <View style={styles.cardHeader}>
+              <View style={styles.brandProChip}>
+                <Text style={styles.brandProChipText}>✦ MYMEET PRO PLANS</Text>
+              </View>
+              <Text style={{ color: '#F59E0B', fontSize: 11.5, fontWeight: '800' }}>
+                From ₹9 Only
+              </Text>
+            </View>
+
+            <View style={styles.miniPlanRow}>
+              <Text style={[styles.miniPlanLine, { color: colors.text }]}>
+                <Text style={{ color: '#16a34a', fontWeight: '900' }}>✓ </Text>
+                <Text style={{ fontWeight: '800' }}>₹9 Pack:</Text> 1 class Pro Master Notes only
+              </Text>
+              <Text style={[styles.miniPlanLine, { color: colors.textMuted }]}>
+                <Text style={{ color: '#ef4444', fontWeight: '900' }}>✕ </Text>
+                No Quick 20-MCQ revision test in ₹9 / ₹49
+              </Text>
+              <Text style={[styles.miniPlanLine, { color: colors.text }]}>
+                <Text style={{ color: '#16a34a', fontWeight: '900' }}>✓ </Text>
+                <Text style={{ fontWeight: '800' }}>₹349/mo · ₹899/yr:</Text> Unlimited Pro Notes +
+                20-MCQ Tests
+              </Text>
+            </View>
+
+            <Pressable
+              style={styles.upgradeFullBtn}
+              onPress={() => {
+                setUpgradeForMcq(false);
+                setUpgradeOpen(true);
+              }}
+            >
+              <Text style={styles.upgradeFullBtnText}>
+                Compare All 4 Plans (✓ / ✕) &amp; Upgrade
               </Text>
             </Pressable>
           </View>
         )}
 
-        <View
-          style={[
-            styles.joinCapsule,
-            { backgroundColor: colors.surfaceElevated, borderColor: colors.borderStrong },
-          ]}
-        >
-          <TextInput
-            style={[styles.joinCapsuleInput, { color: colors.text }]}
-            value={meetingCode}
-            onChangeText={setMeetingCode}
-            placeholder="Enter meeting code or link"
-            placeholderTextColor={colors.placeholder}
-            autoCapitalize="none"
-          />
-          <Pressable
-            style={[
-              styles.joinButton,
-              { backgroundColor: colors.accentSoft },
-              !meetingCode.trim() && styles.buttonDisabled,
-            ]}
-            disabled={!meetingCode.trim()}
-            onPress={handleJoinByCode}
-          >
-            <Text style={[styles.joinButtonText, { color: colors.accentText }]}>Join</Text>
-          </Pressable>
-        </View>
-
-        {actionError && (
+        {pendingInvites.length > 0 && (
           <View
             style={[
-              styles.noticeBox,
-              { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+              styles.card,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.accentBorder,
+                shadowColor: colors.shadowColor,
+              },
             ]}
           >
-            <Text style={[styles.noticeText, { color: colors.dangerText }]}>{actionError}</Text>
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Meeting Invitations</Text>
+              <StatusBadge label={`${pendingInvites.length} Pending`} tone="warning" />
+            </View>
+            {pendingInvites.map((inv) => (
+              <View
+                key={inv.id}
+                style={[
+                  styles.inviteCardRow,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                ]}
+              >
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]}>{inv.meeting_title}</Text>
+                  <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                    From {inv.inviter_name || inv.inviter_email || 'Host'} · {inv.meeting_code}
+                  </Text>
+                </View>
+                <View style={styles.inviteBtnRow}>
+                  <Pressable
+                    style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
+                    disabled={inviteBusyId === inv.id}
+                    onPress={() => void handleRespondInvite(inv, 'accepted')}
+                  >
+                    <Text style={styles.acceptBtnText}>Accept &amp; Join</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.declineBtn,
+                      { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
+                    ]}
+                    disabled={inviteBusyId === inv.id}
+                    onPress={() => void handleRespondInvite(inv, 'declined')}
+                  >
+                    <Text style={[styles.declineBtnText, { color: colors.dangerText }]}>
+                      Decline
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            ))}
           </View>
         )}
-      </View>
 
-      {pendingInvites.length > 0 && (
-        <View
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.surface,
-              borderColor: colors.accentBorder,
-              shadowColor: colors.shadowColor,
-            },
-          ]}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Meeting Invitations</Text>
-            <StatusBadge label={`${pendingInvites.length} Pending`} tone="warning" />
-          </View>
-          {pendingInvites.map((inv) => (
+        {nextSchedule && (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+                shadowColor: colors.shadowColor,
+              },
+            ]}
+          >
+            <View style={styles.cardHeader}>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>Up Next</Text>
+              <Pressable onPress={onOpenSchedule}>
+                <Text style={[styles.linkText, { color: colors.accentText }]}>See all</Text>
+              </Pressable>
+            </View>
             <View
-              key={inv.id}
               style={[
                 styles.inviteCardRow,
                 { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
               ]}
             >
               <View style={styles.rowText}>
-                <Text style={[styles.rowTitle, { color: colors.text }]}>{inv.meeting_title}</Text>
+                <Text style={[styles.rowTitle, { color: colors.text }]}>{nextSchedule.title}</Text>
                 <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                  From {inv.inviter_name || inv.inviter_email || 'Host'} · {inv.meeting_code}
+                  {new Date(nextSchedule.scheduled_start).toLocaleString([], {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}{' '}
+                  · {nextSchedule.meeting_code}
                 </Text>
               </View>
-              <View style={styles.inviteBtnRow}>
-                <Pressable
-                  style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
-                  disabled={inviteBusyId === inv.id}
-                  onPress={() => void handleRespondInvite(inv, 'accepted')}
-                >
-                  <Text style={styles.acceptBtnText}>Accept & Join</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.declineBtn,
-                    { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },
-                  ]}
-                  disabled={inviteBusyId === inv.id}
-                  onPress={() => void handleRespondInvite(inv, 'declined')}
-                >
-                  <Text style={[styles.declineBtnText, { color: colors.dangerText }]}>Decline</Text>
-                </Pressable>
-              </View>
+              <Pressable
+                style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
+                onPress={() =>
+                  nextSchedule.is_host
+                    ? void handleStartScheduled(nextSchedule)
+                    : nextSchedule.meeting_code
+                      ? onOpenLobby(nextSchedule.meeting_code)
+                      : undefined
+                }
+              >
+                <Text style={styles.acceptBtnText}>
+                  {nextSchedule.is_host ? 'Start Meeting' : 'Open Lobby'}
+                </Text>
+              </Pressable>
             </View>
-          ))}
-        </View>
-      )}
+          </View>
+        )}
 
-      {nextSchedule && (
         <View
           style={[
             styles.card,
@@ -402,116 +637,75 @@ export function HomeScreen({
           ]}
         >
           <View style={styles.cardHeader}>
-            <Text style={[styles.cardTitle, { color: colors.text }]}>Up Next</Text>
-            <Pressable onPress={onOpenSchedule}>
-              <Text style={[styles.linkText, { color: colors.accentText }]}>See all</Text>
-            </Pressable>
-          </View>
-          <View
-            style={[
-              styles.inviteCardRow,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.rowText}>
-              <Text style={[styles.rowTitle, { color: colors.text }]}>{nextSchedule.title}</Text>
-              <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                {new Date(nextSchedule.scheduled_start).toLocaleString([], {
-                  month: 'short',
-                  day: 'numeric',
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}{' '}
-                · {nextSchedule.meeting_code}
-              </Text>
+            <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Meetings</Text>
+            <View style={styles.headerActions}>
+              <Pressable onPress={() => onOpenHistory()}>
+                <Text style={[styles.linkText, { color: colors.accentText }]}>History</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.smallButton,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  meetingsLoading && styles.buttonDisabled,
+                ]}
+                onPress={() => void loadDashboard()}
+                disabled={meetingsLoading}
+              >
+                <Text style={[styles.smallButtonText, { color: colors.text }]}>
+                  {meetingsLoading ? '...' : '↻'}
+                </Text>
+              </Pressable>
             </View>
-            <Pressable
-              style={[styles.acceptBtn, { backgroundColor: colors.accent }]}
-              onPress={() =>
-                nextSchedule.is_host
-                  ? void handleStartScheduled(nextSchedule)
-                  : nextSchedule.meeting_code
-                    ? onOpenLobby(nextSchedule.meeting_code)
-                    : undefined
-              }
-            >
-              <Text style={styles.acceptBtnText}>
-                {nextSchedule.is_host ? 'Start Meeting' : 'Open Lobby'}
-              </Text>
-            </Pressable>
           </View>
-        </View>
-      )}
 
-      <View
-        style={[
-          styles.card,
-          {
-            backgroundColor: colors.surface,
-            borderColor: colors.border,
-            shadowColor: colors.shadowColor,
-          },
-        ]}
-      >
-        <View style={styles.cardHeader}>
-          <Text style={[styles.cardTitle, { color: colors.text }]}>Recent Meetings</Text>
-          <View style={styles.headerActions}>
-            <Pressable onPress={() => onOpenHistory()}>
-              <Text style={[styles.linkText, { color: colors.accentText }]}>History</Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.smallButton,
-                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                meetingsLoading && styles.buttonDisabled,
-              ]}
-              onPress={() => void loadDashboard()}
-              disabled={meetingsLoading}
-            >
-              <Text style={[styles.smallButtonText, { color: colors.text }]}>
-                {meetingsLoading ? '...' : '↻'}
-              </Text>
-            </Pressable>
-          </View>
+          {meetings.length === 0 ? (
+            <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+              {meetingsLoading
+                ? 'Loading your meetings...'
+                : 'No meetings yet. Tap + New Meeting to start your first call.'}
+            </Text>
+          ) : (
+            meetings.slice(0, 5).map((m) => (
+              <Pressable
+                key={m.id}
+                style={[
+                  styles.row,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                ]}
+                onPress={() =>
+                  m.status === 'ended' ? onOpenHistory(m.code) : onOpenLobby(m.code)
+                }
+              >
+                <View style={styles.rowText}>
+                  <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                    {m.title}
+                  </Text>
+                  <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
+                    {m.status === 'ended'
+                      ? `${m.code}${m.my_role === 'host' ? ' · Host' : ''} · ${new Date(m.created_at).toLocaleDateString()}`
+                      : `${m.code} · ${m.joined_count} in call${m.my_role === 'host' ? ' · Host' : ''}`}
+                  </Text>
+                </View>
+                <StatusBadge
+                  label={m.status === 'ended' ? 'Ended' : m.status === 'active' ? 'Active' : m.status}
+                  tone={m.status === 'active' ? 'success' : 'warning'}
+                />
+              </Pressable>
+            ))
+          )}
         </View>
+      </ScrollView>
 
-        {meetings.length === 0 ? (
-          <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-            {meetingsLoading
-              ? 'Loading your meetings...'
-              : 'No meetings yet. Tap + New Meeting to start your first call.'}
-          </Text>
-        ) : (
-          meetings.slice(0, 5).map((m) => (
-            <Pressable
-              key={m.id}
-              style={[
-                styles.row,
-                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-              ]}
-              onPress={() =>
-                m.status === 'ended' ? onOpenHistory(m.code) : onOpenLobby(m.code)
-              }
-            >
-              <View style={styles.rowText}>
-                <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
-                  {m.title}
-                </Text>
-                <Text style={[styles.rowDesc, { color: colors.textMuted }]}>
-                  {m.status === 'ended'
-                    ? `${m.code}${m.my_role === 'host' ? ' · Host' : ''} · ${new Date(m.created_at).toLocaleDateString()}`
-                    : `${m.code} · ${m.joined_count} in call${m.my_role === 'host' ? ' · Host' : ''}`}
-                </Text>
-              </View>
-              <StatusBadge
-                label={m.status === 'ended' ? 'Ended' : m.status === 'active' ? 'Active' : m.status}
-                tone={m.status === 'active' ? 'success' : 'warning'}
-              />
-            </Pressable>
-          ))
-        )}
-      </View>
-    </ScrollView>
+      <UpgradePlansModal
+        visible={upgradeOpen}
+        accessToken={session?.access_token ?? null}
+        highlightMcq={upgradeForMcq}
+        onClose={() => setUpgradeOpen(false)}
+        onActivated={(nextSub) => {
+          setSubscription(nextSub);
+        }}
+      />
+    </>
   );
 }
 
@@ -525,8 +719,53 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
     marginTop: 2,
+  },
+  brandLeftCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  brandRightCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  brandProChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: '#7C3AED',
+  },
+  brandProChipText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  navUpgradePill: {
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  navBasicUpgradePill: {
+    backgroundColor: '#F59E0B',
+  },
+  navBasicUpgradeText: {
+    color: '#090D16',
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  navProStatusPill: {
+    backgroundColor: 'rgba(124, 58, 237, 0.16)',
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  navProStatusText: {
+    color: '#F59E0B',
+    fontSize: 11,
+    fontWeight: '800',
   },
   topBar: {
     flexDirection: 'row',
@@ -557,8 +796,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   greetingSmall: {
-    fontSize: 12,
-    fontWeight: '500',
+    fontSize: 11.5,
+    fontWeight: '700',
   },
   nameStatusRow: {
     flexDirection: 'row',
@@ -577,7 +816,6 @@ const styles = StyleSheet.create({
   heroCard: {
     borderRadius: 20,
     padding: 20,
-    borderWidth: 1,
     gap: 14,
     shadowOpacity: 0.08,
     shadowRadius: 16,
@@ -672,6 +910,68 @@ const styles = StyleSheet.create({
   noticeText: {
     fontSize: 12,
     lineHeight: 17,
+  },
+  spotlightScroll: {
+    gap: 12,
+    paddingRight: 6,
+  },
+  spotlightTile: {
+    width: 256,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    gap: 7,
+    justifyContent: 'space-between',
+  },
+  spotlightTagPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  spotlightTagText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
+  spotlightTileTitle: {
+    color: '#FFFFFF',
+    fontSize: 15.5,
+    fontWeight: '800',
+    lineHeight: 20,
+    marginTop: 4,
+  },
+  spotlightTileCopy: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  spotlightTileCta: {
+    color: '#FEF3C7',
+    fontSize: 11.5,
+    fontWeight: '800',
+    marginTop: 4,
+  },
+  miniPlanRow: {
+    gap: 6,
+  },
+  miniPlanLine: {
+    fontSize: 12.5,
+    lineHeight: 18,
+  },
+  upgradeFullBtn: {
+    marginTop: 4,
+    backgroundColor: '#F59E0B',
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  upgradeFullBtnText: {
+    color: '#090D16',
+    fontSize: 13.5,
+    fontWeight: '800',
   },
   card: {
     borderRadius: 18,

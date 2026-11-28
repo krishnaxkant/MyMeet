@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckIcon, SparklesIcon } from './Icons';
+import { CheckIcon, CrossIcon, CrownIcon, SparklesIcon } from './Icons';
 import {
   createBillingOrder,
   getBillingStatus,
@@ -19,6 +19,57 @@ interface UpgradeModalProps {
   onClose: () => void;
   onActivated: (subscription: UserSubscriptionStatus, planCode: PaidPlanCode) => void;
 }
+
+interface PlanComparisonRow {
+  text: string;
+  included: boolean;
+  emphasis?: boolean;
+}
+
+const PLAN_COMPARISON_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: PlanComparisonRow[] }> = {
+  single_9: {
+    subtitle: 'Try Pro Master Notes on 1 important class or lecture only.',
+    rows: [
+      { text: 'Pro Master Notes for ONLY 1 class / meeting (valid 30 days)', included: true, emphasis: true },
+      { text: 'Deep code snippets, formulas, derivations & worked examples', included: true },
+      { text: 'Comparison table, exam & interview traps + 1-min cheat sheet', included: true },
+      { text: 'HD printable PDF export & permanent access to that note', included: true },
+      { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
+      { text: 'Multiple classes or unlimited regenerations', included: false },
+    ],
+  },
+  pack_49: {
+    subtitle: 'Smart bundle for regular students — just ~₹3.2 per class.',
+    rows: [
+      { text: 'Pro Master Notes for 15 classes / meetings (valid 30 days)', included: true, emphasis: true },
+      { text: 'Deep code, derivations, comparison table & exam traps', included: true },
+      { text: '1-min rapid revision cheat sheet + HD printable PDF export', included: true },
+      { text: 'Premium PRO UI theme & gold profile badge', included: true },
+      { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
+      { text: 'Unlimited regenerations (max 2 free regenerates/class)', included: false },
+    ],
+  },
+  pro_monthly_349: {
+    subtitle: 'Full all-access subscription for daily classes & exam prep.',
+    rows: [
+      { text: 'Unlimited Pro Master Notes for 30 days (every class)', included: true, emphasis: true },
+      { text: 'Quick 20-MCQ Session Revision Test after every meeting', included: true, emphasis: true },
+      { text: 'Unlimited note regenerations + HD PDF export', included: true },
+      { text: 'Auto-builds Pro Notes (no Basic Free Notes clutter)', included: true },
+      { text: 'Premium PRO luxury UI theme, gold badge & priority AI', included: true },
+    ],
+  },
+  pro_yearly_899: {
+    subtitle: '365 days of unlimited Pro Notes & 20-MCQ tests — save 78%.',
+    rows: [
+      { text: 'Unlimited Pro Master Notes for 1 full year (365 days)', included: true, emphasis: true },
+      { text: 'Unlimited Quick 20-MCQ Session Revision Tests + weak-topic tracker', included: true, emphasis: true },
+      { text: 'Unlimited note regenerations + HD PDF export', included: true },
+      { text: 'Auto-builds Pro Notes (no Basic Free Notes clutter)', included: true },
+      { text: 'Premium PRO luxury UI theme, gold badge & priority AI', included: true },
+    ],
+  },
+};
 
 declare global {
   interface Window {
@@ -95,7 +146,7 @@ export function UpgradeModal({
             name: userName || '',
             email: userEmail || '',
           },
-          theme: { color: '#6366F1' },
+          theme: { color: '#7C3AED' },
           handler: async (resp: {
             razorpay_order_id: string;
             razorpay_payment_id: string;
@@ -139,55 +190,61 @@ export function UpgradeModal({
 
   return (
     <div
-      className="visual-lightbox-backdrop"
+      className="visual-lightbox-backdrop pro-modal-backdrop"
       role="dialog"
       aria-modal="true"
+      aria-label="MyMeet Pro Plans"
       onClick={onClose}
-      style={{ padding: 16 }}
     >
-      <div
-        className="card"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '100%',
-          maxWidth: 920,
-          maxHeight: '90vh',
-          overflowY: 'auto',
-          padding: 24,
-          borderRadius: 20,
-        }}
-      >
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'flex-start',
-            gap: 12,
-            marginBottom: 16,
-          }}
-        >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+      <div className="pro-modal-shell" onClick={(e) => e.stopPropagation()}>
+        <div className="pro-modal-top-bar" />
+
+        <div className="pro-modal-head">
+          <div className="pro-modal-title-group">
+            <div className="pro-modal-badges">
               <span className="pro-pill-badge">
-                <SparklesIcon size={12} /> MYMEET PRO
+                <CrownIcon size={12} /> MYMEET PRO
               </span>
               {subscription && !subscription.razorpay_live && (
                 <span className="badge badge-warning">Test Mode · Instant Free Preview</span>
               )}
+              {subscription?.is_pro && (
+                <span className="badge badge-success">
+                  Active: {subscription.plan_name}
+                  {subscription.is_unlimited
+                    ? ' (Unlimited)'
+                    : ` (${subscription.credits_remaining} credits left)`}
+                </span>
+              )}
             </div>
-            <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
+            <h2 className="pro-modal-title">
               {highlightMcq
-                ? 'Unlock Unlimited Pro Notes & Session MCQ Tests'
-                : 'Upgrade Your Meeting Notes to Pro'}
+                ? 'Unlock Unlimited Pro Notes & 20-MCQ Session Tests'
+                : 'Choose Your MyMeet Pro Plan'}
             </h2>
-            <p className="status-item-desc" style={{ marginTop: 4 }}>
-              Deep code & derivations, comparison tables, exam traps, 1-min cheat sheet, HD PDF &
-              interactive MCQ tests.
+            <p className="pro-modal-subtitle">
+              Transparent pricing with zero hidden catches — compare exactly what you get in every
+              pack with clear <strong className="legend-tick">✓ Included</strong> and{' '}
+              <strong className="legend-cross">✕ Not included</strong> details.
             </p>
           </div>
           <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>
             Close
           </button>
+        </div>
+
+        {/* Crystal-clear callout about ₹9 vs Unlimited + MCQ */}
+        <div className="pro-clarity-banner">
+          <div className="pro-clarity-dot">
+            <SparklesIcon size={15} />
+          </div>
+          <div className="pro-clarity-text">
+            <strong>Quick Guide:</strong> The <strong>₹9 pack</strong> unlocks Pro Master Notes for{' '}
+            <strong>1 single class only</strong> and does{' '}
+            <strong className="legend-cross">not include Quick 20-MCQ revision</strong>. Pick{' '}
+            <strong>Pro Monthly (₹349)</strong> or <strong>Pro Yearly (₹899 · Save 78%)</strong>{' '}
+            for Unlimited Pro Notes + Quick 20-MCQ Session Revision Tests!
+          </div>
         </div>
 
         {error && (
@@ -200,17 +257,28 @@ export function UpgradeModal({
           <div className="empty-state">Loading MyMeet Pro plans...</div>
         ) : (
           <>
-            <div className="pro-plans-grid">
+            <div className="pro-plans-grid pro-plans-grid-4">
               {plans.map((plan) => {
-                const isBest = plan.code === 'pro_yearly_899';
+                const code = plan.code as PaidPlanCode;
+                const isBest = code === 'pro_yearly_899';
+                const isMonthly = code === 'pro_monthly_349';
                 const isMcqHighlighted = highlightMcq && plan.mcq_enabled;
-                const isCurrent = subscription?.plan_code === plan.code && subscription.is_pro;
-                const isBusy = busyPlan === plan.code;
+                const isCurrent = subscription?.plan_code === code && subscription.is_pro;
+                const isBusy = busyPlan === code;
+                const matrix = PLAN_COMPARISON_MATRIX[code];
+                const rows: PlanComparisonRow[] = matrix
+                  ? matrix.rows
+                  : plan.highlights.map((h) => ({ text: h, included: true }));
+
                 return (
                   <div
                     key={plan.code}
                     className={`pro-plan-card ${isBest ? 'pro-plan-card-best' : ''} ${
-                      isMcqHighlighted && !isBest ? 'pro-plan-card-accent' : ''
+                      isMcqHighlighted && !isBest
+                        ? 'pro-plan-card-accent'
+                        : isMonthly && !isBest
+                          ? 'pro-plan-card-pro'
+                          : ''
                     }`}
                   >
                     <div className="pro-plan-top">
@@ -225,35 +293,51 @@ export function UpgradeModal({
                     <div className="pro-plan-price-row">
                       <span className="pro-plan-price">₹{plan.price_inr}</span>
                       <span className="pro-plan-cycle">
-                        {plan.code === 'pro_yearly_899'
-                          ? '/ year (~₹75/mo)'
-                          : plan.code === 'pro_monthly_349'
-                            ? '/ month'
-                            : plan.code === 'pack_49'
-                              ? '/ 15 credits · 30d'
-                              : '/ 1 credit · 30d'}
+                        {code === 'pro_yearly_899'
+                          ? '/ year · ~₹75/mo'
+                          : code === 'pro_monthly_349'
+                            ? '/ month · 30d'
+                            : code === 'pack_49'
+                              ? '/ 15 classes · 30d'
+                              : '/ 1 class only · 30d'}
                       </span>
                     </div>
 
-                    <p className="pro-plan-tagline">{plan.tagline}</p>
+                    <p className="pro-plan-tagline">{matrix?.subtitle || plan.tagline}</p>
 
                     <div className="pro-plan-divider" />
 
                     <ul className="pro-plan-features">
-                      {plan.highlights.map((feat) => (
-                        <li key={feat}>
-                          <CheckIcon size={14} />
-                          <span>{feat}</span>
+                      {rows.map((row) => (
+                        <li
+                          key={row.text}
+                          className={
+                            row.included
+                              ? row.emphasis
+                                ? 'pro-feat-yes pro-feat-strong'
+                                : 'pro-feat-yes'
+                              : 'pro-feat-no'
+                          }
+                        >
+                          <span
+                            className={`pro-feat-icon ${row.included ? 'icon-yes' : 'icon-no'}`}
+                            aria-hidden="true"
+                          >
+                            {row.included ? <CheckIcon size={12} /> : <CrossIcon size={11} />}
+                          </span>
+                          <span>{row.text}</span>
                         </li>
                       ))}
                     </ul>
 
                     <button
                       type="button"
-                      className={`btn ${isBest ? 'btn-pro-gold' : 'btn-primary'}`}
+                      className={`btn ${
+                        isBest ? 'btn-pro-gold' : isMonthly ? 'btn-pro-royal' : 'btn-primary'
+                      }`}
                       style={{ width: '100%', marginTop: 'auto' }}
                       disabled={Boolean(busyPlan)}
-                      onClick={() => void handleSelectPlan(plan.code as PaidPlanCode)}
+                      onClick={() => void handleSelectPlan(code)}
                     >
                       {isBusy
                         ? 'Opening Checkout...'
@@ -269,11 +353,11 @@ export function UpgradeModal({
             </div>
 
             <div className="pro-trust-strip">
-              <span>🔒 Secured by Razorpay (UPI · GPay · PhonePe · Cards)</span>
+              <span>🔒 Razorpay Secured (UPI · GPay · PhonePe · Cards)</span>
               <span>·</span>
               <span>⚡ Instant Pro Activation</span>
               <span>·</span>
-              <span>📄 Permanent Access to Unlocked Meeting Notes</span>
+              <span>📄 Permanent Access to Unlocked Notes</span>
             </div>
           </>
         )}

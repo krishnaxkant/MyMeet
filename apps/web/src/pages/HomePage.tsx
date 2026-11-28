@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
+  ArrowRightIcon,
   CalendarIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ClockIcon,
   CopyIcon,
+  CrossIcon,
+  CrownIcon,
   KeyboardIcon,
   LockIcon,
   MailIcon,
   RefreshIcon,
   ShieldIcon,
+  SparklesIcon,
   UsersIcon,
   VideoIcon,
 } from '../components/Icons';
 import { useAuth } from '../hooks/useAuth';
+import { useSubscription } from '../hooks/useSubscription';
 import {
   buildMeetingInviteUrl,
   createMeeting,
@@ -30,21 +35,66 @@ import {
   type ScheduledMeeting,
 } from '../services/api';
 
-const SPOTLIGHT_SLIDES = [
+interface SpotlightSlide {
+  id: string;
+  badge: string;
+  isProFeature?: boolean;
+  theme: 'ocean' | 'emerald' | 'royal' | 'cosmic' | 'slate';
+  title: string;
+  copy: string;
+  chips: string[];
+  ctaLabel?: string;
+  ctaAction?: 'upgrade' | 'mcq' | 'history';
+}
+
+const SPOTLIGHT_SLIDES: SpotlightSlide[] = [
   {
-    badge: 'Instant Rooms',
-    title: 'Get a link you can share in seconds',
-    copy: 'Click New Meeting to generate an encrypted room link, preview your camera in the lobby, and invite anyone by code or email.',
+    id: 'instant-rooms',
+    badge: 'Instant HD Rooms',
+    theme: 'ocean',
+    title: 'Launch encrypted meetings in seconds',
+    copy: 'Generate a room link with one click, preview your camera in the lobby, share your screen full-stage with Host PiP, and scale smoothly up to 100 participants.',
+    chips: ['Full-Stage Screen Share', 'Waiting Room', '100-User Ready'],
   },
   {
-    badge: 'Built for Privacy',
-    title: 'Your meetings stay under your control',
-    copy: 'Use Waiting Rooms, Co-Host permissions, one-click meeting lock, and explicit recording alerts for every participant.',
+    id: 'free-ai-notes',
+    badge: 'AI Visual Notes · Free',
+    theme: 'emerald',
+    title: 'Automatic study slides after every call',
+    copy: 'Included free on every Basic meeting — MyMeet AI listens to key concepts, filters out small talk, and creates black-canvas visual notes ready for PDF & PNG download.',
+    chips: ['Included Free', 'PDF & PNG Export', '2 Free Regenerates'],
+    ctaLabel: 'Open Notes History',
+    ctaAction: 'history',
   },
   {
-    badge: 'Everywhere You Work',
-    title: 'Seamless across Web & Android',
-    copy: 'Start a call on your laptop and chat, schedule, or manage participants from your Android phone with one synced account.',
+    id: 'pro-master-notes',
+    badge: 'MYMEET PRO · From ₹9',
+    isProFeature: true,
+    theme: 'royal',
+    title: 'Pro Master Notes with code, derivations & exam traps',
+    copy: 'Upgrade any class to rich Master Notes with deep step-by-step explanations, comparison tables, interview traps & a 1-min cheat sheet. Start at ₹9 (1 class only) or ₹49 (15 classes).',
+    chips: ['Code & Derivations', 'Exam Traps', '1-Min Cheat Sheet'],
+    ctaLabel: 'Compare Pro Plans',
+    ctaAction: 'upgrade',
+  },
+  {
+    id: 'pro-mcq-tests',
+    badge: 'PRO UNLIMITED · ₹349/mo+',
+    isProFeature: true,
+    theme: 'cosmic',
+    title: '20-Question Session Mastery MCQ Tests',
+    copy: 'Turn every lecture into an interactive 20-question exam quiz (Easy → Hard) with sequential lock, instant explanations & weak-topic review. Included in Pro Monthly & Yearly.',
+    chips: ['20 Exam MCQs', 'Instant Explanations', 'Unlimited Notes'],
+    ctaLabel: 'Unlock MCQs & Unlimited',
+    ctaAction: 'mcq',
+  },
+  {
+    id: 'cross-platform',
+    badge: 'Web & Android Synced',
+    theme: 'slate',
+    title: 'Built for privacy, synced everywhere you work',
+    copy: 'Host from your laptop or join from Android with one synced account — complete with Co-Host controls, one-click meeting lock, live chat, and cloud AI study notes.',
+    chips: ['Co-Host Controls', 'Meeting Lock', 'Web + Android'],
   },
 ];
 
@@ -57,6 +107,7 @@ function getTimeGreeting(): string {
 
 export function HomePage() {
   const { session, user, profile } = useAuth();
+  const { subscription, isPro, isUnlimited, openUpgradeModal } = useSubscription();
   const navigate = useNavigate();
 
   const [meetingCode, setMeetingCode] = useState('');
@@ -73,6 +124,7 @@ export function HomePage() {
   const [inviteBusyId, setInviteBusyId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
+  const [carouselPaused, setCarouselPaused] = useState(false);
 
   const firstName = (
     profile?.full_name ||
@@ -86,6 +138,15 @@ export function HomePage() {
     month: 'long',
     day: 'numeric',
   });
+
+  // Gentle auto-advance on spotlight feature showcase
+  useEffect(() => {
+    if (carouselPaused) return;
+    const timer = setInterval(() => {
+      setSlideIdx((prev) => (prev + 1) % SPOTLIGHT_SLIDES.length);
+    }, 6500);
+    return () => clearInterval(timer);
+  }, [carouselPaused]);
 
   const loadDashboardData = useCallback(async () => {
     if (!session?.access_token) return;
@@ -182,25 +243,68 @@ export function HomePage() {
     }
   };
 
+  const handleSlideCta = (slide: SpotlightSlide) => {
+    if (slide.ctaAction === 'upgrade') {
+      openUpgradeModal({ highlightMcq: false });
+    } else if (slide.ctaAction === 'mcq') {
+      openUpgradeModal({ highlightMcq: true });
+    } else if (slide.ctaAction === 'history') {
+      navigate('/history');
+    }
+  };
+
   const pendingInvites = invitations.filter(
     (inv) => inv.status === 'pending' && inv.meeting_status !== 'ended',
   );
   const nextSchedule = schedules.find((s) => s.meeting_status !== 'ended') ?? null;
   const activeSlide = SPOTLIGHT_SLIDES[slideIdx];
+  const expiryLabel = subscription?.expires_at
+    ? new Date(subscription.expires_at).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+      })
+    : null;
 
   return (
-    <div className="hero-grid">
-      <div>
-        <span className="greeting-pill">
-          <ShieldIcon size={14} />
-          <span>{todayFormatted}</span>
-        </span>
-        <h1 className="hero-title">
-          {getTimeGreeting()}, {firstName}.
+    <div className={`hero-grid ${isPro ? 'hero-grid-pro' : 'hero-grid-basic'}`}>
+      <div className="hero-left-col">
+        {/* Dual-tier Greeting Bar: Casual Date Pill (Basic) vs Luxury VIP Ribbon (Pro) */}
+        <div className="hero-eyebrow-row">
+          {isPro ? (
+            <>
+              <span className="greeting-pill greeting-pill-pro">
+                <CrownIcon size={13} />
+                <span>MYMEET PRO · {subscription?.plan_name}</span>
+              </span>
+              <span className="greeting-pill-meta">
+                {isUnlimited
+                  ? `∞ Unlimited Notes · 20-MCQ Active${expiryLabel ? ` · Till ${expiryLabel}` : ''}`
+                  : `${subscription?.credits_remaining ?? 0} Pro credit${
+                      subscription?.credits_remaining === 1 ? '' : 's'
+                    } left${expiryLabel ? ` · Valid till ${expiryLabel}` : ''}`}
+              </span>
+            </>
+          ) : (
+            <>
+              <span className="greeting-pill">
+                <ShieldIcon size={14} />
+                <span>{todayFormatted}</span>
+              </span>
+              <span className="greeting-pill-meta">Basic Plan · Free AI Notes</span>
+            </>
+          )}
+        </div>
+
+        <h1 className={`hero-title ${isPro ? 'hero-title-pro' : ''}`}>
+          {getTimeGreeting()}, <span className={isPro ? 'hero-name-gold' : ''}>{firstName}.</span>
         </h1>
+
         <p className="hero-subtitle">
-          Start a crystal-clear video meeting, schedule ahead with your team, or join an existing
-          room with a code or link.
+          {isPro
+            ? isUnlimited
+              ? 'Your MyMeet Pro workspace is unlocked — host HD meetings, auto-generate Pro Master Notes, and master every lecture with 20-question MCQ tests.'
+              : 'Your Pro credits are active — launch crystal-clear meetings and upgrade your most important sessions into deep Master Notes.'
+            : 'Start a crystal-clear video meeting, schedule ahead with your team, or join an existing room with a code or link.'}
         </p>
 
         <form className="launch-bar" onSubmit={handleJoinByCode}>
@@ -218,6 +322,22 @@ export function HomePage() {
             <CalendarIcon size={16} />
             <span>Schedule</span>
           </Link>
+
+          {/* Prominent Home Page Upgrade / Pro Manage Action */}
+          <button
+            type="button"
+            className={`btn ${isPro ? 'btn-pro-subtle' : 'btn-pro-gold'}`}
+            onClick={() => openUpgradeModal()}
+          >
+            {isPro ? <CrownIcon size={15} /> : <SparklesIcon size={15} />}
+            <span>
+              {isPro
+                ? isUnlimited
+                  ? 'Pro Workspace'
+                  : 'Add Credits / Unlimited'
+                : 'Upgrade to Pro'}
+            </span>
+          </button>
 
           <div className="join-capsule">
             <span className="join-capsule-icon">
@@ -318,7 +438,7 @@ export function HomePage() {
                       disabled={inviteBusyId === inv.id}
                       onClick={() => void handleRespondInvite(inv, 'accepted')}
                     >
-                      Accept & Join
+                      Accept &amp; Join
                     </button>
                     <button
                       type="button"
@@ -335,7 +455,7 @@ export function HomePage() {
           </section>
         )}
 
-        <section className="card" style={{ marginTop: 22 }}>
+        <section className="card home-recent-card" style={{ marginTop: 22 }}>
           <div className="card-header">
             <h2 className="card-title">Recent Meetings</h2>
             <div className="actions-row">
@@ -347,6 +467,7 @@ export function HomePage() {
                 className="btn btn-secondary btn-sm"
                 onClick={() => void loadDashboardData()}
                 disabled={meetingsLoading}
+                title="Refresh meetings"
               >
                 <RefreshIcon size={14} />
               </button>
@@ -387,6 +508,10 @@ export function HomePage() {
                     </div>
 
                     <div className="meeting-row-actions">
+                      <span className="home-notes-cue">
+                        <SparklesIcon size={12} />
+                        <span>{isUnlimited ? 'Pro Notes' : 'Notes'}</span>
+                      </span>
                       <span className="badge badge-warning">Ended</span>
                     </div>
                   </button>
@@ -452,20 +577,56 @@ export function HomePage() {
         </section>
       </div>
 
+      {/* Right Column: Flagship Feature Carousel + Plan Snapshot Card + Up Next */}
       <div className="right-stack">
-        <section className="card spotlight-card">
-          <div className="spotlight-visual">
-            <span className="spotlight-badge">{activeSlide.badge}</span>
-            <div>
+        <section
+          className={`card spotlight-card ${isPro ? 'spotlight-card-pro' : ''}`}
+          onMouseEnter={() => setCarouselPaused(true)}
+          onMouseLeave={() => setCarouselPaused(false)}
+        >
+          <div className={`spotlight-visual spotlight-theme-${activeSlide.theme}`}>
+            <div className="spotlight-top-row">
+              <span
+                className={`spotlight-badge ${activeSlide.isProFeature ? 'spotlight-badge-pro' : ''}`}
+              >
+                {activeSlide.isProFeature ? <CrownIcon size={12} /> : <SparklesIcon size={12} />}
+                <span>{activeSlide.badge}</span>
+              </span>
+              <span className="spotlight-step">
+                {slideIdx + 1} / {SPOTLIGHT_SLIDES.length}
+              </span>
+            </div>
+
+            <div className="spotlight-body">
               <h2 className="spotlight-heading">{activeSlide.title}</h2>
               <p className="spotlight-copy">{activeSlide.copy}</p>
+
+              <div className="spotlight-chips">
+                {activeSlide.chips.map((chip) => (
+                  <span key={chip} className="spotlight-chip">
+                    {chip}
+                  </span>
+                ))}
+              </div>
+
+              {activeSlide.ctaLabel && (
+                <button
+                  type="button"
+                  className="spotlight-cta-btn"
+                  onClick={() => handleSlideCta(activeSlide)}
+                >
+                  <span>{activeSlide.ctaLabel}</span>
+                  <ArrowRightIcon size={14} />
+                </button>
+              )}
             </div>
           </div>
+
           <div className="carousel-controls">
-            <div className="carousel-dots" role="tablist" aria-label="Meet highlights">
+            <div className="carousel-dots" role="tablist" aria-label="MyMeet features">
               {SPOTLIGHT_SLIDES.map((s, idx) => (
                 <button
-                  key={s.badge}
+                  key={s.id}
                   type="button"
                   className={`carousel-dot ${idx === slideIdx ? 'active' : ''}`}
                   aria-label={s.badge}
@@ -495,6 +656,104 @@ export function HomePage() {
             </div>
           </div>
         </section>
+
+        {/* Home Plan Snapshot Card: Pro VIP Status for Subscribers OR Transparent ₹9 vs Unlimited Teaser for Basic */}
+        {isPro && isUnlimited ? (
+          <section className="card home-pro-vip-card">
+            <div className="home-pro-vip-head">
+              <span className="pro-pill-badge">
+                <CrownIcon size={12} /> {subscription?.plan_name}
+              </span>
+              <span className="badge badge-success">Active</span>
+            </div>
+            <h3 className="home-pro-vip-title">All Pro Perks Unlocked</h3>
+            <div className="home-pro-vip-grid">
+              <div className="home-pro-vip-item">
+                <CheckIcon size={14} />
+                <span>Unlimited Master Notes</span>
+              </div>
+              <div className="home-pro-vip-item">
+                <CheckIcon size={14} />
+                <span>20-MCQ Session Tests</span>
+              </div>
+              <div className="home-pro-vip-item">
+                <CheckIcon size={14} />
+                <span>Unlimited Regenerates</span>
+              </div>
+              <div className="home-pro-vip-item">
+                <CheckIcon size={14} />
+                <span>Priority AI + HD PDF</span>
+              </div>
+            </div>
+            <div className="home-pro-vip-footer">
+              <Link to="/history" className="btn btn-pro-gold btn-sm">
+                <SparklesIcon size={14} />
+                <span>Open Pro Notes &amp; MCQs</span>
+              </Link>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => openUpgradeModal()}
+              >
+                Manage Plan
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="card home-upgrade-card">
+            <div className="home-upgrade-head">
+              <div>
+                <span className="pro-pill-badge">
+                  <SparklesIcon size={11} /> MYMEET PRO PLANS
+                </span>
+                <h3 className="home-upgrade-title">
+                  {isPro
+                    ? `You have ${subscription?.credits_remaining ?? 0} Pro credit${
+                        subscription?.credits_remaining === 1 ? '' : 's'
+                      } left`
+                    : 'Level up your study & meeting notes'}
+                </h3>
+              </div>
+            </div>
+
+            <div className="home-mini-tiers">
+              <div className="home-mini-tier">
+                <div className="home-mini-tier-top">
+                  <strong>₹9 · Single Class</strong>
+                  <span className="home-mini-tag">Try Once</span>
+                </div>
+                <div className="home-mini-line yes">
+                  <CheckIcon size={12} /> <span>1 class Pro Master Notes only (30d)</span>
+                </div>
+                <div className="home-mini-line no">
+                  <CrossIcon size={11} /> <span>No Quick 20-MCQ revision test</span>
+                </div>
+              </div>
+
+              <div className="home-mini-tier home-mini-tier-highlight">
+                <div className="home-mini-tier-top">
+                  <strong>₹349/mo · ₹899/yr</strong>
+                  <span className="home-mini-tag gold">Save 78%</span>
+                </div>
+                <div className="home-mini-line yes">
+                  <CheckIcon size={12} /> <span>Unlimited Pro Master Notes</span>
+                </div>
+                <div className="home-mini-line yes">
+                  <CheckIcon size={12} /> <span>Quick 20-MCQ Session Revision Tests</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              className="btn btn-pro-gold btn-full"
+              onClick={() => openUpgradeModal()}
+            >
+              <CrownIcon size={15} />
+              <span>Compare All 4 Plans (₹9 · ₹49 · ₹349 · ₹899)</span>
+            </button>
+          </section>
+        )}
 
         <section className="card">
           <div className="card-header" style={{ marginBottom: 14 }}>

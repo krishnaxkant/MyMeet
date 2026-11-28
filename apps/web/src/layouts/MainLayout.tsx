@@ -5,15 +5,19 @@ import {
   ChevronDownIcon,
   ClockIcon,
   CloseIcon,
+  CrownIcon,
   HomeIcon,
   LogOutIcon,
   MenuIcon,
   MoonIcon,
+  SparklesIcon,
   SunIcon,
   UserIcon,
 } from '../components/Icons';
 import { BrandLogo } from '../components/BrandLogo';
+import { UpgradeModal } from '../components/UpgradeModal';
 import { useAuth } from '../hooks/useAuth';
+import { useSubscription } from '../hooks/useSubscription';
 import { useTheme } from '../hooks/useTheme';
 
 interface MainLayoutProps {
@@ -34,7 +38,16 @@ function formatNavClock(date: Date): string {
 }
 
 export function MainLayout({ backendConnected, loading, children }: MainLayoutProps) {
-  const { user, profile, signOut } = useAuth();
+  const { session, user, profile, signOut } = useAuth();
+  const {
+    subscription,
+    isPro,
+    setSubscription,
+    upgradeModalOpen,
+    upgradeModalOptions,
+    openUpgradeModal,
+    closeUpgradeModal,
+  } = useSubscription();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
 
@@ -123,13 +136,18 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
   }
 
   return (
-    <div className="layout">
-      <header className="navbar">
+    <div className={`layout ${isPro ? 'layout-pro' : 'layout-basic'}`}>
+      <header className={`navbar ${isPro ? 'navbar-pro' : ''}`}>
         <div className="navbar-inner">
           {/* Left Zone: Brand Signature */}
           <div className="nav-zone-left">
             <Link to="/" className="brand">
               <BrandLogo size="sm" />
+              {isPro && (
+                <span className="brand-pro-chip" title={`MyMeet Pro — ${subscription?.plan_name}`}>
+                  <CrownIcon size={10} /> PRO
+                </span>
+              )}
               <span
                 className={`brand-status-dot dot-${statusTone}`}
                 title={statusLabel}
@@ -166,8 +184,30 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
             <div />
           )}
 
-          {/* Right Zone: Calm Utility Controls + Account Popover */}
+          {/* Right Zone: Upgrade/Pro Pill + Utility Controls + Account Popover */}
           <div className="nav-zone-right">
+            {user && (
+              <button
+                type="button"
+                className={isPro ? 'nav-pro-status-pill' : 'nav-upgrade-btn'}
+                onClick={() => openUpgradeModal()}
+                title={
+                  isPro
+                    ? `${subscription?.plan_name} — Click to manage or add credits`
+                    : 'Upgrade to MyMeet Pro starting ₹9'
+                }
+              >
+                {isPro ? <CrownIcon size={13} /> : <SparklesIcon size={13} />}
+                <span>
+                  {isPro
+                    ? subscription?.is_unlimited
+                      ? 'PRO · Unlimited'
+                      : `PRO · ${subscription?.credits_remaining ?? 0} left`
+                    : 'Upgrade'}
+                </span>
+              </button>
+            )}
+
             <span className="nav-time-chip" aria-label="Current time">
               {clockText}
             </span>
@@ -186,12 +226,14 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
               <div className="nav-account-wrap" ref={accountRef}>
                 <button
                   type="button"
-                  className={`nav-account-trigger ${accountOpen ? 'open' : ''}`}
+                  className={`nav-account-trigger ${accountOpen ? 'open' : ''} ${
+                    isPro ? 'nav-account-pro' : ''
+                  }`}
                   onClick={() => setAccountOpen((prev) => !prev)}
                   aria-expanded={accountOpen}
                   aria-haspopup="menu"
                 >
-                  <span className="avatar-circle nav-avatar-sm">
+                  <span className={`avatar-circle nav-avatar-sm ${isPro ? 'nav-avatar-pro' : ''}`}>
                     {profile?.avatar_url ? (
                       <img src={profile.avatar_url} alt={displayName} className="avatar-img" />
                     ) : (
@@ -207,7 +249,14 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
                 {accountOpen && (
                   <div className="nav-dropdown" role="menu">
                     <div className="nav-dropdown-header">
-                      <div className="nav-dropdown-name">{displayName}</div>
+                      <div className="nav-dropdown-name-row">
+                        <span className="nav-dropdown-name">{displayName}</span>
+                        {isPro && (
+                          <span className="pro-pill-badge pro-pill-xs">
+                            <CrownIcon size={10} /> PRO
+                          </span>
+                        )}
+                      </div>
                       <div className="nav-dropdown-email">{user.email}</div>
                       <div className="nav-dropdown-status">
                         <span className={`dot dot-${statusTone}`} />
@@ -217,14 +266,31 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
 
                     <div className="nav-dropdown-divider" />
 
+                    <button
+                      type="button"
+                      className={`nav-dropdown-item ${isPro ? 'nav-dropdown-pro-item' : 'nav-dropdown-upgrade-item'}`}
+                      role="menuitem"
+                      onClick={() => {
+                        setAccountOpen(false);
+                        openUpgradeModal();
+                      }}
+                    >
+                      {isPro ? <CrownIcon size={15} /> : <SparklesIcon size={15} />}
+                      <span>
+                        {isPro
+                          ? `MyMeet Pro (${subscription?.plan_name})`
+                          : 'Upgrade to Pro (from ₹9)'}
+                      </span>
+                    </button>
+
                     <Link to="/profile" className="nav-dropdown-item" role="menuitem">
                       <UserIcon size={15} />
-                      <span>Profile & Settings</span>
+                      <span>Profile &amp; Settings</span>
                     </Link>
 
                     <Link to="/history" className="nav-dropdown-item" role="menuitem">
                       <ClockIcon size={15} />
-                      <span>History & Visual AI Notes</span>
+                      <span>History &amp; Visual AI Notes</span>
                     </Link>
 
                     <button
@@ -289,11 +355,40 @@ export function MainLayout({ backendConnected, loading, children }: MainLayoutPr
                 </Link>
               );
             })}
+            <button
+              type="button"
+              className="nav-mobile-link nav-mobile-upgrade"
+              onClick={() => {
+                setMobileMenuOpen(false);
+                openUpgradeModal();
+              }}
+            >
+              {isPro ? <CrownIcon size={16} /> : <SparklesIcon size={16} />}
+              <span>
+                {isPro
+                  ? `PRO Active · ${subscription?.plan_name}`
+                  : 'Upgrade to Pro (from ₹9)'}
+              </span>
+            </button>
           </nav>
         )}
       </header>
 
       <main className="container">{children}</main>
+
+      {/* Global Upgrade Modal triggered from Navbar, Home, or any screen */}
+      <UpgradeModal
+        open={upgradeModalOpen}
+        accessToken={session?.access_token ?? null}
+        userEmail={profile?.email ?? user?.email ?? undefined}
+        userName={displayName}
+        meetingCode={upgradeModalOptions.meetingCode}
+        highlightMcq={upgradeModalOptions.highlightMcq}
+        onClose={closeUpgradeModal}
+        onActivated={(nextSub) => {
+          setSubscription(nextSub);
+        }}
+      />
     </div>
   );
 }

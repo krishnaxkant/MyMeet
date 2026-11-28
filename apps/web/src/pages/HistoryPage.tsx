@@ -12,9 +12,9 @@ import {
 import { SessionMcqModal } from '../components/SessionMcqModal';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { useAuth } from '../hooks/useAuth';
+import { useSubscription } from '../hooks/useSubscription';
 import {
   generateAiSummary,
-  getBillingStatus,
   getHistoryDetail,
   getOrGenerateMeetingMcqs,
   listHistory,
@@ -66,6 +66,7 @@ function saveLocalRegenCount(code: string, count: number): void {
 
 export function HistoryPage() {
   const { session, user, profile } = useAuth();
+  const { subscription, setSubscription } = useSubscription();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialCode = searchParams.get('code');
@@ -80,20 +81,12 @@ export function HistoryPage() {
   const [loadingMcq, setLoadingMcq] = useState(false);
   const [activeQuiz, setActiveQuiz] = useState<MeetingMcqQuiz | null>(null);
   const [quizOpen, setQuizOpen] = useState(false);
-  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeForMcq, setUpgradeForMcq] = useState(false);
   const [localRegenCounts, setLocalRegenCounts] = useState<Record<string, number>>({});
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const autoProTriggeredRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    if (!session?.access_token) return;
-    void getBillingStatus(session.access_token)
-      .then((res) => setSubscription(res.subscription))
-      .catch(() => {});
-  }, [session?.access_token]);
 
   const loadHistory = useCallback(async () => {
     if (!session?.access_token) return;

@@ -638,3 +638,30 @@ export function MoreVerticalIcon({ size = 18 }: { size?: number }) {
     </svg>
   );
 }
+
+export function CrownIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M3.5 18.5H20.5M4.5 15.5L3 7.5L8.2 11L12 5L15.8 11L21 7.5L19.5 15.5H4.5Z"
+        stroke="currentColor"
+        strokeWidth="1.95"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function CrossIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M6.5 6.5L17.5 17.5M17.5 6.5L6.5 17.5"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}

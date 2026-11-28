@@ -29,6 +29,55 @@ interface UpgradePlansModalProps {
   onActivated: (subscription: UserSubscriptionStatus, planCode: PaidPlanCode) => void;
 }
 
+interface MobilePlanRow {
+  text: string;
+  included: boolean;
+  bold?: boolean;
+}
+
+const MOBILE_PLAN_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: MobilePlanRow[] }> = {
+  single_9: {
+    subtitle: 'Try Pro Master Notes on 1 important class or lecture only.',
+    rows: [
+      { text: 'Pro Master Notes for ONLY 1 class / meeting (valid 30 days)', included: true, bold: true },
+      { text: 'Deep code, derivations, comparison table & exam traps', included: true },
+      { text: '1-min cheat sheet + HD PDF export & permanent access', included: true },
+      { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
+      { text: 'Multiple classes or unlimited regenerations', included: false },
+    ],
+  },
+  pack_49: {
+    subtitle: 'Smart bundle for regular classes — ~₹3.2 per class.',
+    rows: [
+      { text: 'Pro Master Notes for 15 classes / meetings (valid 30 days)', included: true, bold: true },
+      { text: 'Deep code, derivations, comparison table & exam traps', included: true },
+      { text: 'Premium PRO UI theme & gold profile badge', included: true },
+      { text: 'Quick 20-MCQ Session Revision Test (not included)', included: false },
+      { text: 'Unlimited regenerations', included: false },
+    ],
+  },
+  pro_monthly_349: {
+    subtitle: 'Full all-access subscription for daily lectures & exam prep.',
+    rows: [
+      { text: 'Unlimited Pro Master Notes for 30 days (every class)', included: true, bold: true },
+      { text: 'Quick 20-MCQ Session Revision Test after every meeting', included: true, bold: true },
+      { text: 'Unlimited regenerations + HD PDF export', included: true },
+      { text: 'Auto-builds Pro Notes (no Basic Notes clutter)', included: true },
+      { text: 'Premium PRO UI theme, gold badge & priority AI', included: true },
+    ],
+  },
+  pro_yearly_899: {
+    subtitle: '365 days of unlimited Pro Notes & 20-MCQ tests — save 78%.',
+    rows: [
+      { text: 'Unlimited Pro Master Notes for 1 full year (365 days)', included: true, bold: true },
+      { text: 'Unlimited Quick 20-MCQ Session Revision Tests', included: true, bold: true },
+      { text: 'Unlimited regenerations + HD PDF export', included: true },
+      { text: 'Auto-builds Pro Notes (no Basic Notes clutter)', included: true },
+      { text: 'Premium PRO UI theme, gold badge & priority AI', included: true },
+    ],
+  },
+};
+
 export function UpgradePlansModal({
   visible,
   accessToken,
@@ -66,13 +115,11 @@ export function UpgradePlansModal({
     try {
       const order = await createBillingOrder(accessToken, planCode, meetingCode);
       if (order.provider === 'razorpay') {
-        // Open MyMeet Web secure Razorpay UPI Checkout directly with this plan highlighted
         await Linking.openURL(`${WEB_APP_URL}/profile?upgrade=${encodeURIComponent(planCode)}`);
         setBusyPlan(null);
         return;
       }
 
-      // Demo / Test Mode instant activation when Razorpay keys are not yet set
       const verified = await verifyBillingPayment(accessToken, { order_id: order.order_id });
       onActivated(verified.subscription, verified.plan_code);
       onClose();
@@ -98,7 +145,7 @@ export function UpgradePlansModal({
                 <Text style={styles.proBadgeText}>✦ MYMEET PRO</Text>
               </View>
               <Text style={[styles.title, { color: colors.text }]}>
-                {highlightMcq ? 'Unlock Pro Notes + Session MCQs' : 'Upgrade to Pro Notes'}
+                {highlightMcq ? 'Unlock Pro Notes + 20-MCQ Tests' : 'Compare MyMeet Pro Plans'}
               </Text>
               {subscription && !subscription.razorpay_live && (
                 <Text style={styles.testTag}>Test Mode · Instant Free Preview</Text>
@@ -113,6 +160,17 @@ export function UpgradePlansModal({
             >
               <Text style={{ color: colors.text, fontSize: 12, fontWeight: '700' }}>Close</Text>
             </Pressable>
+          </View>
+
+          <View style={styles.clarityBanner}>
+            <Text style={[styles.clarityText, { color: colors.text }]}>
+              <Text style={{ fontWeight: '800' }}>Quick Guide: </Text>
+              ₹9 pack gives Pro Notes for <Text style={{ fontWeight: '800' }}>1 class only</Text>{' '}
+              (<Text style={{ color: '#ef4444', fontWeight: '800' }}>✕ No 20-MCQ test</Text>). Pick{' '}
+              <Text style={{ fontWeight: '800' }}>₹349/mo</Text> or{' '}
+              <Text style={{ fontWeight: '800' }}>₹899/yr</Text> for Unlimited Notes + Quick 20-MCQ
+              Revision Tests!
+            </Text>
           </View>
 
           {error && (
@@ -134,8 +192,14 @@ export function UpgradePlansModal({
           ) : (
             <ScrollView contentContainerStyle={styles.list}>
               {plans.map((plan) => {
-                const isBest = plan.code === 'pro_yearly_899';
-                const isBusy = busyPlan === plan.code;
+                const code = plan.code as PaidPlanCode;
+                const isBest = code === 'pro_yearly_899';
+                const isBusy = busyPlan === code;
+                const matrix = MOBILE_PLAN_MATRIX[code];
+                const rows: MobilePlanRow[] = matrix
+                  ? matrix.rows
+                  : plan.highlights.map((h) => ({ text: h, included: true }));
+
                 return (
                   <View
                     key={plan.code}
@@ -179,20 +243,57 @@ export function UpgradePlansModal({
                         ₹{plan.price_inr}
                       </Text>
                       <Text style={[styles.cycleText, { color: colors.textMuted }]}>
-                        {plan.code === 'pro_yearly_899'
+                        {code === 'pro_yearly_899'
                           ? '/ year (~₹75/mo)'
-                          : plan.code === 'pro_monthly_349'
-                            ? '/ month'
-                            : plan.code === 'pack_49'
-                              ? '/ 15 credits · 30d'
-                              : '/ 1 credit · 30d'}
+                          : code === 'pro_monthly_349'
+                            ? '/ month · 30d'
+                            : code === 'pack_49'
+                              ? '/ 15 classes · 30d'
+                              : '/ 1 class only · 30d'}
                       </Text>
                     </View>
 
-                    {plan.highlights.map((h) => (
-                      <Text key={h} style={[styles.featLine, { color: colors.textMuted }]}>
-                        ✓ {h}
-                      </Text>
+                    <Text style={[styles.subCopy, { color: colors.textMuted }]}>
+                      {matrix?.subtitle || plan.tagline}
+                    </Text>
+
+                    <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+                    {rows.map((r) => (
+                      <View key={r.text} style={styles.featRow}>
+                        <View
+                          style={[
+                            styles.featMark,
+                            {
+                              backgroundColor: r.included
+                                ? 'rgba(34, 197, 94, 0.18)'
+                                : 'rgba(239, 68, 68, 0.16)',
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={{
+                              color: r.included ? '#16a34a' : '#ef4444',
+                              fontSize: 11,
+                              fontWeight: '900',
+                            }}
+                          >
+                            {r.included ? '✓' : '✕'}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.featLine,
+                            {
+                              color: r.included ? colors.text : colors.textMuted,
+                              fontWeight: r.bold ? '700' : '500',
+                              opacity: r.included ? 1 : 0.8,
+                            },
+                          ]}
+                        >
+                          {r.text}
+                        </Text>
+                      </View>
                     ))}
 
                     <Pressable
@@ -202,7 +303,7 @@ export function UpgradePlansModal({
                         Boolean(busyPlan) && { opacity: 0.6 },
                       ]}
                       disabled={Boolean(busyPlan)}
-                      onPress={() => void handleSelectPlan(plan.code as PaidPlanCode)}
+                      onPress={() => void handleSelectPlan(code)}
                     >
                       <Text
                         style={{
@@ -236,9 +337,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   sheet: {
-    maxHeight: '88%',
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
+    maxHeight: '90%',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
     padding: 18,
   },
@@ -247,7 +348,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   proBadge: {
     alignSelf: 'flex-start',
@@ -264,7 +365,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   title: {
-    fontSize: 18,
+    fontSize: 18.5,
     fontWeight: '800',
   },
   testTag: {
@@ -278,6 +379,18 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 10,
     borderWidth: 1,
+  },
+  clarityBanner: {
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.42)',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    marginBottom: 12,
+  },
+  clarityText: {
+    fontSize: 12,
+    lineHeight: 17,
   },
   errBox: {
     padding: 10,
@@ -296,7 +409,7 @@ const styles = StyleSheet.create({
   planCard: {
     borderRadius: 16,
     padding: 14,
-    gap: 6,
+    gap: 7,
   },
   planTopRow: {
     flexDirection: 'row',
@@ -317,7 +430,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'baseline',
     gap: 6,
-    marginVertical: 2,
+    marginTop: 1,
   },
   priceText: {
     fontSize: 26,
@@ -327,8 +440,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+  subCopy: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  divider: {
+    height: 1,
+    marginVertical: 3,
+  },
+  featRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  featMark: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
   featLine: {
-    fontSize: 12.5,
+    flex: 1,
+    fontSize: 12.2,
     lineHeight: 17,
   },
   ctaBtn: {

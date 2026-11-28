@@ -18,7 +18,7 @@ import {
 } from '../components/Icons';
 import { UpgradeModal } from '../components/UpgradeModal';
 import { useAuth } from '../hooks/useAuth';
-import { getBillingStatus, type UserSubscriptionStatus } from '../services/api';
+import { useSubscription } from '../hooks/useSubscription';
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -72,6 +72,7 @@ async function processAvatarFile(file: File): Promise<string> {
 
 export function ProfilePage() {
   const { session, user, profile, profileLoading, saveProfile, refreshProfile, signOut } = useAuth();
+  const { subscription, setSubscription } = useSubscription();
   const [fullName, setFullName] = useState('');
   const [avatarData, setAvatarData] = useState<string | null>(null);
   const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
@@ -79,7 +80,6 @@ export function ProfilePage() {
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [subscription, setSubscription] = useState<UserSubscriptionStatus | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(() =>
     typeof window !== 'undefined'
       ? new URLSearchParams(window.location.search).has('upgrade')
@@ -93,13 +93,6 @@ export function ProfilePage() {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const photoMenuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!session?.access_token) return;
-    void getBillingStatus(session.access_token)
-      .then((res) => setSubscription(res.subscription))
-      .catch(() => {});
-  }, [session?.access_token]);
 
   useEffect(() => {
     setFullName(profile?.full_name ?? (user?.user_metadata?.full_name as string | undefined) ?? '');

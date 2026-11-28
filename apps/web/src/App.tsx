@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthProvider } from './hooks/useAuth';
 import { useBackendHealth } from './hooks/useBackendHealth';
+import { SubscriptionProvider } from './hooks/useSubscription';
 import { ThemeProvider } from './hooks/useTheme';
 import { MainLayout } from './layouts/MainLayout';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
@@ -95,7 +96,9 @@ export function App() {
     <ThemeProvider>
       <BrowserRouter>
         <AuthProvider>
-          <AppRoutes />
+          <SubscriptionProvider>
+            <AppRoutes />
+          </SubscriptionProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>
