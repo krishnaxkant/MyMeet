@@ -16,52 +16,53 @@ export interface RenderedNotePage {
 
 const KIND_PALETTES: Record<VisualNoteKind, KindPalette> = {
   concept: {
-    label: 'CONCEPT',
-    accent: '#38BDF8',
-    softBg: 'rgba(56, 189, 248, 0.14)',
-    border: 'rgba(56, 189, 248, 0.52)',
-    glow: 'rgba(56, 189, 248, 0.2)',
+    label: 'Concept',
+    accent: '#60A5FA',
+    softBg: 'rgba(96, 165, 250, 0.12)',
+    border: 'rgba(148, 163, 184, 0.16)',
+    glow: 'transparent',
   },
   formula: {
-    label: 'FORMULA / RULE',
+    label: 'Formula & Rule',
     accent: '#FBBF24',
-    softBg: 'rgba(251, 191, 36, 0.15)',
-    border: 'rgba(251, 191, 36, 0.58)',
-    glow: 'rgba(251, 191, 36, 0.2)',
+    softBg: 'rgba(251, 191, 36, 0.12)',
+    border: 'rgba(251, 191, 36, 0.24)',
+    glow: 'transparent',
   },
   step: {
-    label: 'EXPLANATION',
+    label: 'Explanation',
     accent: '#34D399',
-    softBg: 'rgba(52, 211, 153, 0.14)',
-    border: 'rgba(52, 211, 153, 0.5)',
-    glow: 'rgba(52, 211, 153, 0.18)',
+    softBg: 'rgba(52, 211, 153, 0.12)',
+    border: 'rgba(148, 163, 184, 0.16)',
+    glow: 'transparent',
   },
   example: {
-    label: 'WORKED EXAMPLE',
-    accent: '#C084FC',
-    softBg: 'rgba(192, 132, 252, 0.15)',
-    border: 'rgba(192, 132, 252, 0.55)',
-    glow: 'rgba(192, 132, 252, 0.22)',
+    label: 'Worked Example',
+    accent: '#A78BFA',
+    softBg: 'rgba(167, 139, 250, 0.12)',
+    border: 'rgba(148, 163, 184, 0.16)',
+    glow: 'transparent',
   },
   takeaway: {
-    label: 'KEY TAKEAWAY',
+    label: 'Key Takeaway',
     accent: '#FB7185',
-    softBg: 'rgba(251, 113, 133, 0.15)',
-    border: 'rgba(251, 113, 133, 0.55)',
-    glow: 'rgba(251, 113, 133, 0.2)',
+    softBg: 'rgba(251, 113, 133, 0.12)',
+    border: 'rgba(148, 163, 184, 0.16)',
+    glow: 'transparent',
   },
 };
 
-const FONT_SANS = '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif';
+const FONT_SANS = '"Plus Jakarta Sans", "Inter", "Segoe UI", system-ui, -apple-system, sans-serif';
+const FONT_BODY = '"Inter", "Segoe UI", system-ui, -apple-system, sans-serif';
 const FONT_MONO = '"JetBrains Mono", "Cascadia Code", Consolas, monospace';
 
 const PAGE_W = 1200;
 const PAGE_H = 1600;
 const SCALE = 2; // 2400 × 3200 ultra-crisp Retina PNG per page
-const PAD_X = 68;
+const PAD_X = 78;
 const CONTENT_W = PAGE_W - PAD_X * 2;
 const CENTER_X = PAGE_W / 2;
-const BOTTOM_LIMIT = PAGE_H - 94;
+const BOTTOM_LIMIT = PAGE_H - 96;
 
 function cleanLegacyPrefix(text: string): string {
   return text.replace(/^\[(Screen|Voice|Chat)\s*·[^\]]+\]\s*/i, '').trim();
@@ -271,109 +272,97 @@ function paintBlackPageCanvas(
   }
   ctx.scale(SCALE, SCALE);
 
-  // Pure black background
-  ctx.fillStyle = '#000000';
+  // Calm editorial charcoal-ink canvas (gentle on the eyes, razor-sharp typography)
+  ctx.fillStyle = '#090C12';
   ctx.fillRect(0, 0, PAGE_W, PAGE_H);
 
-  // Subtle ambient studio glow
-  const topGlow = ctx.createRadialGradient(220, 90, 10, 220, 90, 520);
-  topGlow.addColorStop(0, 'rgba(56, 189, 248, 0.09)');
-  topGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  // Subtle top ambient light wash
+  const topGlow = ctx.createRadialGradient(260, 60, 10, 260, 60, 560);
+  topGlow.addColorStop(0, 'rgba(96, 165, 250, 0.06)');
+  topGlow.addColorStop(1, 'rgba(9, 12, 18, 0)');
   ctx.fillStyle = topGlow;
   ctx.fillRect(0, 0, PAGE_W, 560);
 
-  // Subtle blackboard dot-grid
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.055)';
-  for (let gx = 28; gx < PAGE_W; gx += 32) {
-    for (let gy = 28; gy < PAGE_H; gy += 32) {
-      ctx.fillRect(gx, gy, 1.4, 1.4);
-    }
-  }
-
-  // Outer sleek frame
-  drawRoundedRect(ctx, 20, 20, PAGE_W - 40, PAGE_H - 40, 24);
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
-  ctx.lineWidth = 1.5;
+  // Clean understated page frame
+  drawRoundedRect(ctx, 24, 24, PAGE_W - 48, PAGE_H - 48, 22);
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+  ctx.lineWidth = 1.2;
   ctx.stroke();
 
   // Page counter pill (top-right)
   ctx.save();
-  ctx.font = `700 12px ${FONT_MONO}`;
-  const pageTag = `PAGE ${pageNumber} / ${totalPages}`;
+  ctx.font = `600 12px ${FONT_MONO}`;
+  const pageTag = `Page ${pageNumber} of ${totalPages}`;
   const tagW = ctx.measureText(pageTag).width + 24;
-  drawRoundedRect(ctx, PAGE_W - PAD_X - tagW, 48, tagW, 28, 14);
-  ctx.fillStyle = '#0B1120';
+  drawRoundedRect(ctx, PAGE_W - PAD_X - tagW, 52, tagW, 28, 14);
+  ctx.fillStyle = '#111622';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)';
-  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.fillStyle = '#94A3B8';
   ctx.textBaseline = 'middle';
-  ctx.fillText(pageTag, PAGE_W - PAD_X - tagW + 12, 62.5);
+  ctx.fillText(pageTag, PAGE_W - PAD_X - tagW + 12, 66.5);
   ctx.restore();
 
   // Footer
   ctx.save();
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(PAD_X, PAGE_H - 66);
-  ctx.lineTo(PAGE_W - PAD_X, PAGE_H - 66);
+  ctx.moveTo(PAD_X, PAGE_H - 68);
+  ctx.lineTo(PAGE_W - PAD_X, PAGE_H - 68);
   ctx.stroke();
 
-  ctx.font = `600 12px ${FONT_SANS}`;
-  ctx.fillStyle = '#475569';
+  ctx.font = `600 12px ${FONT_BODY}`;
+  ctx.fillStyle = '#64748B';
   ctx.textBaseline = 'middle';
-  ctx.fillText('MYMEET · AI STUDY NOTES', PAD_X, PAGE_H - 42);
+  ctx.fillText('MYMEET · AI STUDY NOTES', PAD_X, PAGE_H - 44);
   ctx.textAlign = 'right';
-  ctx.fillText(`${pageNumber} / ${totalPages}`, PAGE_W - PAD_X, PAGE_H - 42);
+  ctx.fillText(`${pageNumber} / ${totalPages}`, PAGE_W - PAD_X, PAGE_H - 44);
   ctx.restore();
 
   if (pageNumber === 1) {
-    // Full cover header on Page 1
-    let y = 48;
+    // Editorial cover header on Page 1
+    let y = 52;
     ctx.save();
-    ctx.font = `800 12.5px ${FONT_SANS}`;
-    const badgeText = `✦  ${envLabel}`;
-    const badgeW = ctx.measureText(badgeText).width + 28;
+    ctx.font = `700 12px ${FONT_BODY}`;
+    const badgeText = envLabel;
+    const badgeW = ctx.measureText(badgeText).width + 26;
     drawRoundedRect(ctx, PAD_X, y, badgeW, 28, 14);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+    ctx.fillStyle = 'rgba(96, 165, 250, 0.12)';
     ctx.fill();
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(96, 165, 250, 0.34)';
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = '#7DD3FC';
+    ctx.fillStyle = '#93C5FD';
     ctx.textBaseline = 'middle';
-    ctx.fillText(badgeText, PAD_X + 14, y + 14.5);
+    ctx.fillText(badgeText, PAD_X + 13, y + 14.5);
     ctx.restore();
 
-    y += 42;
-    const titleFont = `800 36px ${FONT_SANS}`;
-    const titleLines = wrapText(ctx, title, CONTENT_W - 140, titleFont);
+    y += 44;
+    const titleFont = `800 38px ${FONT_SANS}`;
+    const titleLines = wrapText(ctx, title, CONTENT_W - 150, titleFont);
     ctx.save();
     ctx.font = titleFont;
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = '#F8FAFC';
     ctx.textBaseline = 'top';
     for (const line of titleLines) {
       ctx.fillText(line, PAD_X, y);
-      y += 45;
+      y += 48;
     }
     ctx.restore();
 
-    // Clean neon gradient rule
-    y += 8;
-    const grad = ctx.createLinearGradient(PAD_X, y, PAD_X + CONTENT_W, y);
-    grad.addColorStop(0, '#38BDF8');
-    grad.addColorStop(0.55, '#818CF8');
-    grad.addColorStop(1, '#C084FC');
-    ctx.strokeStyle = grad;
-    ctx.lineWidth = 2.5;
+    // Subtle refined hairline rule
+    y += 10;
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(PAD_X, y);
     ctx.lineTo(PAD_X + CONTENT_W, y);
     ctx.stroke();
 
-    return { canvas, ctx, startY: y + 26 };
+    return { canvas, ctx, startY: y + 28 };
   }
 
   // Continuation header on Page 2+
@@ -446,21 +435,21 @@ export function renderVisualNotesPages(
     .map(cleanLegacyPrefix)
     .filter((a) => a.length > 0);
 
-  const overviewFont = `500 17px ${FONT_SANS}`;
-  const stepTitleFont = `800 20px ${FONT_SANS}`;
-  const stepBodyFont = `400 16.5px ${FONT_SANS}`;
-  const formulaFont = `600 17.5px ${FONT_MONO}`;
-  const bulletFont = `400 15.5px ${FONT_SANS}`;
+  const overviewFont = `400 18px ${FONT_BODY}`;
+  const stepTitleFont = `700 21px ${FONT_SANS}`;
+  const stepBodyFont = `400 17.5px ${FONT_BODY}`;
+  const formulaFont = `500 17px ${FONT_MONO}`;
+  const bulletFont = `400 16.5px ${FONT_BODY}`;
 
   // 1. Measure all logical content blocks
   const blocks: LayoutItem[] = [];
 
   if (overviewText) {
-    const oLines = wrapText(mCtx, overviewText, CONTENT_W - 56, overviewFont);
+    const oLines = wrapText(mCtx, overviewText, CONTENT_W - 60, overviewFont);
     blocks.push({
       type: 'overview',
       lines: oLines,
-      height: 48 + oLines.length * 26 + 20,
+      height: 50 + oLines.length * 29 + 22,
     });
   }
 
@@ -471,23 +460,23 @@ export function renderVisualNotesPages(
         ? KIND_PALETTES[flowSteps[idx + 1].kind] || palette
         : undefined;
 
-    const titleLines = wrapText(mCtx, step.title, CONTENT_W - 220, stepTitleFont);
-    const bodyLines = wrapText(mCtx, step.body, CONTENT_W - 104, stepBodyFont);
+    const titleLines = wrapText(mCtx, step.title, CONTENT_W - 224, stepTitleFont);
+    const bodyLines = wrapText(mCtx, step.body, CONTENT_W - 108, stepBodyFont);
     const formulaLines = step.formula
-      ? wrapText(mCtx, step.formula, CONTENT_W - 140, formulaFont)
+      ? wrapText(mCtx, step.formula, CONTENT_W - 144, formulaFont)
       : [];
     const bulletLineGroups = (step.bullets || []).map((b) =>
-      wrapText(mCtx, b, CONTENT_W - 134, bulletFont),
+      wrapText(mCtx, b, CONTENT_W - 138, bulletFont),
     );
 
-    let h = 30 + titleLines.length * 26 + 10 + bodyLines.length * 25 + 22;
+    let h = 34 + titleLines.length * 28 + 12 + bodyLines.length * 28 + 26;
     if (formulaLines.length > 0) {
-      h += 14 + formulaLines.length * 25 + 24;
+      h += 16 + formulaLines.length * 27 + 28;
     }
     if (bulletLineGroups.length > 0) {
       h +=
-        14 +
-        bulletLineGroups.reduce((acc, g) => acc + g.length * 23 + 8, 0) +
+        16 +
+        bulletLineGroups.reduce((acc, g) => acc + g.length * 26 + 10, 0) +
         4;
     }
 
@@ -500,7 +489,7 @@ export function renderVisualNotesPages(
       bodyLines,
       formulaLines,
       bulletLineGroups,
-      height: Math.max(h, 112),
+      height: Math.max(h, 122),
       showArrowAfter: Boolean(step.show_arrow) && idx < flowSteps.length - 1,
       arrowLabel: step.arrow_label,
       nextAccent: nextPalette?.accent,
@@ -509,10 +498,10 @@ export function renderVisualNotesPages(
 
   if (keyPoints.length > 0) {
     const measuredKeys = keyPoints.map((kp) => {
-      const lines = wrapText(mCtx, kp, CONTENT_W - 86, bulletFont);
-      return { lines, height: lines.length * 23 + 12 };
+      const lines = wrapText(mCtx, kp, CONTENT_W - 92, bulletFont);
+      return { lines, height: lines.length * 26 + 14 };
     });
-    const kpHeight = 52 + measuredKeys.reduce((acc, k) => acc + k.height, 0) + 12;
+    const kpHeight = 56 + measuredKeys.reduce((acc, k) => acc + k.height, 0) + 14;
     blocks.push({
       type: 'keypoints',
       items: measuredKeys,
@@ -522,9 +511,9 @@ export function renderVisualNotesPages(
 
   if (actionItems.length > 0) {
     const measuredActs = actionItems.map((act) =>
-      wrapText(mCtx, act, CONTENT_W - 86, bulletFont),
+      wrapText(mCtx, act, CONTENT_W - 92, bulletFont),
     );
-    const actHeight = 52 + measuredActs.reduce((acc, l) => acc + l.length * 23 + 12, 0) + 12;
+    const actHeight = 56 + measuredActs.reduce((acc, l) => acc + l.length * 26 + 14, 0) + 14;
     blocks.push({
       type: 'actions',
       items: measuredActs,
@@ -533,8 +522,8 @@ export function renderVisualNotesPages(
   }
 
   // 2. Paginate blocks cleanly across as many pages as needed
-  const titleLinesEstimate = wrapText(mCtx, safeTitle, CONTENT_W - 140, `800 36px ${FONT_SANS}`);
-  const page1StartY = 48 + 42 + titleLinesEstimate.length * 45 + 8 + 26;
+  const titleLinesEstimate = wrapText(mCtx, safeTitle, CONTENT_W - 150, `800 38px ${FONT_SANS}`);
+  const page1StartY = 52 + 44 + titleLinesEstimate.length * 48 + 10 + 28;
   const contStartY = 116;
 
   const pagesBuckets: LayoutItem[][] = [[]];
@@ -571,29 +560,29 @@ export function renderVisualNotesPages(
       const isLastOnPage = idxOnPage === pageItems.length - 1;
 
       if (item.type === 'overview') {
-        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 16);
-        ctx.fillStyle = '#090D16';
+        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 14);
+        ctx.fillStyle = '#0F141F';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.34)';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+        ctx.lineWidth = 1.1;
         ctx.stroke();
 
-        drawRoundedRect(ctx, PAD_X, cursorY + 12, 5, item.height - 24, 3);
-        ctx.fillStyle = '#38BDF8';
+        drawRoundedRect(ctx, PAD_X, cursorY + 14, 3.5, item.height - 28, 2);
+        ctx.fillStyle = '#60A5FA';
         ctx.fill();
 
         ctx.save();
-        ctx.font = `800 12px ${FONT_SANS}`;
-        ctx.fillStyle = '#38BDF8';
+        ctx.font = `700 11.5px ${FONT_BODY}`;
+        ctx.fillStyle = '#93C5FD';
         ctx.textBaseline = 'top';
-        ctx.fillText('SESSION OVERVIEW', PAD_X + 24, cursorY + 16);
+        ctx.fillText('OVERVIEW', PAD_X + 26, cursorY + 18);
 
         ctx.font = overviewFont;
         ctx.fillStyle = '#E2E8F0';
-        let oY = cursorY + 42;
+        let oY = cursorY + 44;
         for (const line of item.lines) {
-          ctx.fillText(line, PAD_X + 24, oY);
-          oY += 26;
+          ctx.fillText(line, PAD_X + 26, oY);
+          oY += 29;
         }
         ctx.restore();
 
@@ -616,112 +605,100 @@ export function renderVisualNotesPages(
           nextAccent,
         } = item;
 
-        // Card shadow + dark surface
-        ctx.save();
-        ctx.shadowColor = palette.glow;
-        ctx.shadowBlur = 16;
-        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, height, 18);
-        ctx.fillStyle = '#0A0D14';
+        // Clean calm editorial surface (zero neon glow)
+        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, height, 16);
+        ctx.fillStyle = '#0F141F';
         ctx.fill();
-        ctx.restore();
-
-        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, height, 18);
         ctx.strokeStyle = palette.border;
-        ctx.lineWidth = 1.6;
+        ctx.lineWidth = 1.1;
         ctx.stroke();
 
-        // Left colored stripe
-        drawRoundedRect(ctx, PAD_X + 1, cursorY + 14, 4.5, height - 28, 3);
+        // Subtle left accent stripe
+        drawRoundedRect(ctx, PAD_X + 1, cursorY + 16, 3.5, height - 32, 2);
         ctx.fillStyle = palette.accent;
         ctx.fill();
 
-        // Number circle badge
+        // Minimal index pill
         const numCx = PAD_X + 38;
-        const numCy = cursorY + 36;
+        const numCy = cursorY + 38;
         ctx.save();
         ctx.beginPath();
-        ctx.arc(numCx, numCy, 17, 0, Math.PI * 2);
+        ctx.arc(numCx, numCy, 16, 0, Math.PI * 2);
         ctx.fillStyle = palette.softBg;
         ctx.fill();
-        ctx.strokeStyle = palette.accent;
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
 
-        ctx.font = `800 13px ${FONT_MONO}`;
+        ctx.font = `700 12.5px ${FONT_MONO}`;
         ctx.fillStyle = palette.accent;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(String(index + 1).padStart(2, '0'), numCx, numCy + 0.5);
         ctx.restore();
 
-        // Kind badge (top-right)
+        // Understated kind pill (top-right)
         ctx.save();
-        ctx.font = `800 11px ${FONT_SANS}`;
+        ctx.font = `600 11.5px ${FONT_BODY}`;
         const kindW = ctx.measureText(palette.label).width + 20;
-        const kindX = PAD_X + CONTENT_W - kindW - 20;
-        const kindY = cursorY + 20;
+        const kindX = PAD_X + CONTENT_W - kindW - 22;
+        const kindY = cursorY + 24;
         drawRoundedRect(ctx, kindX, kindY, kindW, 24, 12);
         ctx.fillStyle = palette.softBg;
         ctx.fill();
-        ctx.strokeStyle = palette.border;
-        ctx.lineWidth = 1.1;
-        ctx.stroke();
         ctx.fillStyle = palette.accent;
         ctx.textBaseline = 'middle';
         ctx.fillText(palette.label, kindX + 10, kindY + 12.5);
         ctx.restore();
 
         // Title
-        let innerY = cursorY + 24;
+        let innerY = cursorY + 26;
         ctx.save();
         ctx.font = stepTitleFont;
-        ctx.fillStyle = '#FFFFFF';
+        ctx.fillStyle = '#F8FAFC';
         ctx.textBaseline = 'top';
         for (const line of titleLines) {
           ctx.fillText(line, PAD_X + 70, innerY);
-          innerY += 26;
+          innerY += 28;
         }
 
-        // Explanation Body
-        innerY += 8;
+        // Explanation Body (generous line height for effortless reading)
+        innerY += 10;
         ctx.font = stepBodyFont;
         ctx.fillStyle = '#CBD5E1';
         for (const line of bodyLines) {
           ctx.fillText(line, PAD_X + 70, innerY);
-          innerY += 25;
+          innerY += 28;
         }
 
         // Formula / Equation Box
         if (formulaLines.length > 0) {
-          innerY += 12;
-          const fBoxH = formulaLines.length * 25 + 20;
+          innerY += 14;
+          const fBoxH = formulaLines.length * 27 + 24;
           const fBoxX = PAD_X + 70;
-          const fBoxW = CONTENT_W - 94;
+          const fBoxW = CONTENT_W - 96;
 
-          drawRoundedRect(ctx, fBoxX, innerY, fBoxW, fBoxH, 11);
-          ctx.fillStyle = '#030508';
+          drawRoundedRect(ctx, fBoxX, innerY, fBoxW, fBoxH, 10);
+          ctx.fillStyle = '#06090F';
           ctx.fill();
-          ctx.strokeStyle = 'rgba(251, 191, 36, 0.45)';
-          ctx.lineWidth = 1.3;
+          ctx.strokeStyle = 'rgba(251, 191, 36, 0.28)';
+          ctx.lineWidth = 1;
           ctx.stroke();
 
-          drawRoundedRect(ctx, fBoxX, innerY + 6, 4, fBoxH - 12, 2);
+          drawRoundedRect(ctx, fBoxX, innerY + 8, 3, fBoxH - 16, 2);
           ctx.fillStyle = '#FBBF24';
           ctx.fill();
 
           ctx.font = formulaFont;
           ctx.fillStyle = '#FDE68A';
-          let fY = innerY + 11;
+          let fY = innerY + 13;
           for (const fl of formulaLines) {
             ctx.fillText(fl, fBoxX + 18, fY);
-            fY += 25;
+            fY += 27;
           }
           innerY += fBoxH + 2;
         }
 
         // Sub-points / Worked Example Steps
         if (bulletLineGroups.length > 0) {
-          innerY += 12;
+          innerY += 14;
           ctx.font = bulletFont;
           bulletLineGroups.forEach((group, bIdx) => {
             const marker = step.kind === 'example' ? `${bIdx + 1}.` : '•';
@@ -731,9 +708,9 @@ export function renderVisualNotesPages(
             ctx.fillStyle = '#E2E8F0';
             for (const bLine of group) {
               ctx.fillText(bLine, PAD_X + 94, innerY);
-              innerY += 23;
+              innerY += 26;
             }
-            innerY += 8;
+            innerY += 10;
           });
         }
         ctx.restore();
@@ -773,41 +750,33 @@ export function renderVisualNotesPages(
       }
 
       if (item.type === 'keypoints') {
-        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 16);
-        ctx.fillStyle = '#090D16';
+        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 14);
+        ctx.fillStyle = '#0F141F';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(148, 163, 184, 0.16)';
+        ctx.lineWidth = 1.1;
         ctx.stroke();
 
         ctx.save();
-        ctx.font = `800 13px ${FONT_SANS}`;
-        ctx.fillStyle = '#38BDF8';
+        ctx.font = `700 12px ${FONT_BODY}`;
+        ctx.fillStyle = '#93C5FD';
         ctx.textBaseline = 'top';
-        ctx.fillText('QUICK REVISION · KEY TAKEAWAYS', PAD_X + 24, cursorY + 18);
+        ctx.fillText('KEY TAKEAWAYS', PAD_X + 26, cursorY + 20);
 
         ctx.font = bulletFont;
-        let ky = cursorY + 46;
+        let ky = cursorY + 48;
         for (const kp of item.items) {
-          // Crisp drawn vector right chevron instead of raw font glyph
-          ctx.save();
-          ctx.strokeStyle = '#38BDF8';
-          ctx.lineWidth = 2.2;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
+          ctx.fillStyle = '#60A5FA';
           ctx.beginPath();
-          ctx.moveTo(PAD_X + 26, ky + 4);
-          ctx.lineTo(PAD_X + 33, ky + 10);
-          ctx.lineTo(PAD_X + 26, ky + 16);
-          ctx.stroke();
-          ctx.restore();
+          ctx.arc(PAD_X + 30, ky + 10, 3, 0, Math.PI * 2);
+          ctx.fill();
 
-          ctx.fillStyle = '#F1F5F9';
+          ctx.fillStyle = '#E2E8F0';
           for (const line of kp.lines) {
             ctx.fillText(line, PAD_X + 46, ky);
-            ky += 23;
+            ky += 26;
           }
-          ky += 12;
+          ky += 14;
         }
         ctx.restore();
 
@@ -816,30 +785,30 @@ export function renderVisualNotesPages(
       }
 
       if (item.type === 'actions') {
-        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 16);
-        ctx.fillStyle = '#06120E';
+        drawRoundedRect(ctx, PAD_X, cursorY, CONTENT_W, item.height, 14);
+        ctx.fillStyle = '#0C1614';
         ctx.fill();
-        ctx.strokeStyle = 'rgba(52, 211, 153, 0.45)';
-        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(52, 211, 153, 0.24)';
+        ctx.lineWidth = 1.1;
         ctx.stroke();
 
         ctx.save();
-        ctx.font = `800 13px ${FONT_SANS}`;
-        ctx.fillStyle = '#34D399';
+        ctx.font = `700 12px ${FONT_BODY}`;
+        ctx.fillStyle = '#6EE7B7';
         ctx.textBaseline = 'top';
-        ctx.fillText('PRACTICE / HOMEWORK / NEXT STEPS', PAD_X + 24, cursorY + 18);
+        ctx.fillText('PRACTICE & NEXT STEPS', PAD_X + 26, cursorY + 20);
 
         ctx.font = bulletFont;
-        let ay = cursorY + 46;
+        let ay = cursorY + 48;
         for (const lines of item.items) {
           ctx.fillStyle = '#34D399';
-          ctx.fillText('☐', PAD_X + 24, ay);
-          ctx.fillStyle = '#ECFDF5';
+          ctx.fillText('☐', PAD_X + 26, ay);
+          ctx.fillStyle = '#E2E8F0';
           for (const line of lines) {
-            ctx.fillText(line, PAD_X + 48, ay);
-            ay += 23;
+            ctx.fillText(line, PAD_X + 50, ay);
+            ay += 26;
           }
-          ay += 12;
+          ay += 14;
         }
         ctx.restore();
 

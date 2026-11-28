@@ -797,15 +797,18 @@ export function HistoryPage() {
             </section>
           )}
 
-          {/* MYMEET PRO Master Notes Card (when unlocked for this meeting) */}
+          {/* MYMEET PRO Master Notes — Clean Editorial Document Layout */}
           {selected?.pro_notes && (
-            <section className="card pro-notes-card">
-              <div className="card-header" style={{ marginBottom: 14 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span className="pro-pill-badge">
-                    <SparklesIcon size={12} /> MYMEET PRO · MASTER NOTES
-                  </span>
-                  <span className="status-item-desc">{selected.pro_notes.environment_label}</span>
+            <article className="card pro-notes-card pro-doc-shell">
+              <header className="pro-doc-header">
+                <div className="pro-doc-header-copy">
+                  <div className="pro-doc-eyebrow">
+                    <span className="pro-pill-badge">
+                      <SparklesIcon size={11} /> PRO MASTER NOTES
+                    </span>
+                    <span className="pro-doc-env">{selected.pro_notes.environment_label}</span>
+                  </div>
+                  <h2 className="pro-doc-title">{selected.title}</h2>
                 </div>
                 <button
                   type="button"
@@ -815,25 +818,37 @@ export function HistoryPage() {
                   <DownloadIcon size={14} />
                   <span>Print / Save HD PDF</span>
                 </button>
-              </div>
+              </header>
 
-              <div className="pro-overview-box">{selected.pro_notes.pro_overview}</div>
+              <div className="pro-overview-box">
+                <div className="pro-kicker">EXECUTIVE SUMMARY</div>
+                <p className="pro-overview-copy">{selected.pro_notes.pro_overview}</p>
+              </div>
 
               <div className="pro-sections-stack">
                 {selected.pro_notes.deep_sections.map((sec, idx) => (
-                  <div key={`${sec.title}-${idx}`} className="pro-deep-section">
+                  <section key={`${sec.title}-${idx}`} className="pro-deep-section">
                     <div className="pro-deep-section-head">
-                      <strong>
-                        {idx + 1}. {sec.title}
-                      </strong>
-                      <span className="badge badge-neutral">{sec.kind.toUpperCase()}</span>
+                      <div className="pro-sec-heading-group">
+                        <span className="pro-sec-index">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                        <h3 className="pro-sec-title">{sec.title}</h3>
+                      </div>
+                      <span className="pro-sec-kind">{sec.kind}</span>
                     </div>
+
                     <p className="pro-deep-text">{sec.explanation}</p>
+
                     {sec.code_or_formula && (
-                      <pre className="pro-code-block">
-                        <code>{sec.code_or_formula}</code>
-                      </pre>
+                      <div className="pro-code-wrap">
+                        <div className="pro-code-label">CODE / FORMULA</div>
+                        <pre className="pro-code-block">
+                          <code>{sec.code_or_formula}</code>
+                        </pre>
+                      </div>
                     )}
+
                     {sec.bullets && sec.bullets.length > 0 && (
                       <ul className="pro-bullet-list">
                         {sec.bullets.map((b, bi) => (
@@ -841,21 +856,24 @@ export function HistoryPage() {
                         ))}
                       </ul>
                     )}
+
                     {sec.worked_example && (
                       <div className="pro-worked-example">
-                        <strong>Worked Example:</strong> {sec.worked_example}
+                        <div className="pro-example-kicker">WORKED EXAMPLE</div>
+                        <p className="pro-example-body">{sec.worked_example}</p>
                       </div>
                     )}
-                  </div>
+                  </section>
                 ))}
               </div>
 
               {selected.pro_notes.comparison_table && (
-                <div className="pro-table-wrap">
+                <section className="pro-table-wrap">
+                  <div className="pro-kicker">COMPARISON</div>
                   <h3 className="pro-subhead">
                     {selected.pro_notes.comparison_table.title || 'Comparison Matrix'}
                   </h3>
-                  <div style={{ overflowX: 'auto' }}>
+                  <div className="pro-table-scroll">
                     <table className="pro-comparison-table">
                       <thead>
                         <tr>
@@ -875,36 +893,45 @@ export function HistoryPage() {
                       </tbody>
                     </table>
                   </div>
-                </div>
+                </section>
               )}
 
               {selected.pro_notes.exam_traps.length > 0 && (
-                <div className="pro-traps-box">
-                  <h3 className="pro-subhead">⚡ Common Exam &amp; Interview Traps</h3>
-                  {selected.pro_notes.exam_traps.map((t, ti) => (
-                    <div key={ti} className="pro-trap-item">
-                      <div>
-                        <strong>Trap:</strong> {t.trap}
+                <section className="pro-traps-box">
+                  <div className="pro-kicker pro-kicker-amber">EXAM &amp; INTERVIEW TRAPS</div>
+                  <h3 className="pro-subhead">Common Pitfalls &amp; Right Approach</h3>
+                  <div className="pro-traps-list">
+                    {selected.pro_notes.exam_traps.map((t, ti) => (
+                      <div key={ti} className="pro-trap-item">
+                        <div className="pro-trap-row">
+                          <span className="pro-trap-tag tag-pitfall">Trap</span>
+                          <span className="pro-trap-text">{t.trap}</span>
+                        </div>
+                        <div className="pro-trap-row">
+                          <span className="pro-trap-tag tag-fix">Fix</span>
+                          <span className="pro-trap-text">{t.fix}</span>
+                        </div>
                       </div>
-                      <div style={{ marginTop: 4 }}>
-                        <strong>Right Approach:</strong> {t.fix}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                </section>
               )}
 
               {selected.pro_notes.cheat_sheet.length > 0 && (
-                <div className="pro-cheatsheet-box">
-                  <h3 className="pro-subhead">📌 1-Minute Rapid Revision Cheat Sheet</h3>
-                  <ul className="pro-bullet-list">
+                <section className="pro-cheatsheet-box">
+                  <div className="pro-kicker pro-kicker-indigo">RAPID REVISION</div>
+                  <h3 className="pro-subhead">1-Minute Cheat Sheet</h3>
+                  <ul className="pro-cheat-list">
                     {selected.pro_notes.cheat_sheet.map((c, ci) => (
-                      <li key={ci}>{c}</li>
+                      <li key={ci}>
+                        <span className="pro-cheat-num">{String(ci + 1).padStart(2, '0')}</span>
+                        <span>{c}</span>
+                      </li>
                     ))}
                   </ul>
-                </div>
+                </section>
               )}
-            </section>
+            </article>
           )}
 
           {/* Session MCQ Practice Test Card (Included in ₹349/mo & ₹899/yr) */}

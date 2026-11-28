@@ -215,38 +215,13 @@ export function HomeScreen({
   return (
     <>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* Clean, airy top row: Brand on left, Theme toggle on right (zero crowding!) */}
         <View style={styles.brandHeaderRow}>
-          <View style={styles.brandLeftCluster}>
-            <BrandLogo size="sm" />
-            {isPro && (
-              <View style={styles.brandProChip}>
-                <Text style={styles.brandProChipText}>✦ PRO</Text>
-              </View>
-            )}
-          </View>
-          <View style={styles.brandRightCluster}>
-            <Pressable
-              style={[
-                styles.navUpgradePill,
-                isPro ? styles.navProStatusPill : styles.navBasicUpgradePill,
-              ]}
-              onPress={() => {
-                setUpgradeForMcq(false);
-                setUpgradeOpen(true);
-              }}
-            >
-              <Text style={isPro ? styles.navProStatusText : styles.navBasicUpgradeText}>
-                {isPro
-                  ? isUnlimited
-                    ? '✦ PRO · Unlimited'
-                    : `✦ PRO · ${subscription?.credits_remaining ?? 0} left`
-                  : '✦ Upgrade'}
-              </Text>
-            </Pressable>
-            <ThemeToggle />
-          </View>
+          <BrandLogo size="sm" />
+          <ThemeToggle />
         </View>
 
+        {/* Identity + single clean Plan / Upgrade pill */}
         <View style={styles.topBar}>
           <Pressable style={styles.brandRow} onPress={onOpenProfile}>
             <View
@@ -270,9 +245,9 @@ export function HomeScreen({
               )}
             </View>
             <View style={styles.headerText}>
-              <Text style={[styles.greetingSmall, { color: isPro ? '#F59E0B' : colors.textMuted }]}>
+              <Text style={[styles.greetingSmall, { color: isPro ? '#D97706' : colors.textMuted }]}>
                 {isPro
-                  ? `MYMEET PRO · ${subscription?.plan_name}`
+                  ? `${subscription?.plan_name || 'Pro Plan'} · ${clockText}`
                   : `${getGreeting()} · ${clockText}`}
               </Text>
               <View style={styles.nameStatusRow}>
@@ -293,6 +268,25 @@ export function HomeScreen({
                 />
               </View>
             </View>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.navUpgradePill,
+              isPro ? styles.navProStatusPill : styles.navBasicUpgradePill,
+            ]}
+            onPress={() => {
+              setUpgradeForMcq(false);
+              setUpgradeOpen(true);
+            }}
+          >
+            <Text style={isPro ? styles.navProStatusText : styles.navBasicUpgradeText}>
+              {isPro
+                ? isUnlimited
+                  ? '✦ PRO'
+                  : `✦ PRO · ${subscription?.credits_remaining ?? 0}`
+                : '✦ Upgrade'}
+            </Text>
           </Pressable>
         </View>
 

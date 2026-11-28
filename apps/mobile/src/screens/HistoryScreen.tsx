@@ -45,34 +45,34 @@ const KIND_THEME: Record<
   { label: string; accent: string; softBg: string; border: string }
 > = {
   concept: {
-    label: 'CONCEPT',
-    accent: '#38BDF8',
-    softBg: 'rgba(56, 189, 248, 0.14)',
-    border: 'rgba(56, 189, 248, 0.52)',
+    label: 'Concept',
+    accent: '#60A5FA',
+    softBg: 'rgba(96, 165, 250, 0.14)',
+    border: 'rgba(148, 163, 184, 0.18)',
   },
   formula: {
-    label: 'FORMULA / RULE',
+    label: 'Formula & Rule',
     accent: '#FBBF24',
-    softBg: 'rgba(251, 191, 36, 0.15)',
-    border: 'rgba(251, 191, 36, 0.58)',
+    softBg: 'rgba(251, 191, 36, 0.14)',
+    border: 'rgba(251, 191, 36, 0.28)',
   },
   step: {
-    label: 'EXPLANATION',
+    label: 'Explanation',
     accent: '#34D399',
     softBg: 'rgba(52, 211, 153, 0.14)',
-    border: 'rgba(52, 211, 153, 0.5)',
+    border: 'rgba(148, 163, 184, 0.18)',
   },
   example: {
-    label: 'WORKED EXAMPLE',
-    accent: '#C084FC',
-    softBg: 'rgba(192, 132, 252, 0.15)',
-    border: 'rgba(192, 132, 252, 0.55)',
+    label: 'Worked Example',
+    accent: '#A78BFA',
+    softBg: 'rgba(167, 139, 250, 0.14)',
+    border: 'rgba(148, 163, 184, 0.18)',
   },
   takeaway: {
-    label: 'KEY TAKEAWAY',
+    label: 'Key Takeaway',
     accent: '#FB7185',
-    softBg: 'rgba(251, 113, 133, 0.15)',
-    border: 'rgba(251, 113, 133, 0.55)',
+    softBg: 'rgba(251, 113, 133, 0.14)',
+    border: 'rgba(148, 163, 184, 0.18)',
   },
 };
 
@@ -737,12 +737,20 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
               </View>
             )}
 
-            {/* MYMEET PRO Master Notes Card */}
+            {/* MYMEET PRO Master Notes — Clean Theme-Adaptive Editorial Document */}
             {selected.pro_notes && (
-              <View style={styles.proNotesCard}>
+              <View
+                style={[
+                  styles.proDocCard,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.borderStrong,
+                  },
+                ]}
+              >
                 <View style={styles.itemRowHeader}>
                   <View style={styles.proPill}>
-                    <Text style={styles.proPillText}>✦ MYMEET PRO · MASTER NOTES</Text>
+                    <Text style={styles.proPillText}>✦ PRO MASTER NOTES</Text>
                   </View>
                   <Pressable
                     style={styles.proShareChip}
@@ -753,34 +761,77 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                       }).catch(() => {})
                     }
                   >
-                    <Text style={{ color: '#F59E0B', fontSize: 11.5, fontWeight: '800' }}>
-                      Share Pro Notes
+                    <Text style={{ color: '#D97706', fontSize: 11.5, fontWeight: '800' }}>
+                      Share Notes
                     </Text>
                   </Pressable>
                 </View>
 
-                <Text style={styles.proOverviewText}>{selected.pro_notes.pro_overview}</Text>
+                <Text style={[styles.proDocTitle, { color: colors.text }]}>{selected.title}</Text>
+                {selected.pro_notes.environment_label ? (
+                  <Text style={[styles.proDocEnv, { color: colors.textMuted }]}>
+                    {selected.pro_notes.environment_label}
+                  </Text>
+                ) : null}
+
+                <View
+                  style={[
+                    styles.proOverviewWrap,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                >
+                  <Text style={[styles.proKicker, { color: colors.textMuted }]}>
+                    EXECUTIVE SUMMARY
+                  </Text>
+                  <Text style={[styles.proOverviewText, { color: colors.text }]}>
+                    {selected.pro_notes.pro_overview}
+                  </Text>
+                </View>
 
                 {selected.pro_notes.deep_sections.map((sec, idx) => (
-                  <View key={`${sec.title}-${idx}`} style={styles.proSecCard}>
-                    <Text style={styles.proSecTitle}>
-                      {idx + 1}. {sec.title}
+                  <View
+                    key={`${sec.title}-${idx}`}
+                    style={[
+                      styles.proSecBlock,
+                      { borderBottomColor: colors.border },
+                    ]}
+                  >
+                    <View style={styles.proSecHeadRow}>
+                      <View style={styles.proSecNumBadge}>
+                        <Text style={styles.proSecNumText}>
+                          {String(idx + 1).padStart(2, '0')}
+                        </Text>
+                      </View>
+                      <Text style={[styles.proSecTitle, { color: colors.text }]}>{sec.title}</Text>
+                    </View>
+
+                    <Text style={[styles.proSecBody, { color: colors.textMuted }]}>
+                      {sec.explanation}
                     </Text>
-                    <Text style={styles.proSecBody}>{sec.explanation}</Text>
+
                     {sec.code_or_formula ? (
                       <View style={styles.proCodeBox}>
+                        <Text style={styles.proCodeKicker}>CODE / FORMULA</Text>
                         <Text style={styles.proCodeText}>{sec.code_or_formula}</Text>
                       </View>
                     ) : null}
-                    {sec.bullets?.map((b, bi) => (
-                      <Text key={bi} style={styles.proSecBullet}>
-                        • {b}
-                      </Text>
-                    ))}
+
+                    {sec.bullets && sec.bullets.length > 0 ? (
+                      <View style={styles.proBulletsList}>
+                        {sec.bullets.map((b, bi) => (
+                          <View key={bi} style={styles.proBulletRow}>
+                            <Text style={styles.proBulletDot}>•</Text>
+                            <Text style={[styles.proSecBullet, { color: colors.text }]}>{b}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+
                     {sec.worked_example ? (
                       <View style={styles.proExampleBox}>
-                        <Text style={styles.proExampleText}>
-                          Example: {sec.worked_example}
+                        <Text style={styles.proExampleKicker}>WORKED EXAMPLE</Text>
+                        <Text style={[styles.proExampleText, { color: colors.text }]}>
+                          {sec.worked_example}
                         </Text>
                       </View>
                     ) : null}
@@ -788,15 +839,21 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                 ))}
 
                 {selected.pro_notes.comparison_table && (
-                  <View style={styles.proSecCard}>
-                    <Text style={styles.proSecTitle}>
+                  <View
+                    style={[
+                      styles.proSubBox,
+                      { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                    ]}
+                  >
+                    <Text style={[styles.proKicker, { color: colors.textMuted }]}>COMPARISON</Text>
+                    <Text style={[styles.proSubHeading, { color: colors.text }]}>
                       {selected.pro_notes.comparison_table.title || 'Comparison Matrix'}
                     </Text>
-                    <Text style={styles.proTableHeader}>
-                      {selected.pro_notes.comparison_table.headers.join('  |  ')}
+                    <Text style={[styles.proTableHeader, { color: colors.accentText }]}>
+                      {selected.pro_notes.comparison_table.headers.join('  ·  ')}
                     </Text>
                     {selected.pro_notes.comparison_table.rows.map((r, ri) => (
-                      <Text key={ri} style={styles.proSecBullet}>
+                      <Text key={ri} style={[styles.proSecBullet, { color: colors.text }]}>
                         • {r.join('  —  ')}
                       </Text>
                     ))}
@@ -805,11 +862,17 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
 
                 {selected.pro_notes.exam_traps.length > 0 && (
                   <View style={styles.proTrapCard}>
-                    <Text style={styles.proTrapHeading}>⚡ COMMON EXAM &amp; INTERVIEW TRAPS</Text>
+                    <Text style={styles.proTrapHeading}>EXAM &amp; INTERVIEW TRAPS</Text>
                     {selected.pro_notes.exam_traps.map((t, ti) => (
-                      <View key={ti} style={{ marginTop: 6 }}>
-                        <Text style={styles.proTrapLine}>Trap: {t.trap}</Text>
-                        <Text style={styles.proFixLine}>Fix: {t.fix}</Text>
+                      <View key={ti} style={styles.proTrapBlock}>
+                        <Text style={[styles.proTrapLine, { color: colors.text }]}>
+                          <Text style={{ color: '#ef4444', fontWeight: '800' }}>Trap: </Text>
+                          {t.trap}
+                        </Text>
+                        <Text style={[styles.proFixLine, { color: colors.textMuted }]}>
+                          <Text style={{ color: '#16a34a', fontWeight: '800' }}>Fix: </Text>
+                          {t.fix}
+                        </Text>
                       </View>
                     ))}
                   </View>
@@ -817,11 +880,14 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
 
                 {selected.pro_notes.cheat_sheet.length > 0 && (
                   <View style={styles.proCheatCard}>
-                    <Text style={styles.proCheatHeading}>📌 1-MINUTE REVISION CHEAT SHEET</Text>
+                    <Text style={styles.proCheatHeading}>1-MINUTE CHEAT SHEET</Text>
                     {selected.pro_notes.cheat_sheet.map((c, ci) => (
-                      <Text key={ci} style={styles.proSecBullet}>
-                        ▸ {c}
-                      </Text>
+                      <View key={ci} style={styles.proBulletRow}>
+                        <Text style={styles.proCheatNum}>
+                          {String(ci + 1).padStart(2, '0')}
+                        </Text>
+                        <Text style={[styles.proSecBullet, { color: colors.text }]}>{c}</Text>
+                      </View>
                     ))}
                   </View>
                 )}
@@ -1049,64 +1115,63 @@ const styles = StyleSheet.create({
   rejoinText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
   alert: { padding: 12, borderRadius: 11, borderWidth: 1 },
 
-  // Pure Black Visual Notes Board
+  // Calm Editorial Dark-Ink Basic Notes Board
   blackBoard: {
-    backgroundColor: '#000000',
+    backgroundColor: '#090C12',
     borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: 'rgba(148, 163, 184, 0.22)',
-    padding: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.16)',
+    padding: 20,
   },
   boardEnvPill: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(56, 189, 248, 0.14)',
-    borderColor: 'rgba(56, 189, 248, 0.55)',
+    backgroundColor: 'rgba(96, 165, 250, 0.12)',
+    borderColor: 'rgba(96, 165, 250, 0.3)',
     borderWidth: 1,
     paddingHorizontal: 11,
     paddingVertical: 4,
     borderRadius: 999,
     marginBottom: 10,
   },
-  boardEnvText: { color: '#7DD3FC', fontSize: 11, fontWeight: '800', letterSpacing: 0.6 },
-  boardTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+  boardEnvText: { color: '#93C5FD', fontSize: 10.5, fontWeight: '700', letterSpacing: 0.5 },
+  boardTitle: { color: '#F8FAFC', fontSize: 23, fontWeight: '800', letterSpacing: -0.4, lineHeight: 30 },
   boardDividerLine: {
-    height: 2,
-    backgroundColor: '#38BDF8',
-    marginTop: 10,
-    marginBottom: 16,
-    borderRadius: 2,
+    height: 1,
+    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+    marginTop: 12,
+    marginBottom: 18,
   },
   coreCard: {
     flexDirection: 'row',
-    backgroundColor: '#090D16',
-    borderColor: 'rgba(56, 189, 248, 0.35)',
+    backgroundColor: '#0F141F',
+    borderColor: 'rgba(148, 163, 184, 0.14)',
     borderWidth: 1,
     borderRadius: 14,
-    padding: 13,
-    gap: 10,
-    marginBottom: 14,
+    padding: 15,
+    gap: 12,
+    marginBottom: 16,
   },
-  coreAccentBar: { width: 4, borderRadius: 3, backgroundColor: '#38BDF8' },
+  coreAccentBar: { width: 3.5, borderRadius: 2, backgroundColor: '#60A5FA' },
   coreLabel: {
-    color: '#38BDF8',
+    color: '#93C5FD',
     fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.7,
-    marginBottom: 4,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    marginBottom: 5,
   },
-  coreBody: { color: '#E2E8F0', fontSize: 13, lineHeight: 20 },
+  coreBody: { color: '#E2E8F0', fontSize: 14.5, lineHeight: 23 },
   sectionsWrap: { marginTop: 2 },
 
-  // Visual Flow Card
+  // Clean Calm Visual Flow Card
   flowCard: {
     flexDirection: 'row',
-    backgroundColor: '#0A0D14',
-    borderWidth: 1.5,
+    backgroundColor: '#0F141F',
+    borderWidth: 1,
     borderRadius: 15,
     overflow: 'hidden',
   },
-  flowLeftStripe: { width: 4 },
-  flowCardInner: { flex: 1, padding: 13, gap: 8 },
+  flowLeftStripe: { width: 3.5 },
+  flowCardInner: { flex: 1, padding: 15, gap: 10 },
   flowHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1116,33 +1181,33 @@ const styles = StyleSheet.create({
   },
   flowTitleLeft: { flexDirection: 'row', alignItems: 'center', gap: 9, flex: 1 },
   stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepCircleText: { fontSize: 11, fontWeight: '800' },
-  flowStepTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800', flex: 1 },
-  kindBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 1 },
-  kindBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  flowStepBody: { color: '#CBD5E1', fontSize: 13, lineHeight: 20 },
+  flowStepTitle: { color: '#F8FAFC', fontSize: 16, fontWeight: '700', flex: 1, lineHeight: 22 },
+  kindBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, borderWidth: 0 },
+  kindBadgeText: { fontSize: 9.5, fontWeight: '700', letterSpacing: 0.3 },
+  flowStepBody: { color: '#CBD5E1', fontSize: 14.5, lineHeight: 23 },
   formulaBox: {
     flexDirection: 'row',
-    backgroundColor: '#030508',
-    borderColor: 'rgba(251, 191, 36, 0.45)',
+    backgroundColor: '#06090F',
+    borderColor: 'rgba(251, 191, 36, 0.28)',
     borderWidth: 1,
     borderRadius: 10,
-    padding: 10,
-    gap: 9,
+    padding: 12,
+    gap: 10,
   },
   formulaStripe: { width: 3, borderRadius: 2, backgroundColor: '#FBBF24' },
-  formulaText: { color: '#FDE68A', fontSize: 13, fontWeight: '700', flex: 1 },
-  bulletsWrap: { gap: 5, paddingTop: 2 },
-  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 7 },
-  bulletMarker: { fontSize: 12, fontWeight: '800', minWidth: 15 },
-  bulletBody: { color: '#E2E8F0', fontSize: 12.5, lineHeight: 19, flex: 1 },
+  formulaText: { color: '#FDE68A', fontSize: 13.5, fontWeight: '600', flex: 1, lineHeight: 21 },
+  bulletsWrap: { gap: 7, paddingTop: 2 },
+  bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  bulletMarker: { fontSize: 13, fontWeight: '800', minWidth: 15 },
+  bulletBody: { color: '#E2E8F0', fontSize: 14, lineHeight: 22, flex: 1 },
 
   // Geometric Vertical Vector Arrow (Selective)
   arrowWrap: { alignItems: 'center', paddingVertical: 3 },
@@ -1267,68 +1332,152 @@ const styles = StyleSheet.create({
   proPlansLink: { alignItems: 'center', paddingVertical: 4 },
   proPlansLinkText: { color: '#93C5FD', fontSize: 12, fontWeight: '700' },
   proNotesCard: {
-    backgroundColor: '#060A14',
-    borderColor: '#F59E0B',
-    borderWidth: 1.5,
+    backgroundColor: '#0B0F1A',
+    borderColor: 'rgba(245, 158, 11, 0.45)',
+    borderWidth: 1,
     borderRadius: 18,
-    padding: 15,
+    padding: 18,
     gap: 12,
     overflow: 'hidden',
   },
+  proDocCard: {
+    borderWidth: 1,
+    borderTopWidth: 3,
+    borderTopColor: '#F59E0B',
+    borderRadius: 20,
+    padding: 20,
+    gap: 16,
+  },
+  proDocTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    lineHeight: 28,
+    marginTop: 2,
+  },
+  proDocEnv: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    marginTop: -10,
+  },
+  proKicker: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.9,
+    marginBottom: 4,
+  },
+  proOverviewWrap: {
+    borderWidth: 1,
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#6366F1',
+    borderRadius: 12,
+    padding: 14,
+  },
   proShareChip: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 11,
     paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(245, 158, 11, 0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.5)',
+    borderColor: 'rgba(245, 158, 11, 0.45)',
   },
-  proOverviewText: { color: '#E2E8F0', fontSize: 13, lineHeight: 19 },
-  proSecCard: {
-    backgroundColor: '#0F172A',
-    borderColor: 'rgba(148, 163, 184, 0.2)',
+  proOverviewText: { fontSize: 14.5, lineHeight: 23 },
+  proSecBlock: {
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    gap: 10,
+  },
+  proSecHeadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+  },
+  proSecNumBadge: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 7,
+    backgroundColor: 'rgba(124, 58, 237, 0.14)',
+  },
+  proSecNumText: {
+    color: '#7C3AED',
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontFamily: 'monospace',
+  },
+  proSecTitle: { fontSize: 16.5, fontWeight: '700', flex: 1, lineHeight: 22 },
+  proSecBody: { fontSize: 14.5, lineHeight: 23 },
+  proCodeBox: {
+    backgroundColor: '#0A0F1C',
+    borderColor: 'rgba(148, 163, 184, 0.22)',
     borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 11,
+    padding: 13,
     gap: 6,
   },
-  proSecTitle: { color: '#FFFFFF', fontSize: 14.5, fontWeight: '800' },
-  proSecBody: { color: '#CBD5E1', fontSize: 12.5, lineHeight: 18 },
-  proCodeBox: {
-    backgroundColor: '#020617',
-    borderColor: 'rgba(56, 189, 248, 0.35)',
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 10,
+  proCodeKicker: {
+    color: '#94A3B8',
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    fontFamily: 'monospace',
   },
-  proCodeText: { color: '#38BDF8', fontSize: 12, fontFamily: 'monospace' },
-  proSecBullet: { color: '#CBD5E1', fontSize: 12.5, lineHeight: 18 },
+  proCodeText: { color: '#E2E8F0', fontSize: 12.5, lineHeight: 20, fontFamily: 'monospace' },
+  proBulletsList: { gap: 7 },
+  proBulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  proBulletDot: { color: '#7C3AED', fontSize: 15, fontWeight: '800', lineHeight: 22 },
+  proSecBullet: { fontSize: 14, lineHeight: 22, flex: 1 },
   proExampleBox: {
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-    borderColor: 'rgba(16, 185, 129, 0.4)',
+    backgroundColor: 'rgba(16, 185, 129, 0.09)',
+    borderColor: 'rgba(16, 185, 129, 0.28)',
     borderWidth: 1,
-    borderRadius: 8,
-    padding: 8,
-  },
-  proExampleText: { color: '#A7F3D0', fontSize: 12, lineHeight: 17 },
-  proTableHeader: { color: '#FDE68A', fontSize: 12, fontWeight: '800', marginBottom: 4 },
-  proTrapCard: {
-    backgroundColor: 'rgba(245, 158, 11, 0.12)',
-    borderColor: 'rgba(245, 158, 11, 0.45)',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 12,
-  },
-  proTrapHeading: { color: '#FBBF24', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.5 },
-  proTrapLine: { color: '#FEF3C7', fontSize: 12.5, fontWeight: '700' },
-  proFixLine: { color: '#CBD5E1', fontSize: 12, marginTop: 2 },
-  proCheatCard: {
-    backgroundColor: 'rgba(99, 102, 241, 0.14)',
-    borderColor: 'rgba(129, 140, 248, 0.45)',
-    borderWidth: 1,
-    borderRadius: 12,
+    borderLeftWidth: 3.5,
+    borderLeftColor: '#10B981',
+    borderRadius: 11,
     padding: 12,
     gap: 4,
   },
-  proCheatHeading: { color: '#A5B4FC', fontSize: 11.5, fontWeight: '800', letterSpacing: 0.5 },
+  proExampleKicker: {
+    color: '#059669',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  proExampleText: { fontSize: 13.8, lineHeight: 21 },
+  proSubBox: {
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 14,
+    gap: 6,
+  },
+  proSubHeading: { fontSize: 15.5, fontWeight: '700', marginBottom: 2 },
+  proTableHeader: { fontSize: 12.5, fontWeight: '800', marginBottom: 4 },
+  proTrapCard: {
+    backgroundColor: 'rgba(245, 158, 11, 0.09)',
+    borderColor: 'rgba(245, 158, 11, 0.34)',
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 15,
+    gap: 10,
+  },
+  proTrapBlock: { gap: 3 },
+  proTrapHeading: { color: '#D97706', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8 },
+  proTrapLine: { fontSize: 13.8, lineHeight: 21 },
+  proFixLine: { fontSize: 13.5, lineHeight: 20 },
+  proCheatCard: {
+    backgroundColor: 'rgba(99, 102, 241, 0.09)',
+    borderColor: 'rgba(99, 102, 241, 0.3)',
+    borderWidth: 1,
+    borderRadius: 13,
+    padding: 15,
+    gap: 8,
+  },
+  proCheatHeading: { color: '#6366F1', fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8 },
+  proCheatNum: {
+    color: '#6366F1',
+    fontSize: 11.5,
+    fontWeight: '800',
+    fontFamily: 'monospace',
+    minWidth: 22,
+    marginTop: 2,
+  },
 });
