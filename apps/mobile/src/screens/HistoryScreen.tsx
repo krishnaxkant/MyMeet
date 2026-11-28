@@ -37,6 +37,7 @@ import {
 
 interface HistoryScreenProps {
   initialCode?: string;
+  autoOpenMcq?: boolean;
   onBack: () => void;
   onOpenLobby: (code: string) => void;
 }
@@ -312,9 +313,15 @@ function BlackVisualBoard({
   );
 }
 
-export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScreenProps) {
+export function HistoryScreen({
+  initialCode,
+  autoOpenMcq = false,
+  onBack,
+  onOpenLobby,
+}: HistoryScreenProps) {
   const { session } = useAuth();
   const { colors } = useTheme();
+  const autoMcqTriggeredRef = useRef(false);
 
   const [items, setItems] = useState<MeetingHistoryItem[]>([]);
   const [selected, setSelected] = useState<MeetingHistoryDetail | null>(null);
@@ -484,14 +491,25 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
   );
 
   const isHost = selected?.my_role === 'host';
+  const isMeetingStillLive = Boolean(selected && selected.status !== 'ended');
   const hideBasicNotes = Boolean(
     selected &&
+      !isMeetingStillLive &&
       (selected.pro_notes || (subscription?.is_unlimited && hasImportantNotes)),
   );
 
+  // Auto-open Revision MCQ test if opened from Meeting Ended -> Take MCQs
+  useEffect(() => {
+    if (!autoOpenMcq || autoMcqTriggeredRef.current) return;
+    if (!selected || selected.status !== 'ended' || !subscription) return;
+    autoMcqTriggeredRef.current = true;
+    void handleOpenMcq(subscription);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenMcq, selected, subscription]);
+
   // Automatically generate Pro Master Notes for Unlimited Pro subscribers (hide Basic Free Notes)
   useEffect(() => {
-    if (!session?.access_token || !selected || !subscription?.is_unlimited) return;
+    if (!session?.access_token || !selected || isMeetingStillLive || !subscription?.is_unlimited) return;
     if (!hasImportantNotes || selected.pro_notes || upgradingPro) return;
     if (autoProTriggeredRef.current.has(selected.code)) return;
 
@@ -567,7 +585,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                 {loading ? 'Loading...' : 'Refresh'}
               </Text>
             </Pressable>
-          ) : (
+          ) : !isMeetingStillLive ? (
             <View style={styles.topActionRow}>
               <Pressable
                 style={[
@@ -616,7 +634,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
                 </Pressable>
               )}
             </View>
-          )}
+          ) : null}
         </View>
 
         {error && (
@@ -633,6 +651,50 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
         {detailLoading ? (
           <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 24 }} />
         ) : selected ? (
+          isMeetingStillLive ? (
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.borderStrong,
+                  alignItems: 'center',
+                  paddingVertical: 28,
+                },
+              ]}
+            >
+              <StatusBadge label="Session In Progress" tone="warning" />
+              <Text style={[styles.cardTitle, { color: colors.text, textAlign: 'center' }]}>
+                Notes &amp; Revision MCQs Coming Soon
+              </Text>
+              <Text style={[styles.subText, { color: colors.textMuted, textAlign: 'center' }]}>
+                {selected.title} is still live. AI Study Notes and Revision MCQs will be provided
+                automatically once the host ends the meeting.
+              </Text>
+              <Pressable
+                style={[styles.rejoinBtn, { backgroundColor: colors.accent, width: '100%' }]}
+                onPress={() => onOpenLobby(selected.code)}
+              >
+                <Text style={styles.rejoinText}>Rejoin Live Meeting</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.secondaryButton,
+                  {
+                    backgroundColor: colors.surfaceElevated,
+                    borderColor: colors.borderStrong,
+                    width: '100%',
+                    alignItems: 'center',
+                  },
+                ]}
+                onPress={() => void handleInspect(selected.code)}
+              >
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                  Check Again
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
           <View style={{ gap: 14 }}>
             {/* Basic Free Notes — hidden whenever user has Pro Notes unlocked or an Unlimited Pro subscription */}
             {!hideBasicNotes &&
@@ -1009,6 +1071,7 @@ export function HistoryScreen({ initialCode, onBack, onOpenLobby }: HistoryScree
               </View>
             )}
           </View>
+          )
         ) : (
           <View
             style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}

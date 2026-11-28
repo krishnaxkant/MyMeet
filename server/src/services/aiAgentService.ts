@@ -1073,15 +1073,21 @@ export async function generateMeetingAiSummaryForUser(
 
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('id, host_id')
+    .select('id, host_id, status')
     .eq('code', code)
-    .maybeSingle<{ id: string; host_id: string }>();
+    .maybeSingle<{ id: string; host_id: string; status: string }>();
 
   if (error) {
     throw new HttpError(500, `Failed to look up meeting: ${error.message}`);
   }
   if (!meeting) {
     throw new HttpError(404, 'Meeting not found.');
+  }
+  if (meeting.status !== 'ended') {
+    throw new HttpError(
+      400,
+      'Notes and revision MCQs will be provided once the host ends the meeting.',
+    );
   }
 
   if (meeting.host_id !== userId) {
@@ -1134,15 +1140,21 @@ async function assertMeetingAccessAndLoadContext(rawCode: string, userId: string
 
   const { data: meeting, error } = await supabase
     .from('meetings')
-    .select('id, code, title, host_id')
+    .select('id, code, title, host_id, status')
     .eq('code', code)
-    .maybeSingle<{ id: string; code: string; title: string; host_id: string }>();
+    .maybeSingle<{ id: string; code: string; title: string; host_id: string; status: string }>();
 
   if (error) {
     throw new HttpError(500, `Failed to look up meeting: ${error.message}`);
   }
   if (!meeting) {
     throw new HttpError(404, 'Meeting not found.');
+  }
+  if (meeting.status !== 'ended') {
+    throw new HttpError(
+      400,
+      'Notes and revision MCQs will be provided once the host ends the meeting.',
+    );
   }
 
   if (meeting.host_id !== userId) {

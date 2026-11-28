@@ -124,7 +124,7 @@ interface MeetingRoomScreenProps {
   initialCamEnabled: boolean;
   onExit: () => void;
   onBackToLobby: (code: string) => void;
-  onOpenHistory: (code: string) => void;
+  onOpenHistory: (code: string, openMcq?: boolean) => void;
 }
 
 function formatElapsed(startedAt: string | null): string {
@@ -592,12 +592,19 @@ export function MeetingRoomScreen({
     }).catch(() => {});
   };
 
+  const [leftEarly, setLeftEarly] = useState(false);
+
   const handleLeave = async () => {
     setActiveSheet(null);
     sendStageCommand({ type: 'disconnect' });
     if (session?.access_token && meeting) {
       setBusy(true);
       await leaveMeeting(session.access_token, meeting.code).catch(() => {});
+      setBusy(false);
+      if (meeting.status !== 'ended') {
+        setLeftEarly(true);
+        return;
+      }
     }
     onExit();
   };
@@ -765,33 +772,70 @@ export function MeetingRoomScreen({
     );
   }
 
+  if (leftEarly && meeting && meeting.status !== 'ended') {
+    return (
+      <View style={styles.center}>
+        <StatusBadge label="Session Still Live" tone="warning" />
+        <Text style={[styles.endedTitle, { color: colors.text }]}>You Left the Meeting</Text>
+        <Text style={[styles.subText, { color: colors.textMuted, textAlign: 'center' }]}>
+          {meeting.title} is still in progress. Notes and revision MCQs will be provided
+          automatically once the host ends the meeting.
+        </Text>
+        <Pressable
+          style={[styles.primaryButton, { backgroundColor: colors.accent, width: '100%' }]}
+          onPress={() => onBackToLobby(meeting.code)}
+        >
+          <Text style={styles.primaryButtonText}>Rejoin Meeting</Text>
+        </Pressable>
+        <Pressable
+          style={[
+            styles.outlineBtn,
+            { backgroundColor: colors.surface, borderColor: colors.borderStrong, width: '100%', alignItems: 'center' },
+          ]}
+          onPress={onExit}
+        >
+          <Text style={{ color: colors.text, fontSize: 13.5, fontWeight: '700' }}>Back to Home</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (!meeting || meeting.status === 'ended') {
     return (
       <View style={styles.center}>
+        {meeting && <StatusBadge label="Session Complete" tone="success" />}
         <Text style={[styles.endedTitle, { color: colors.text }]}>
           {meeting ? 'Meeting Ended' : 'Meeting Unavailable'}
         </Text>
         <Text style={[styles.subText, { color: colors.textMuted, textAlign: 'center' }]}>
           {meeting
-            ? `${meeting.title} has ended. Your AI study notes are ready in History.`
+            ? `${meeting.title} has been ended by the host. Your notes and revision MCQs are ready.`
             : error ?? 'Unable to load meeting.'}
         </Text>
         {meeting && (
-          <Pressable
-            style={[styles.primaryButton, { backgroundColor: colors.accent }]}
-            onPress={() => onOpenHistory(meeting.code)}
-          >
-            <Text style={styles.primaryButtonText}>View AI Study Notes</Text>
-          </Pressable>
+          <>
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: colors.accent, width: '100%' }]}
+              onPress={() => onOpenHistory(meeting.code, false)}
+            >
+              <Text style={styles.primaryButtonText}>✦ View Notes</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.primaryButton, { backgroundColor: '#F59E0B', width: '100%' }]}
+              onPress={() => onOpenHistory(meeting.code, true)}
+            >
+              <Text style={[styles.primaryButtonText, { color: '#090D16' }]}>🎯 Take MCQs</Text>
+            </Pressable>
+          </>
         )}
         <Pressable
           style={[
             styles.outlineBtn,
-            { backgroundColor: colors.surface, borderColor: colors.borderStrong },
+            { backgroundColor: colors.surface, borderColor: colors.borderStrong, width: '100%', alignItems: 'center' },
           ]}
           onPress={onExit}
         >
-          <Text style={{ color: colors.text, fontSize: 13, fontWeight: '700' }}>Back to Home</Text>
+          <Text style={{ color: colors.text, fontSize: 13.5, fontWeight: '700' }}>Back to Home</Text>
         </Pressable>
       </View>
     );

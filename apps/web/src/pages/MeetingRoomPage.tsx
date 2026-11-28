@@ -384,6 +384,8 @@ export function MeetingRoomPage() {
     }
   };
 
+  const [leftEarly, setLeftEarly] = useState(false);
+
   const handleLeave = async () => {
     setActionBusy(true);
     try {
@@ -391,8 +393,13 @@ export function MeetingRoomPage() {
       if (session?.access_token && meeting) {
         await leaveMeeting(session.access_token, meeting.code);
       }
-    } finally {
+      if (meeting && meeting.status !== 'ended') {
+        setLeftEarly(true);
+        return;
+      }
       navigate('/', { replace: true });
+    } finally {
+      setActionBusy(false);
     }
   };
 
@@ -578,16 +585,99 @@ export function MeetingRoomPage() {
     );
   }
 
+  if (leftEarly && meeting.status !== 'ended') {
+    return (
+      <div
+        className="card"
+        style={{
+          maxWidth: 480,
+          margin: '56px auto',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <span className="badge badge-warning">Session Still Live</span>
+        </div>
+        <h1 className="auth-title" style={{ marginBottom: 0 }}>
+          You Left the Meeting
+        </h1>
+        <p className="auth-subtitle" style={{ marginBottom: 4 }}>
+          <strong>{meeting.title}</strong> is still in progress. Your AI study notes and revision
+          MCQs will be provided automatically once the host ends the meeting.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-full"
+            onClick={() => navigate(`/meet/${meeting.code}`)}
+          >
+            Rejoin Meeting
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-full"
+            onClick={() => navigate('/', { replace: true })}
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (meeting.status === 'ended') {
     return (
-      <div className="card" style={{ maxWidth: 520, margin: '40px auto', textAlign: 'center' }}>
-        <h1 className="auth-title">Meeting Ended</h1>
-        <p className="auth-subtitle">
-          <strong>{meeting.title}</strong> ({meeting.code}) has been ended by the host.
+      <div
+        className="card"
+        style={{
+          maxWidth: 480,
+          margin: '56px auto',
+          textAlign: 'center',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 14,
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <span className="pro-pill-badge">
+            <SparklesIcon size={11} /> SESSION COMPLETE
+          </span>
+        </div>
+        <h1 className="auth-title" style={{ marginBottom: 0 }}>
+          Meeting Ended
+        </h1>
+        <p className="auth-subtitle" style={{ marginBottom: 4 }}>
+          <strong>{meeting.title}</strong> has been ended by the host. Your session notes and
+          revision MCQs are ready.
         </p>
-        <button type="button" className="btn btn-primary" onClick={() => navigate('/')}>
-          Return to Dashboard
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 4 }}>
+          <button
+            type="button"
+            className="btn btn-primary btn-full"
+            onClick={() => navigate(`/history?code=${encodeURIComponent(meeting.code)}`)}
+          >
+            <SparklesIcon size={15} />
+            <span>View Notes</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-pro-gold btn-full"
+            onClick={() => navigate(`/history?code=${encodeURIComponent(meeting.code)}&mcq=1`)}
+          >
+            <SparklesIcon size={15} />
+            <span>Take MCQs</span>
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-full"
+            onClick={() => navigate('/', { replace: true })}
+          >
+            Return to Dashboard
+          </button>
+        </div>
       </div>
     );
   }

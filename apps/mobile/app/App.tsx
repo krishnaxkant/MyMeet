@@ -26,7 +26,7 @@ import { ScheduleScreen } from '../src/screens/ScheduleScreen';
 type ScreenState =
   | { name: 'home' }
   | { name: 'schedule' }
-  | { name: 'history'; initialCode?: string }
+  | { name: 'history'; initialCode?: string; autoOpenMcq?: boolean }
   | { name: 'profile' }
   | { name: 'lobby'; code: string }
   | { name: 'room'; code: string; micEnabled: boolean; camEnabled: boolean };
@@ -151,6 +151,7 @@ function RootNavigator() {
             ) : screen.name === 'history' ? (
               <HistoryScreen
                 initialCode={screen.initialCode}
+                autoOpenMcq={screen.autoOpenMcq}
                 onBack={() => void goBack()}
                 onOpenLobby={(code) => pushScreen({ name: 'lobby', code })}
               />
@@ -169,7 +170,9 @@ function RootNavigator() {
                 initialCamEnabled={screen.camEnabled}
                 onExit={resetToHome}
                 onBackToLobby={(code) => replaceScreen({ name: 'lobby', code })}
-                onOpenHistory={(code) => replaceScreen({ name: 'history', initialCode: code })}
+                onOpenHistory={(code, openMcq) =>
+                  replaceScreen({ name: 'history', initialCode: code, autoOpenMcq: Boolean(openMcq) })
+                }
               />
             ) : (
               <HomeScreen

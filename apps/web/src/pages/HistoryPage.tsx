@@ -71,6 +71,8 @@ export function HistoryPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const initialCode = searchParams.get('code');
+  const autoOpenMcqParam = searchParams.get('mcq') === '1';
+  const autoMcqTriggeredRef = useRef(false);
 
   const [items, setItems] = useState<MeetingHistoryItem[]>([]);
   const [selected, setSelected] = useState<MeetingHistoryDetail | null>(null);
@@ -349,15 +351,26 @@ export function HistoryPage() {
   };
 
   const isHost = selected?.my_role === 'host';
+  const isMeetingStillLive = Boolean(selected && selected.status !== 'ended');
   const hideBasicNotes = Boolean(
     selected &&
+      !isMeetingStillLive &&
       (selected.pro_notes || (subscription?.is_unlimited && hasImportantNotes)),
   );
+
+  // Auto-open Revision MCQ test if navigated via /history?code=...&mcq=1 from Meeting Ended screen
+  useEffect(() => {
+    if (!autoOpenMcqParam || autoMcqTriggeredRef.current) return;
+    if (!selected || selected.status !== 'ended' || !subscription) return;
+    autoMcqTriggeredRef.current = true;
+    void handleOpenMcqTest(subscription);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoOpenMcqParam, selected, subscription]);
 
   // For Unlimited Monthly/Yearly Pro subscribers, automatically build Pro Master Notes
   // so they NEVER see Basic Free Notes clutter!
   useEffect(() => {
-    if (!session?.access_token || !selected || !subscription?.is_unlimited) return;
+    if (!session?.access_token || !selected || isMeetingStillLive || !subscription?.is_unlimited) return;
     if (!hasImportantNotes || selected.pro_notes || upgradingPro) return;
     if (autoProTriggeredRef.current.has(selected.code)) return;
 
@@ -506,7 +519,7 @@ export function HistoryPage() {
               )}
             </div>
 
-            {selected && !hideBasicNotes && (
+            {selected && !isMeetingStillLive && !hideBasicNotes && (
               <div className="notes-reader-actions">
                 <button
                   type="button"
@@ -574,6 +587,39 @@ export function HistoryPage() {
           {error && <div className="alert alert-danger">{error}</div>}
 
           <div className="notes-reader-stack">
+            {/* Active meeting guard: wait until Host ends the meeting before showing Notes & MCQs */}
+            {selected && isMeetingStillLive ? (
+              <section className="card notes-reader-card" style={{ textAlign: 'center', padding: 36 }}>
+                <div style={{ marginBottom: 12 }}>
+                  <span className="badge badge-warning">Session In Progress</span>
+                </div>
+                <h2 style={{ margin: '0 0 8px', fontSize: 21, fontWeight: 800 }}>
+                  Notes &amp; Revision MCQs Coming Soon
+                </h2>
+                <p className="status-item-desc" style={{ maxWidth: 480, margin: '0 auto 20px', fontSize: 14.5 }}>
+                  <strong>{selected.title}</strong> is still live. AI Study Notes and Revision MCQs
+                  will be provided automatically as soon as the host ends the meeting.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => navigate(`/meet/${selected.code}`)}
+                  >
+                    Rejoin Live Meeting
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void handleInspect(selected.code)}
+                  >
+                    <RefreshIcon size={14} />
+                    <span>Check Again</span>
+                  </button>
+                </div>
+              </section>
+            ) : (
+            <>
             {/* Basic Free AI Visual Summary — hidden whenever user already has Pro Master Notes or an Unlimited Pro subscription */}
             {!hideBasicNotes && (
             <section className="card notes-reader-card">
@@ -936,7 +982,7 @@ export function HistoryPage() {
           )}
 
           {/* Session MCQ Practice Test Card (Included in ₹349/mo & ₹899/yr) */}
-          {selected && hasImportantNotes && (
+          {selected && !isMeetingStillLive && hasImportantNotes && (
             <section className="card pro-mcq-cta-card">
               <div className="pro-cta-copy">
                 <span className="pro-pill-badge">
@@ -1038,6 +1084,8 @@ export function HistoryPage() {
               )}
             </section>
           )}
+            </>
+            )}
           </div>
         </div>
       )}
