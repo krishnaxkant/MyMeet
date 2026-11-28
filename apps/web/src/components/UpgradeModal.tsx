@@ -152,6 +152,7 @@ export function UpgradeModal({
           currency: order.currency,
           name: 'MyMeet Pro',
           description: `${order.plan.name} — ${order.plan.tagline}`,
+          image: 'https://mymeet-live.vercel.app/mymeet-icon-192.png',
           order_id: order.razorpay_order_id,
           prefill: {
             name: userName || '',

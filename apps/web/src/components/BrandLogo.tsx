@@ -19,7 +19,7 @@ export function BrandLogo({
   return (
     <span className={`mymeet-brand mymeet-brand-${size} ${inverted ? 'mymeet-brand-inverted' : ''}`}>
       <img
-        src="/mymeet-mark.png"
+        src="/mymeet-mark.png?v=2"
         alt="MyMeet"
         width={iconSize}
         height={iconSize}
