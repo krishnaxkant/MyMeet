@@ -69,9 +69,22 @@ const PLAN_COMPARISON_MATRIX: Record<PaidPlanCode, { subtitle: string; rows: Pla
   },
 };
 
+interface RazorpayFailureResponse {
+  error?: {
+    code?: string;
+    description?: string;
+    reason?: string;
+  };
+}
+
+interface RazorpayInstance {
+  open: () => void;
+  on: (event: 'payment.failed', handler: (resp: RazorpayFailureResponse) => void) => void;
+}
+
 declare global {
   interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
+    Razorpay?: new (options: Record<string, unknown>) => RazorpayInstance;
   }
 }
 
@@ -170,6 +183,14 @@ export function UpgradeModal({
           modal: {
             ondismiss: () => setBusyPlan(null),
           },
+        });
+        rzp.on('payment.failed', (resp) => {
+          const reason =
+            resp?.error?.description ||
+            resp?.error?.reason ||
+            'Payment could not be completed. Please try again.';
+          setError(reason);
+          setBusyPlan(null);
         });
         rzp.open();
         return;

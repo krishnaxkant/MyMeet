@@ -458,9 +458,9 @@ export async function createCheckoutOrder(
   meetingCode?: string,
 ): Promise<{
   order_id: string;
-  provider: 'razorpay' | 'demo';
-  razorpay_key_id?: string;
-  razorpay_order_id?: string;
+  provider: 'razorpay';
+  razorpay_key_id: string;
+  razorpay_order_id: string;
   amount_paise: number;
   amount_inr: number;
   currency: 'INR';
@@ -479,30 +479,48 @@ export async function createCheckoutOrder(
   }
 
   const supabase = requireSupabase();
-  const amountPaise = plan.price_inr * 100;
+  const amountPaise = Math.round(plan.price_inr * 100);
+  if (!Number.isFinite(amountPaise) || amountPaise < 100) {
+    throw new HttpError(400, 'Order amount must be at least 100 paise (₹1).');
+  }
+
   const auth = Buffer.from(`${env.razorpayKeyId}:${env.razorpayKeySecret}`).toString('base64');
-  const rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Basic ${auth}`,
-    },
-    body: JSON.stringify({
-      amount: amountPaise,
-      currency: 'INR',
-      receipt: `mm_${Date.now()}`,
-      notes: {
-        user_id: userId,
-        plan_code: planCode,
-        ...(meetingCode ? { meeting_code: meetingCode } : {}),
+  let rzpRes: Response;
+  try {
+    rzpRes = await fetch('https://api.razorpay.com/v1/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
       },
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
+      body: JSON.stringify({
+        amount: amountPaise,
+        currency: 'INR',
+        receipt: `mm_${Date.now()}`,
+        notes: {
+          user_id: userId,
+          plan_code: planCode,
+          ...(meetingCode ? { meeting_code: meetingCode } : {}),
+        },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (networkErr) {
+    throw new HttpError(
+      500,
+      `Unable to reach Razorpay API: ${networkErr instanceof Error ? networkErr.message : 'Network error'}`,
+    );
+  }
 
   if (!rzpRes.ok) {
     const errText = await rzpRes.text().catch(() => '');
-    throw new HttpError(502, `Razorpay order creation failed: ${errText.slice(0, 180)}`);
+    if (rzpRes.status === 401) {
+      throw new HttpError(
+        401,
+        'Razorpay authentication failed. Please verify RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.',
+      );
+    }
+    throw new HttpError(500, `Razorpay order creation failed: ${errText.slice(0, 180)}`);
   }
 
   const rzpData = (await rzpRes.json()) as { id: string };
@@ -534,9 +552,8 @@ export async function createCheckoutOrder(
   return {
     order_id: orderRow.id,
     provider,
-    ...(provider === 'razorpay'
-      ? { razorpay_key_id: env.razorpayKeyId, razorpay_order_id: providerOrderId }
-      : {}),
+    razorpay_key_id: env.razorpayKeyId,
+    razorpay_order_id: providerOrderId,
     amount_paise: amountPaise,
     amount_inr: plan.price_inr,
     currency: 'INR',
@@ -593,7 +610,12 @@ export async function verifyCheckoutOrder(
     .update(`${input.razorpay_order_id}|${input.razorpay_payment_id}`)
     .digest('hex');
 
-  if (expectedSig !== input.razorpay_signature) {
+  const expectedBuf = Buffer.from(expectedSig, 'utf8');
+  const providedBuf = Buffer.from(input.razorpay_signature, 'utf8');
+  const signatureValid =
+    expectedBuf.length === providedBuf.length && crypto.timingSafeEqual(expectedBuf, providedBuf);
+
+  if (!signatureValid) {
     await supabase
       .from('payment_orders')
       .update({ status: 'failed' })
