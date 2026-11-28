@@ -1267,6 +1267,37 @@ export async function getMeetingProNotesForUser(
   return data;
 }
 
+interface GeneratedProNotesPayload {
+  environment_label: string;
+  pro_overview: string;
+  deep_sections: ProNoteDeepSection[];
+  comparison_table: ProComparisonTable | null;
+  exam_traps: ProExamTrap[];
+  cheat_sheet: string[];
+  pro_markdown: string;
+  model_used: string;
+}
+
+const proNotesInFlight = new Map<string, Promise<GeneratedProNotesPayload>>();
+
+async function getAnyExistingProNotesForMeeting(
+  meetingId: string,
+): Promise<GeneratedProNotesPayload | null> {
+  const supabase = getSupabaseAdmin();
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('meeting_pro_notes')
+    .select(
+      'environment_label, pro_overview, deep_sections, comparison_table, exam_traps, cheat_sheet, pro_markdown, model_used',
+    )
+    .eq('meeting_id', meetingId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle<GeneratedProNotesPayload>();
+  if (error || !data) return null;
+  return data;
+}
+
 export async function upgradeMeetingToProNotesForUser(
   rawCode: string,
   userId: string,
@@ -1307,7 +1338,15 @@ export async function upgradeMeetingToProNotesForUser(
     );
   }
 
-  const proPrompt = [
+  // Smart Shared Pro Notes Cache + In-Flight Coalescing:
+  // If another Pro user in this exact ended meeting already generated Pro Notes (or is generating right now),
+  // reuse that identical lecture payload so 50 students = 1 Gemini call (instant load, zero rate-limit jam)!
+  let payload = await getAnyExistingProNotesForMeeting(ctx.meeting.id);
+  if (!payload) {
+    let pending = proNotesInFlight.get(ctx.meeting.id);
+    if (!pending) {
+      pending = (async (): Promise<GeneratedProNotesPayload> => {
+        const proPrompt = [
     'You are the MYMEET PRO Master Study & Executive Notes Architect.',
     'The user PAID to upgrade from basic summary notes to DEEP, EXAM-READY & PRODUCTION-GRADE PRO MASTER NOTES.',
     'Make these notes unmistakably richer, clearer, and more actionable than a basic overview:',
@@ -1460,7 +1499,25 @@ export async function upgradeMeetingToProNotesForUser(
       ? parsed.pro_markdown.trim()
       : `# ${ctx.meeting.title} — Pro Master Notes\n\n${proOverview}`;
 
-  // Deduct 1 credit (or pass through for Unlimited plans) right before persisting
+        return {
+          environment_label: envLabel,
+          pro_overview: proOverview,
+          deep_sections: deepSections,
+          comparison_table: comparisonTable,
+          exam_traps: examTraps,
+          cheat_sheet: cheatSheet,
+          pro_markdown: proMarkdown,
+          model_used: geminiRes.model,
+        };
+      })().finally(() => {
+        proNotesInFlight.delete(ctx.meeting.id);
+      });
+      proNotesInFlight.set(ctx.meeting.id, pending);
+    }
+    payload = await pending;
+  }
+
+  // Deduct 1 credit (or pass through for Unlimited plans) right before persisting this user's own permanent copy
   const { unlockSource, updatedStatus } = await consumeOneProCreditIfNeeded(userId);
 
   const { data: saved, error: saveErr } = await supabase
@@ -1470,14 +1527,14 @@ export async function upgradeMeetingToProNotesForUser(
         meeting_id: ctx.meeting.id,
         user_id: userId,
         unlock_source: unlockSource,
-        environment_label: envLabel,
-        pro_overview: proOverview,
-        deep_sections: deepSections,
-        comparison_table: comparisonTable,
-        exam_traps: examTraps,
-        cheat_sheet: cheatSheet,
-        pro_markdown: proMarkdown,
-        model_used: geminiRes.model,
+        environment_label: payload.environment_label,
+        pro_overview: payload.pro_overview,
+        deep_sections: payload.deep_sections,
+        comparison_table: payload.comparison_table,
+        exam_traps: payload.exam_traps,
+        cheat_sheet: payload.cheat_sheet,
+        pro_markdown: payload.pro_markdown,
+        model_used: payload.model_used,
       },
       { onConflict: 'meeting_id,user_id' },
     )
